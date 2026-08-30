@@ -84,6 +84,16 @@ namespace VOX.PedOverhaulVI
         public bool SawCrowdPanic;
         public bool SawQuietWithdrawal;
 
+        // Distraction / attention state. This describes what the ped was doing
+        // before danger became the dominant task.
+        public DistractionKind Distraction;
+        public float DistractionLevel;
+        public float VisualAttentionScale = 1f;
+        public float HearingAttentionScale = 1f;
+        public float SocialAttentionScale = 1f;
+        public int LastDistractionProbeAt;
+        public int DistractionReactionUntil;
+
         // Multi-source scene memory. These are deliberately independent from
         // the player-specific observations above.
         public SceneThreatKind SceneThreatKind;
@@ -111,6 +121,9 @@ namespace VOX.PedOverhaulVI
         public int LastDecisionAt;
         public int DecisionUntil;
         public int LastLookAt;
+        public int LastCognitionAt;
+        public int LastStageChangeAt;
+        public int LastEmergencyReplanAt;
 
         public float SocialThreatConfidence;
         public int SocialSourceHandle;
@@ -145,7 +158,8 @@ namespace VOX.PedOverhaulVI
                 Archetype = PickArchetype(bravery, curiosity, aggression, alertness, preservation, empathy),
                 LastHealth = SafeHealth(ped),
                 Stage = AwarenessStage.Unaware,
-                Mode = ReactionMode.None
+                Mode = ReactionMode.None,
+                Distraction = DistractionKind.None
             };
         }
 
@@ -153,12 +167,13 @@ namespace VOX.PedOverhaulVI
         {
             int age = LastStimulusAt <= 0 ? 999999 : now - LastStimulusAt;
             float calmScale = age > cfg.MemoryHoldMs ? 1.0f : 0.18f;
-            Attention = Clamp(Attention - cfg.AttentionDecayPerSecond * cfg.TickIntervalMs / 1000f * calmScale);
-            Suspicion = Clamp(Suspicion - cfg.SuspicionDecayPerSecond * cfg.TickIntervalMs / 1000f * calmScale);
-            Certainty = Clamp(Certainty - cfg.CertaintyDecayPerSecond * cfg.TickIntervalMs / 1000f * calmScale);
-            Fear = Clamp(Fear - cfg.FearDecayPerSecond * cfg.TickIntervalMs / 1000f * calmScale);
-            SocialThreatConfidence = Clamp(SocialThreatConfidence - 3f * cfg.TickIntervalMs / 1000f);
-            ExternalThreatConfidence = Clamp(ExternalThreatConfidence - cfg.ExternalConfidenceDecayPerSecond * cfg.TickIntervalMs / 1000f);
+            float dt = Math.Max(0.01f, Math.Min(0.35f, cfg.TickIntervalMs / 1000f));
+            Attention = Clamp(Attention - cfg.AttentionDecayPerSecond * dt * calmScale);
+            Suspicion = Clamp(Suspicion - cfg.SuspicionDecayPerSecond * dt * calmScale);
+            Certainty = Clamp(Certainty - cfg.CertaintyDecayPerSecond * dt * calmScale);
+            Fear = Clamp(Fear - cfg.FearDecayPerSecond * dt * calmScale);
+            SocialThreatConfidence = Clamp(SocialThreatConfidence - 3f * dt);
+            ExternalThreatConfidence = Clamp(ExternalThreatConfidence - cfg.ExternalConfidenceDecayPerSecond * dt);
 
             if (now - LastGunshotAt > cfg.SensoryMemoryMs) HeardGunshot = false;
             if (now - LastBodySeenAt > cfg.SensoryMemoryMs) SawBody = false;
