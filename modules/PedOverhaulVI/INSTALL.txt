@@ -1,4 +1,4 @@
-PED OVERHAUL VI — V0.2.0
+PED OVERHAUL VI — V0.3.0
 
 TARGET
 - GTA V Enhanced Story Mode
@@ -16,22 +16,28 @@ MODULARITY
 - If Police Overhaul VI is loaded, it owns law-enforcement peds while Ped Overhaul VI handles civilians/gangs/ambient NPCs.
 - If Police Overhaul VI is absent, Ped Overhaul VI still runs its ambient NPC systems.
 
-V0.2 SITUATIONAL-AWARENESS PASS
-- continuous attention / suspicion / certainty / fear model per ped
-- central vs peripheral visual perception and physical line-of-sight
-- separate recognition of mask, visible weapon, direct aiming, visible shooting and heard gunshots
-- approximate sound-source knowledge when a shot is heard but the shooter is not seen
-- dead-body awareness and persistent short-term sensory memory
-- stable personality traits: bravery, curiosity, aggression, alertness, self-preservation, conformity and empathy
-- personality archetypes derived from those traits rather than one global reaction table
-- pre-panic behaviours: glance, watch, discreet withdrawal, quietly alert a nearby person, phone use and filming from safety
-- mask + visible weapon can trigger a look -> understand -> quietly leave sequence without gunfire
-- gunshots no longer imply automatic flee; an uncertain ped can freeze, seek cover, wait for more information or follow social cues
-- direct gunpoint can produce compliance/hands-up rather than generic panic
-- drivers can attempt to leave the area in their vehicle
-- crowd panic and discreet withdrawal spread information with different strengths; nearby peds do not simply clone each other's task
-- hostile NPC morale, cover, retreat and surrender remain separate from civilian fear logic
-- recovery is delayed by memory instead of immediately resetting when the stimulus disappears
-- mission/cutscene safety and bounded local processing budget
+V0.3 SHARED-SCENE-AWARENESS PASS
+- keeps the V0.2 attention / suspicion / certainty / fear cognitive model
+- keeps mask + weapon -> notice -> understand -> discreet withdrawal behaviour
+- introduces one shared scene scanner instead of every ped rescanning the world independently
+- scene events can originate from NPCs, vehicles and world hazards rather than only the player
+- nearby NPC gunfire is separately perceived visually or acoustically
+- NPC-vs-NPC fights can be noticed, watched, avoided, filmed or cautiously approached depending on personality and severity
+- visible weapons carried by hostile/combat NPCs become scene threats
+- bodies become persistent visual scene evidence
+- burning entities create local danger independently of the player
+- explosions are detected as high-confidence area events without magically identifying an exact source
+- fleeing/cowering NPCs create crowd-flight social cues
+- group members / shared-vehicle companions trust each other's warnings more than strangers
+- information can propagate with reduced confidence instead of making every NPC omniscient
+- high-speed vehicles are evaluated by trajectory, closest approach and time-to-impact
+- pedestrians can sidestep a projected collision instead of blindly using generic flee behaviour
+- uncertain gunfire can cause freeze/cover-seeking before the shooter is identified
+- confirmed external threats use their own position as the flee/cover reference instead of assuming the player is responsible
+- cautious NPCs can discreetly leave an unrelated fight or armed scene
+- curious/bold NPCs may watch or film from distance
+- protective NPCs may cautiously approach a low-severity fight when brave enough; armed/high-severity scenes suppress this behaviour
+- hostile NPC morale, retreat and surrender remain separate from civilian awareness
+- processing remains bounded: scene scan is throttled, events expire, vehicle/event counts are capped and only a subset of peds is processed each tick
 
 No vanilla archive is replaced.
