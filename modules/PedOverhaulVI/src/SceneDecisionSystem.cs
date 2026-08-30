@@ -12,16 +12,18 @@ namespace VOX.PedOverhaulVI
         {
             if (ped == null || s == null || scene == null || !scene.HasThreat || !ped.Exists() || ped.IsDead) return false;
             if (scene.Kind == SceneThreatKind.SocialWarning && s.Stage < AwarenessStage.Concerned) return false;
-
-            // Player-originating scene events are already handled by the richer
-            // player perception/decision pipeline. This branch is for the rest
-            // of the world: other peds, traffic, bodies, fire and explosions.
             if (scene.SourceHandle == player.Handle) return false;
 
             int now = Game.GameTime;
-            bool emergency = scene.Immediate || scene.Kind == SceneThreatKind.VehicleHazard || scene.Kind == SceneThreatKind.Explosion;
-            if (!emergency && now < s.DecisionUntil) return true;
-            if (!emergency && now - s.LastDecisionAt < cfg.SceneDecisionCooldownMs) return true;
+            bool hardEmergency = scene.Immediate || scene.Kind == SceneThreatKind.Explosion;
+
+            if (now < s.DecisionUntil)
+            {
+                if (!hardEmergency || IsCommittedSceneMode(s.Mode)) return true;
+                if (now - s.LastEmergencyReplanAt < cfg.EmergencyReplanMinMs) return true;
+                s.LastEmergencyReplanAt = now;
+            }
+            else if (!hardEmergency && now - s.LastDecisionAt < cfg.SceneDecisionCooldownMs) return true;
 
             ReactionMode old = s.Mode;
             switch (scene.Kind)
@@ -85,7 +87,7 @@ namespace VOX.PedOverhaulVI
                 FleeFromCoord(ped, scene.Position, cfg, true);
             }
             s.Mode = ReactionMode.Evade;
-            Stamp(s, scene.Immediate ? 1200 : 2100);
+            Stamp(s, cfg, scene.Immediate ? 1200 : 2100);
         }
 
         private static void ReactGunfire(Ped ped, PedState s, ScenePerception scene, Config cfg)
@@ -106,7 +108,7 @@ namespace VOX.PedOverhaulVI
             {
                 LookAtSource(ped, scene, 900 + s.Roll(203) * 9);
                 s.Mode = ReactionMode.Watch;
-                Stamp(s, 1200);
+                Stamp(s, cfg, 1200);
                 return;
             }
 
@@ -117,7 +119,7 @@ namespace VOX.PedOverhaulVI
             }
             FleeFromCoord(ped, scene.Position, cfg, true);
             s.Mode = ReactionMode.Flee;
-            Stamp(s, 2600);
+            Stamp(s, cfg, 2600);
         }
 
         private static void ReactFight(Ped ped, PedState s, ScenePerception scene, IList<Ped> nearby, IDictionary<int, PedState> states, Config cfg)
@@ -126,19 +128,18 @@ namespace VOX.PedOverhaulVI
             {
                 LookAtSource(ped, scene, 800 + s.Roll(211) * 10);
                 s.Mode = ReactionMode.Watch;
-                Stamp(s, 1100);
+                Stamp(s, cfg, 1100);
                 return;
             }
 
             if (cfg.BystanderInterventionEnabled && s.Archetype == PedArchetype.Protective && s.Bravery >= cfg.InterventionMinBravery && s.Aggression < 65 && scene.Severity <= cfg.InterventionMaxThreatSeverity && scene.Distance <= cfg.InterventionMaxDistance)
             {
-                // Move near the incident, not into the attacker's collision capsule.
                 Vector3 away = SafeDirection(scene.Position, ped.Position);
                 Vector3 target = scene.Position + away * 4.5f;
                 try { Function.Call(Hash.TASK_FOLLOW_NAV_MESH_TO_COORD, ped.Handle, target.X, target.Y, target.Z, 1.2f, 3500, 1.5f, 0, 0f); }
                 catch { }
                 s.Mode = ReactionMode.Assist;
-                Stamp(s, 2600);
+                Stamp(s, cfg, 2600);
                 return;
             }
 
@@ -146,7 +147,7 @@ namespace VOX.PedOverhaulVI
             {
                 StartScenario(ped, "WORLD_HUMAN_MOBILE_FILM_SHOCKING");
                 s.Mode = ReactionMode.Film;
-                Stamp(s, 3500);
+                Stamp(s, cfg, 3500);
                 return;
             }
 
@@ -159,7 +160,7 @@ namespace VOX.PedOverhaulVI
             {
                 LookAtSource(ped, scene, 650 + s.Roll(221) * 8);
                 s.Mode = ReactionMode.Glance;
-                Stamp(s, 900);
+                Stamp(s, cfg, 900);
                 return;
             }
 
@@ -176,7 +177,7 @@ namespace VOX.PedOverhaulVI
             }
             FleeFromCoord(ped, scene.Position, cfg, false);
             s.Mode = ReactionMode.Flee;
-            Stamp(s, 2400);
+            Stamp(s, cfg, 2400);
         }
 
         private static void ReactBody(Ped ped, PedState s, ScenePerception scene, Config cfg)
@@ -185,7 +186,7 @@ namespace VOX.PedOverhaulVI
             {
                 LookAtSource(ped, scene, 1000 + s.Roll(231) * 10);
                 s.Mode = ReactionMode.Investigate;
-                Stamp(s, 1700);
+                Stamp(s, cfg, 1700);
                 return;
             }
 
@@ -193,7 +194,7 @@ namespace VOX.PedOverhaulVI
             {
                 StartScenario(ped, "WORLD_HUMAN_STAND_MOBILE");
                 s.Mode = ReactionMode.Phone;
-                Stamp(s, 3600);
+                Stamp(s, cfg, 3600);
                 return;
             }
             DiscreetLeaveFromCoord(ped, s, scene.Position, cfg, 0.85f);
@@ -205,7 +206,7 @@ namespace VOX.PedOverhaulVI
             {
                 FleeFromCoord(ped, scene.Position, cfg, true);
                 s.Mode = ReactionMode.Flee;
-                Stamp(s, 2800);
+                Stamp(s, cfg, 2800);
                 return;
             }
             DiscreetLeaveFromCoord(ped, s, scene.Position, cfg, 1.2f);
@@ -220,7 +221,7 @@ namespace VOX.PedOverhaulVI
             }
             FleeFromCoord(ped, scene.Position, cfg, true);
             s.Mode = ReactionMode.Flee;
-            Stamp(s, 3200);
+            Stamp(s, cfg, 3200);
         }
 
         private static void ReactSocial(Ped ped, PedState s, ScenePerception scene, Config cfg)
@@ -229,7 +230,7 @@ namespace VOX.PedOverhaulVI
             {
                 if (scene.SourceHandle > 0) LookAtSource(ped, scene, 650 + s.Roll(251) * 7);
                 s.Mode = ReactionMode.Glance;
-                Stamp(s, 900);
+                Stamp(s, cfg, 900);
                 return;
             }
 
@@ -240,7 +241,7 @@ namespace VOX.PedOverhaulVI
             }
             FleeFromCoord(ped, scene.Position, cfg, false);
             s.Mode = ReactionMode.Flee;
-            Stamp(s, 2400);
+            Stamp(s, cfg, 2400);
         }
 
         private static void DiscreetLeaveFromCoord(Ped ped, PedState s, Vector3 threat, Config cfg, float urgency)
@@ -253,7 +254,7 @@ namespace VOX.PedOverhaulVI
             catch { }
             s.Mode = ReactionMode.DiscreetLeave;
             s.LastSafeDirection = away;
-            Stamp(s, 2800);
+            Stamp(s, cfg, 2800);
         }
 
         private static void FleeFromCoord(Ped ped, Vector3 threat, Config cfg, bool urgent)
@@ -273,7 +274,7 @@ namespace VOX.PedOverhaulVI
             try { Function.Call(Hash.TASK_SEEK_COVER_FROM_POS, ped.Handle, threat.X, threat.Y, threat.Z, 6500, false); }
             catch { FleeFromCoord(ped, threat, cfg, false); }
             s.Mode = ReactionMode.Cover;
-            Stamp(s, 3200);
+            Stamp(s, cfg, 3200);
         }
 
         private static void Freeze(Ped ped, PedState s, Config cfg, int min, int max)
@@ -282,7 +283,7 @@ namespace VOX.PedOverhaulVI
             try { Function.Call(Hash.TASK_STAND_STILL, ped.Handle, duration); }
             catch { }
             s.Mode = ReactionMode.Freeze;
-            Stamp(s, duration);
+            Stamp(s, cfg, duration);
         }
 
         private static void LookAtSource(Ped ped, ScenePerception scene, int duration)
@@ -311,10 +312,25 @@ namespace VOX.PedOverhaulVI
             return new Vector3(d.X / len, d.Y / len, 0f);
         }
 
-        private static void Stamp(PedState s, int hold)
+        private static void Stamp(PedState s, Config cfg, int hold)
         {
-            s.LastDecisionAt = Game.GameTime;
-            s.DecisionUntil = Game.GameTime + Math.Max(300, hold);
+            int now = Game.GameTime;
+            int finalHold = Math.Max(300, hold);
+            if (IsCommittedSceneMode(s.Mode))
+            {
+                int span = Math.Max(0, cfg.SurvivalCommitmentMaxMs - cfg.SurvivalCommitmentMinMs);
+                int commitment = cfg.SurvivalCommitmentMinMs + (int)(span * s.Roll01(421 + (int)s.Mode));
+                finalHold = Math.Max(finalHold, commitment);
+            }
+            s.LastDecisionAt = now;
+            s.DecisionUntil = now + finalHold;
+        }
+
+        private static bool IsCommittedSceneMode(ReactionMode mode)
+        {
+            return mode == ReactionMode.Evade || mode == ReactionMode.Freeze || mode == ReactionMode.Cower ||
+                   mode == ReactionMode.Flee || mode == ReactionMode.Cover || mode == ReactionMode.Surrender ||
+                   mode == ReactionMode.Combat || mode == ReactionMode.DriveAway;
         }
     }
 }
