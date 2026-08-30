@@ -1,5 +1,6 @@
 using GTA;
 using GTA.Math;
+using GTA.Native;
 using System;
 
 namespace VOX.PedOverhaulVI
@@ -29,7 +30,11 @@ namespace VOX.PedOverhaulVI
         Cover = 10,
         Confront = 11,
         Combat = 12,
-        Surrender = 13
+        Surrender = 13,
+        Investigate = 14,
+        Evade = 15,
+        Assist = 16,
+        DriveAway = 17
     }
 
     internal enum PedArchetype
@@ -47,8 +52,8 @@ namespace VOX.PedOverhaulVI
     {
         public int Handle;
         public int ModelHash;
+        public int GroupId = -1;
 
-        // Stable personality for this streamed ped.
         public int Bravery;
         public int Curiosity;
         public int Aggression;
@@ -58,13 +63,10 @@ namespace VOX.PedOverhaulVI
         public int Empathy;
         public PedArchetype Archetype;
 
-        // Combat morale is separate from civilian threat appraisal.
         public float Morale = 100f;
         public int LastHealth;
         public bool NearbyDeathCounted;
 
-        // Cognitive scene model. These are intentionally continuous values so
-        // one stimulus does not map directly to one canned animation.
         public float Attention;
         public float Suspicion;
         public float Certainty;
@@ -82,6 +84,20 @@ namespace VOX.PedOverhaulVI
         public bool SawCrowdPanic;
         public bool SawQuietWithdrawal;
 
+        // Multi-source scene memory. These are deliberately independent from
+        // the player-specific observations above.
+        public SceneThreatKind SceneThreatKind;
+        public int ThreatSourceHandle;
+        public float ExternalThreatConfidence;
+        public bool SawExternalFight;
+        public bool SawExternalWeapon;
+        public bool HeardExternalGunfire;
+        public bool SawFire;
+        public bool HeardExplosion;
+        public bool SawVehicleHazard;
+        public float VehicleHazardTtc = 99f;
+        public int LastSceneEventAt;
+
         public Vector3 LastThreatPosition;
         public Vector3 LastSafeDirection;
 
@@ -96,8 +112,6 @@ namespace VOX.PedOverhaulVI
         public int DecisionUntil;
         public int LastLookAt;
 
-        // Used so social behaviour can spread information instead of merely
-        // copying an animation from the nearest frightened pedestrian.
         public float SocialThreatConfidence;
         public int SocialSourceHandle;
 
@@ -112,11 +126,15 @@ namespace VOX.PedOverhaulVI
             int preservation = Range(r, cfg.MinSelfPreservation, cfg.MaxSelfPreservation);
             int conformity = Range(r, cfg.MinConformity, cfg.MaxConformity);
             int empathy = Range(r, cfg.MinEmpathy, cfg.MaxEmpathy);
+            int group = -1;
+            try { group = Function.Call<int>(Hash.GET_PED_GROUP_INDEX, ped.Handle); }
+            catch { }
 
             return new PedState
             {
                 Handle = ped.Handle,
                 ModelHash = ped.Model.Hash,
+                GroupId = group,
                 Bravery = bravery,
                 Curiosity = curiosity,
                 Aggression = aggression,
@@ -140,6 +158,7 @@ namespace VOX.PedOverhaulVI
             Certainty = Clamp(Certainty - cfg.CertaintyDecayPerSecond * cfg.TickIntervalMs / 1000f * calmScale);
             Fear = Clamp(Fear - cfg.FearDecayPerSecond * cfg.TickIntervalMs / 1000f * calmScale);
             SocialThreatConfidence = Clamp(SocialThreatConfidence - 3f * cfg.TickIntervalMs / 1000f);
+            ExternalThreatConfidence = Clamp(ExternalThreatConfidence - cfg.ExternalConfidenceDecayPerSecond * cfg.TickIntervalMs / 1000f);
 
             if (now - LastGunshotAt > cfg.SensoryMemoryMs) HeardGunshot = false;
             if (now - LastBodySeenAt > cfg.SensoryMemoryMs) SawBody = false;
@@ -154,6 +173,19 @@ namespace VOX.PedOverhaulVI
                 SawWeapon = false;
                 SawMask = false;
                 WasDirectlyAimedAt = false;
+            }
+            if (now - LastSceneEventAt > cfg.SceneEventMemoryMs)
+            {
+                SceneThreatKind = SceneThreatKind.None;
+                ThreatSourceHandle = 0;
+                SawExternalFight = false;
+                SawExternalWeapon = false;
+                HeardExternalGunfire = false;
+                SawFire = false;
+                HeardExplosion = false;
+                SawVehicleHazard = false;
+                VehicleHazardTtc = 99f;
+                ExternalThreatConfidence = 0f;
             }
         }
 
