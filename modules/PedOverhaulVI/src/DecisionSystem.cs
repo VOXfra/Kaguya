@@ -26,9 +26,21 @@ namespace VOX.PedOverhaulVI
                 return;
             }
 
-            bool emergency = frame.DirectlyAimedAt || frame.SeesShooting || (s.Stage == AwarenessStage.Panic && s.Fear > 90f);
-            if (!emergency && now < s.DecisionUntil) return;
-            if (!emergency && !DecisionReady(s, cfg, now)) return;
+            if (DistractionRuntime.ShouldDelayDecision(s, frame, cfg, now)) return;
+
+            bool hardEmergency = frame.DirectlyAimedAt || frame.SeesShooting;
+
+            // A decision is a commitment, not a new dice roll every tick. Only a
+            // newly explicit emergency may interrupt a low-level action such as
+            // watching/filming/leaving quietly. Once a survival action starts,
+            // let the ped actually perform it for a believable amount of time.
+            if (now < s.DecisionUntil)
+            {
+                if (!hardEmergency || IsCommittedSurvivalMode(s.Mode)) return;
+                if (now - s.LastEmergencyReplanAt < cfg.EmergencyReplanMinMs) return;
+                s.LastEmergencyReplanAt = now;
+            }
+            else if (!hardEmergency && !DecisionReady(s, cfg, now)) return;
 
             ReactionMode old = s.Mode;
             switch (s.Stage)
@@ -90,8 +102,6 @@ namespace VOX.PedOverhaulVI
 
         private static void DecideSuspicious(Ped player, Ped ped, PedState s, PerceptionFrame f, IList<Ped> nearby, IDictionary<int, PedState> states, Config cfg)
         {
-            // A masked armed person is not yet the same as active gunfire. Most
-            // people first check what they saw, then quietly create distance.
             bool suspiciousCrimeSetup = s.SawWeapon && (s.SawMask || s.Certainty >= 36f);
             bool socialExit = s.SawQuietWithdrawal && s.Conformity >= 45;
 
@@ -133,8 +143,6 @@ namespace VOX.PedOverhaulVI
 
             if (s.Archetype == PedArchetype.Protective && TryAlertNearby(ped, s, nearby, states, cfg)) return;
 
-            // Curious people may film only after they believe the danger is real
-            // and only from a distance. They do not film while being threatened.
             if (cfg.FilmFromDistance && s.Curiosity >= cfg.FilmCuriosityThreshold && s.Bravery >= 42 && distance >= cfg.FilmMinDistance && distance <= cfg.FilmMaxDistance && s.Fear < 54f && s.Roll(Game.GameTime / 1700 + 3) < Math.Min(72, s.Curiosity - 8))
             {
                 StartScenario(ped, "WORLD_HUMAN_MOBILE_FILM_SHOCKING");
@@ -143,7 +151,6 @@ namespace VOX.PedOverhaulVI
                 return;
             }
 
-            // Phone use means "I think this is serious and I am far enough away".
             if (cfg.PhoneWhenSafe && s.Certainty >= cfg.PhoneMinCertainty && distance > 28f && s.Fear < 60f && s.Archetype != PedArchetype.Detached && s.Roll(Game.GameTime / 2100 + 17) < 38 + s.Alertness / 4)
             {
                 StartScenario(ped, "WORLD_HUMAN_STAND_MOBILE");
@@ -167,8 +174,6 @@ namespace VOX.PedOverhaulVI
         {
             if (TryVehicleEscape(player, ped, s, cfg)) return;
 
-            // A weapon aimed directly at the ped is treated as coercion before
-            // it is treated as a generic gunfight. Compliance is often safer.
             if (f.DirectlyAimedAt && f.DistanceToPlayer < 26f)
             {
                 int comply = 40 + s.SelfPreservation / 2 - s.Bravery / 3 - s.Aggression / 4;
@@ -182,8 +187,6 @@ namespace VOX.PedOverhaulVI
                 }
             }
 
-            // Hearing shots without locating the shooter produces hesitation,
-            // cover-seeking or movement away from the sound instead of a perfect flee vector.
             if (f.HearsGunshot && !f.ThreatSourceKnown && !f.SeesShooting)
             {
                 if (cfg.SeekCoverWhenThreatened && s.SelfPreservation >= 48 && s.Roll(Game.GameTime / 900 + 41) < 58)
@@ -201,8 +204,6 @@ namespace VOX.PedOverhaulVI
                 return;
             }
 
-            // Bold/curious pedestrians may still watch from safety for a moment,
-            // but an armed threat progressively pushes them out of the area.
             if ((s.Archetype == PedArchetype.Bold || s.Archetype == PedArchetype.Curious) && f.DistanceToPlayer > 38f && s.Fear < 52f)
             {
                 LookAt(ped, player, 1300 + s.Roll(43) * 10);
@@ -228,7 +229,7 @@ namespace VOX.PedOverhaulVI
             int freezeBias = 24 + (100 - s.Alertness) / 3 + (panic ? -8 : 10);
             int roll = s.Roll(Game.GameTime / 650 + 59);
 
-            if (!f.DirectlyAimedAt && roll < Math.Max(6, freezeBias) && s.Mode != ReactionMode.Freeze)
+            if (!f.DirectlyAimedAt && roll < Math.Max(6, freezeBias))
             {
                 Freeze(ped, s, cfg);
                 return;
@@ -263,6 +264,7 @@ namespace VOX.PedOverhaulVI
 
             if (s.Stage >= AwarenessStage.ThreatConfirmed && s.Morale > cfg.MoraleBreakThreshold)
             {
+                if (Game.GameTime < s.DecisionUntil) return;
                 if (s.Bravery < 35 && s.Fear > 65f)
                 {
                     Flee(player, ped, s, cfg);
@@ -282,6 +284,7 @@ namespace VOX.PedOverhaulVI
 
         private static void BreakMorale(Ped player, Ped ped, PedState s, Config cfg, Action<string> log)
         {
+            if (Game.GameTime < s.DecisionUntil && IsCommittedSurvivalMode(s.Mode)) return;
             int surrenderChance = cfg.SurrenderBaseChance + (45 - s.Aggression) / 2 + (40 - s.Bravery) / 3 + s.SelfPreservation / 5;
             bool surrender = s.Roll(Game.GameTime / 1000 + 79) < Math.Max(10, Math.Min(92, surrenderChance));
             try
@@ -298,8 +301,7 @@ namespace VOX.PedOverhaulVI
                 }
             }
             catch { }
-            s.LastDecisionAt = Game.GameTime;
-            s.DecisionUntil = Game.GameTime + 3500;
+            StampDecision(s, cfg, 3500);
             if (log != null) log("Hostile ped " + s.Handle + " morale broke; response=" + s.Mode + ".");
         }
 
@@ -405,7 +407,7 @@ namespace VOX.PedOverhaulVI
             try
             {
                 Function.Call(Hash.TASK_VEHICLE_DRIVE_WANDER, ped.Handle, v.Handle, 24f, 786603);
-                s.Mode = ReactionMode.Flee;
+                s.Mode = ReactionMode.DriveAway;
                 StampDecision(s, cfg, 5000);
                 return true;
             }
@@ -440,8 +442,23 @@ namespace VOX.PedOverhaulVI
 
         private static void StampDecision(PedState s, Config cfg, int lockMs)
         {
-            s.LastDecisionAt = Game.GameTime;
-            s.DecisionUntil = Game.GameTime + Math.Max(150, lockMs);
+            int now = Game.GameTime;
+            int hold = Math.Max(150, lockMs);
+            if (IsCommittedSurvivalMode(s.Mode))
+            {
+                int span = Math.Max(0, cfg.SurvivalCommitmentMaxMs - cfg.SurvivalCommitmentMinMs);
+                int commitment = cfg.SurvivalCommitmentMinMs + (int)(span * s.Roll01(353 + (int)s.Mode));
+                hold = Math.Max(hold, commitment);
+            }
+            s.LastDecisionAt = now;
+            s.DecisionUntil = now + hold;
+        }
+
+        private static bool IsCommittedSurvivalMode(ReactionMode mode)
+        {
+            return mode == ReactionMode.Freeze || mode == ReactionMode.Cower || mode == ReactionMode.Flee ||
+                   mode == ReactionMode.Cover || mode == ReactionMode.Surrender || mode == ReactionMode.Combat ||
+                   mode == ReactionMode.DriveAway || mode == ReactionMode.Evade;
         }
 
         private static void ResumeAmbient(Ped ped, PedState s)
@@ -462,6 +479,7 @@ namespace VOX.PedOverhaulVI
             s.Certainty = Math.Min(s.Certainty, 8f);
             s.Fear = Math.Min(s.Fear, 8f);
             s.DecisionUntil = 0;
+            s.FirstNoticedAt = 0;
         }
 
         private static bool HasNearbyDeadAlly(Ped ped, Ped player, IList<Ped> nearby, Config cfg)
