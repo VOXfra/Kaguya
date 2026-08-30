@@ -31,7 +31,7 @@ namespace VOX.PedOverhaulVI
             Tick += OnTick;
             Aborted += OnAborted;
             ProbeModules();
-            Log("Ped Overhaul VI 0.4.0 cognition-stability + distraction runtime loaded.");
+            Log("Ped Overhaul VI 0.4.1 cognition-hardening runtime loaded.");
         }
 
         private void OnTick(object sender, EventArgs e)
@@ -73,6 +73,7 @@ namespace VOX.PedOverhaulVI
                 _states[ped.Handle] = state;
             }
 
+            int now = Game.GameTime;
             AwarenessStage previousStage = state.Stage;
 
             // Ambient activity first: looking at a phone, talking to somebody,
@@ -82,12 +83,18 @@ namespace VOX.PedOverhaulVI
             // What this ped individually knows about the player.
             PerceptionFrame playerFrame = SituationModel.Sense(ped, player, _nearby, _states, _cfg);
             DistractionRuntime.ApplyToPerception(ped, state, playerFrame, _cfg);
-            SituationModel.UpdateCognition(state, playerFrame, _cfg, Game.GameTime);
+            SituationModel.UpdateCognition(state, playerFrame, _cfg, now);
 
-            // What is happening in the rest of the scene.
+            // What is happening in the rest of the scene. Scene cognition is
+            // deliberately pulsed more slowly than sensory sampling: repeatedly
+            // seeing the same body/weapon is one continuing fact, not a new shock
+            // every time this ped is processed.
             ScenePerception scene = _sceneRuntime.Sense(ped, state, _nearby, _states, _cfg);
             DistractionRuntime.ApplyToScenePerception(state, scene, _cfg);
-            _sceneRuntime.ApplyCognition(state, scene, _cfg, Game.GameTime);
+            if (ShouldApplySceneCognition(state, scene, now))
+                _sceneRuntime.ApplyCognition(state, scene, _cfg, now);
+
+            StabilizeCognition(state, playerFrame, scene);
 
             if (previousStage != state.Stage && _cfg.LogStateTransitions)
             {
@@ -99,9 +106,130 @@ namespace VOX.PedOverhaulVI
 
             DecisionSystem.UpdateMorale(player, ped, state, _nearby, _cfg, Log);
 
-            bool sceneHandled = SceneDecisionSystem.TryUpdate(player, ped, state, scene, _nearby, _states, _cfg, Log);
+            // A corpse or other low-mobility cue must never make a panicking ped
+            // abandon an already committed cover/flee/cower strategy for a calm
+            // walk-away task after its first commitment window expires.
+            bool sceneHandled = PreservePanicSurvivalAction(state, scene);
             if (!sceneHandled)
+                sceneHandled = SceneDecisionSystem.TryUpdate(player, ped, state, scene, _nearby, _states, _cfg, Log);
+
+            // Pure line-of-sight to the player is latent attention, not an order
+            // to turn every passer-by's head. Salient cues still use the normal
+            // player-centric decision system.
+            if (!sceneHandled && !IsPureAmbientNotice(state, playerFrame, scene))
                 DecisionSystem.Update(player, ped, state, playerFrame, _nearby, _states, _cfg, Log);
+        }
+
+        private bool ShouldApplySceneCognition(PedState state, ScenePerception scene, int now)
+        {
+            if (state == null || scene == null || !scene.HasThreat) return false;
+            int interval;
+            switch (scene.Kind)
+            {
+                case SceneThreatKind.VehicleHazard: interval = 350; break;
+                case SceneThreatKind.Explosion: interval = 450; break;
+                case SceneThreatKind.Gunfire: interval = 550; break;
+                case SceneThreatKind.Fire: interval = 650; break;
+                case SceneThreatKind.Fight: interval = 800; break;
+                case SceneThreatKind.VisibleWeapon: interval = 950; break;
+                case SceneThreatKind.Body: interval = 1400; break;
+                case SceneThreatKind.CrowdFlight:
+                case SceneThreatKind.SocialWarning: interval = 1200; break;
+                default: interval = 1000; break;
+            }
+
+            if (state.LastSceneEventAt <= 0) return true;
+            int elapsed = now - state.LastSceneEventAt;
+            if (elapsed >= interval) return true;
+            if (scene.Immediate && elapsed >= Math.Min(interval, Math.Max(300, _cfg.EmergencyReplanMinMs))) return true;
+            return false;
+        }
+
+        private void StabilizeCognition(PedState state, PerceptionFrame frame, ScenePerception scene)
+        {
+            if (state == null || frame == null) return;
+            bool hasScene = scene != null && scene.HasThreat;
+            bool recentViolentContext = state.SawViolence || state.HeardGunshot || state.HeardExternalGunfire ||
+                                        state.WasDirectlyAimedAt || state.HeardExplosion || state.SawFire || state.SawVehicleHazard;
+            bool recentHardContext = recentViolentContext || state.SawWeapon || state.SawExternalWeapon;
+
+            // A mask is noteworthy context but not evidence of an imminent crime.
+            // Keep a small attention/recognition trace without allowing repeated
+            // observations of a mask alone to become Concerned/ThreatConfirmed.
+            bool maskOnly = frame.SeesMask && !frame.SeesWeapon && !frame.DirectlyAimedAt &&
+                            !frame.SeesShooting && !frame.HearsGunshot && !frame.SeesBody &&
+                            !frame.CrowdPanic && !frame.QuietWithdrawal && !frame.HostileRelationship &&
+                            !hasScene && !recentHardContext;
+            if (maskOnly)
+            {
+                state.Suspicion = Math.Min(state.Suspicion, 6f);
+                state.Certainty = Math.Min(state.Certainty, 8f);
+                state.Fear = Math.Min(state.Fear, 4f);
+            }
+
+            if (hasScene)
+            {
+                // A body can strongly concern a witness, but a static body by
+                // itself does not prove that an active killer is still present.
+                if (scene.Kind == SceneThreatKind.Body && !recentHardContext)
+                {
+                    state.Certainty = Math.Min(state.Certainty, _cfg.ThreatConfirmedThreshold - 5f);
+                    state.Fear = Math.Min(state.Fear, _cfg.PanicThreshold - 10f);
+                }
+
+                // Seeing an armed person who is not currently firing is a real
+                // threat and may justify cover/leaving, but not automatic panic.
+                if (scene.Kind == SceneThreatKind.VisibleWeapon && !recentViolentContext)
+                    state.Fear = Math.Min(state.Fear, _cfg.PanicThreshold - 8f);
+            }
+
+            bool pureAmbient = !frame.HasAnyStimulus && !hasScene && !recentHardContext &&
+                               state.Suspicion < _cfg.NoticedThreshold &&
+                               state.Certainty < _cfg.NoticedThreshold &&
+                               state.Fear < _cfg.NoticedThreshold;
+            if (pureAmbient)
+            {
+                state.Attention = Math.Min(state.Attention, _cfg.NoticedThreshold - 2f);
+                state.Stage = AwarenessStage.Unaware;
+                return;
+            }
+
+            // Re-evaluate after the safety caps above. This deliberately replaces
+            // impossible states such as Panic with certainty/fear below its own
+            // threshold while preserving genuine threat memory.
+            state.Stage = SituationModel.DetermineStage(state, _cfg);
+        }
+
+        private static bool PreservePanicSurvivalAction(PedState state, ScenePerception scene)
+        {
+            if (state == null || scene == null || !scene.HasThreat || state.Stage != AwarenessStage.Panic) return false;
+            if (scene.Kind != SceneThreatKind.Body) return false;
+            switch (state.Mode)
+            {
+                case ReactionMode.Freeze:
+                case ReactionMode.Cower:
+                case ReactionMode.Flee:
+                case ReactionMode.Cover:
+                case ReactionMode.Surrender:
+                case ReactionMode.Combat:
+                case ReactionMode.Evade:
+                case ReactionMode.DriveAway:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        private static bool IsPureAmbientNotice(PedState state, PerceptionFrame frame, ScenePerception scene)
+        {
+            if (state == null || frame == null) return false;
+            if (state.Stage != AwarenessStage.Noticed && state.Stage != AwarenessStage.Unaware) return false;
+            if (frame.HasAnyStimulus) return false;
+            if (scene != null && scene.HasThreat) return false;
+            if (state.SawWeapon || state.SawViolence || state.HeardGunshot || state.WasDirectlyAimedAt ||
+                state.SawExternalWeapon || state.HeardExternalGunfire || state.SawFire || state.HeardExplosion || state.SawVehicleHazard)
+                return false;
+            return state.Suspicion < 12f && state.Certainty < 12f && state.Fear < 12f;
         }
 
         private bool ShouldYieldToMission()
