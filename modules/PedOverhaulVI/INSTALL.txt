@@ -1,4 +1,4 @@
-PED OVERHAUL VI — V0.1.0
+PED OVERHAUL VI — V0.2.0
 
 TARGET
 - GTA V Enhanced Story Mode
@@ -16,14 +16,22 @@ MODULARITY
 - If Police Overhaul VI is loaded, it owns law-enforcement peds while Ped Overhaul VI handles civilians/gangs/ambient NPCs.
 - If Police Overhaul VI is absent, Ped Overhaul VI still runs its ambient NPC systems.
 
-V0.1 FOCUS
-- persistent per-ped personality during the session
-- local sight/hearing awareness instead of global reactions
-- differentiated flee/cower/observe/film reactions
-- combat morale, retreat and surrender for hostile non-law NPCs
-- nearby-death / injury morale effects
-- panic propagation through crowds
-- recovery back toward ambient behavior after danger
-- mission/cutscene safety and strict processing budget
+V0.2 SITUATIONAL-AWARENESS PASS
+- continuous attention / suspicion / certainty / fear model per ped
+- central vs peripheral visual perception and physical line-of-sight
+- separate recognition of mask, visible weapon, direct aiming, visible shooting and heard gunshots
+- approximate sound-source knowledge when a shot is heard but the shooter is not seen
+- dead-body awareness and persistent short-term sensory memory
+- stable personality traits: bravery, curiosity, aggression, alertness, self-preservation, conformity and empathy
+- personality archetypes derived from those traits rather than one global reaction table
+- pre-panic behaviours: glance, watch, discreet withdrawal, quietly alert a nearby person, phone use and filming from safety
+- mask + visible weapon can trigger a look -> understand -> quietly leave sequence without gunfire
+- gunshots no longer imply automatic flee; an uncertain ped can freeze, seek cover, wait for more information or follow social cues
+- direct gunpoint can produce compliance/hands-up rather than generic panic
+- drivers can attempt to leave the area in their vehicle
+- crowd panic and discreet withdrawal spread information with different strengths; nearby peds do not simply clone each other's task
+- hostile NPC morale, cover, retreat and surrender remain separate from civilian fear logic
+- recovery is delayed by memory instead of immediately resetting when the stimulus disappears
+- mission/cutscene safety and bounded local processing budget
 
 No vanilla archive is replaced.
