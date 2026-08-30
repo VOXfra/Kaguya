@@ -47,8 +47,12 @@ namespace VOX.PedOverhaulVI
         public float ExternalConfidenceDecayPerSecond = 2.0f;
         public int DecisionCooldownMinMs = 650;
         public int DecisionCooldownMaxMs = 2100;
+        public int EmergencyReplanMinMs = 650;
+        public int SurvivalCommitmentMinMs = 2600;
+        public int SurvivalCommitmentMaxMs = 5200;
+        public int StageDowngradeHoldMs = 1800;
 
-        public float MaskSuspicion = 7f;
+        public float MaskSuspicion = 0f;
         public float VisibleWeaponSuspicion = 28f;
         public float MaskWeaponCombinationBonus = 23f;
         public float DirectAimThreat = 68f;
@@ -76,21 +80,21 @@ namespace VOX.PedOverhaulVI
         public float FightSuspicion = 22f;
         public float ExternalWeaponSuspicion = 34f;
         public float ExternalBodySuspicion = 38f;
-        public float CrowdFlightSuspicion = 18f;
-        public float DirectWarningSuspicion = 28f;
+        public float CrowdFlightSuspicion = 9f;
+        public float DirectWarningSuspicion = 24f;
         public float GroupCommunicationRadius = 8f;
         public float SameGroupInformationTrust = 0.80f;
-        public float StrangerWarningTrust = 0.46f;
-        public int SceneDecisionCooldownMs = 750;
-        public float SceneVehicleScanRadius = 90f;
-        public float VehicleHazardMinSpeedMps = 7.0f;
-        public float VehicleHazardVisualRadius = 48f;
-        public float VehicleHazardAudibleRadius = 22f;
-        public float VehicleHazardHorizonSeconds = 2.8f;
-        public float VehicleImmediateTtcSeconds = 1.15f;
-        public float VehicleCollisionMargin = 2.4f;
-        public float VehicleSidestepDistance = 2.2f;
-        public float VehicleEmergencySidestepDistance = 3.4f;
+        public float StrangerWarningTrust = 0.32f;
+        public int SceneDecisionCooldownMs = 900;
+        public float SceneVehicleScanRadius = 70f;
+        public float VehicleHazardMinSpeedMps = 6.0f;
+        public float VehicleHazardVisualRadius = 36f;
+        public float VehicleHazardAudibleRadius = 12f;
+        public float VehicleHazardHorizonSeconds = 1.6f;
+        public float VehicleImmediateTtcSeconds = 0.75f;
+        public float VehicleCollisionMargin = 1.45f;
+        public float VehicleSidestepDistance = 1.8f;
+        public float VehicleEmergencySidestepDistance = 3.0f;
         public bool ExplosionAwarenessEnabled = true;
         public float ExplosionDetectionRadius = 90f;
         public float ExplosionAwarenessRadius = 135f;
@@ -98,6 +102,23 @@ namespace VOX.PedOverhaulVI
         public int InterventionMinBravery = 58;
         public float InterventionMaxThreatSeverity = 52f;
         public float InterventionMaxDistance = 18f;
+
+        // Ambient activity changes perception instead of being cosmetic only.
+        public bool DistractionEnabled = true;
+        public bool LogDistractionTransitions = false;
+        public int DistractionProbeIntervalMs = 450;
+        public int DistractionRecognitionDelayMinMs = 350;
+        public int DistractionRecognitionDelayMaxMs = 1700;
+        public float DistractionCloseThreatOverrideDistance = 6.5f;
+        public float PhoneVisualAttentionScale = 0.38f;
+        public float PhoneHearingAttentionScale = 0.72f;
+        public float PhoneSocialAttentionScale = 0.46f;
+        public float FilmingVisualAttentionScale = 0.62f;
+        public float FilmingHearingAttentionScale = 0.82f;
+        public float ConversationVisualAttentionScale = 0.58f;
+        public float ConversationHearingAttentionScale = 0.64f;
+        public float AmbientActivityVisualAttentionScale = 0.78f;
+        public float AmbientActivityHearingAttentionScale = 0.90f;
 
         public int MinBravery = 8, MaxBravery = 95;
         public int MinCuriosity = 5, MaxCuriosity = 95;
@@ -155,11 +176,13 @@ namespace VOX.PedOverhaulVI
 
             c.CentralVisualFovDegrees=F(v,"Perception.CentralVisualFovDegrees",c.CentralVisualFovDegrees); c.PeripheralVisualFovDegrees=F(v,"Perception.PeripheralVisualFovDegrees",c.PeripheralVisualFovDegrees); c.ThreatVisualRadius=F(v,"Perception.ThreatVisualRadius",c.ThreatVisualRadius); c.WeaponRecognitionRadius=F(v,"Perception.WeaponRecognitionRadius",c.WeaponRecognitionRadius); c.MaskRecognitionRadius=F(v,"Perception.MaskRecognitionRadius",c.MaskRecognitionRadius); c.AimThreatRadius=F(v,"Perception.AimThreatRadius",c.AimThreatRadius); c.GunshotHearingRadius=F(v,"Perception.GunshotHearingRadius",c.GunshotHearingRadius); c.BodyAwarenessRadius=F(v,"Perception.BodyAwarenessRadius",c.BodyAwarenessRadius); c.SocialAwarenessRadius=F(v,"Perception.SocialAwarenessRadius",c.SocialAwarenessRadius); c.QuietWithdrawalAwarenessRadius=F(v,"Perception.QuietWithdrawalAwarenessRadius",c.QuietWithdrawalAwarenessRadius); c.SensoryMemoryMs=I(v,"Perception.SensoryMemoryMs",c.SensoryMemoryMs); c.MinimumLookMs=I(v,"Perception.MinimumLookMs",c.MinimumLookMs); c.MaximumLookMs=I(v,"Perception.MaximumLookMs",c.MaximumLookMs);
 
-            c.NoticedThreshold=F(v,"Cognition.NoticedThreshold",c.NoticedThreshold); c.SuspiciousThreshold=F(v,"Cognition.SuspiciousThreshold",c.SuspiciousThreshold); c.ConcernedThreshold=F(v,"Cognition.ConcernedThreshold",c.ConcernedThreshold); c.ThreatConfirmedThreshold=F(v,"Cognition.ThreatConfirmedThreshold",c.ThreatConfirmedThreshold); c.PanicThreshold=F(v,"Cognition.PanicThreshold",c.PanicThreshold); c.MemoryHoldMs=I(v,"Cognition.MemoryHoldMs",c.MemoryHoldMs); c.CalmAfterMs=I(v,"Cognition.CalmAfterMs",c.CalmAfterMs); c.AttentionDecayPerSecond=F(v,"Cognition.AttentionDecayPerSecond",c.AttentionDecayPerSecond); c.SuspicionDecayPerSecond=F(v,"Cognition.SuspicionDecayPerSecond",c.SuspicionDecayPerSecond); c.CertaintyDecayPerSecond=F(v,"Cognition.CertaintyDecayPerSecond",c.CertaintyDecayPerSecond); c.FearDecayPerSecond=F(v,"Cognition.FearDecayPerSecond",c.FearDecayPerSecond); c.ExternalConfidenceDecayPerSecond=F(v,"Cognition.ExternalConfidenceDecayPerSecond",c.ExternalConfidenceDecayPerSecond); c.DecisionCooldownMinMs=I(v,"Cognition.DecisionCooldownMinMs",c.DecisionCooldownMinMs); c.DecisionCooldownMaxMs=I(v,"Cognition.DecisionCooldownMaxMs",c.DecisionCooldownMaxMs);
+            c.NoticedThreshold=F(v,"Cognition.NoticedThreshold",c.NoticedThreshold); c.SuspiciousThreshold=F(v,"Cognition.SuspiciousThreshold",c.SuspiciousThreshold); c.ConcernedThreshold=F(v,"Cognition.ConcernedThreshold",c.ConcernedThreshold); c.ThreatConfirmedThreshold=F(v,"Cognition.ThreatConfirmedThreshold",c.ThreatConfirmedThreshold); c.PanicThreshold=F(v,"Cognition.PanicThreshold",c.PanicThreshold); c.MemoryHoldMs=I(v,"Cognition.MemoryHoldMs",c.MemoryHoldMs); c.CalmAfterMs=I(v,"Cognition.CalmAfterMs",c.CalmAfterMs); c.AttentionDecayPerSecond=F(v,"Cognition.AttentionDecayPerSecond",c.AttentionDecayPerSecond); c.SuspicionDecayPerSecond=F(v,"Cognition.SuspicionDecayPerSecond",c.SuspicionDecayPerSecond); c.CertaintyDecayPerSecond=F(v,"Cognition.CertaintyDecayPerSecond",c.CertaintyDecayPerSecond); c.FearDecayPerSecond=F(v,"Cognition.FearDecayPerSecond",c.FearDecayPerSecond); c.ExternalConfidenceDecayPerSecond=F(v,"Cognition.ExternalConfidenceDecayPerSecond",c.ExternalConfidenceDecayPerSecond); c.DecisionCooldownMinMs=I(v,"Cognition.DecisionCooldownMinMs",c.DecisionCooldownMinMs); c.DecisionCooldownMaxMs=I(v,"Cognition.DecisionCooldownMaxMs",c.DecisionCooldownMaxMs); c.EmergencyReplanMinMs=I(v,"Cognition.EmergencyReplanMinMs",c.EmergencyReplanMinMs); c.SurvivalCommitmentMinMs=I(v,"Cognition.SurvivalCommitmentMinMs",c.SurvivalCommitmentMinMs); c.SurvivalCommitmentMaxMs=I(v,"Cognition.SurvivalCommitmentMaxMs",c.SurvivalCommitmentMaxMs); c.StageDowngradeHoldMs=I(v,"Cognition.StageDowngradeHoldMs",c.StageDowngradeHoldMs);
 
             c.MaskSuspicion=F(v,"Stimuli.MaskSuspicion",c.MaskSuspicion); c.VisibleWeaponSuspicion=F(v,"Stimuli.VisibleWeaponSuspicion",c.VisibleWeaponSuspicion); c.MaskWeaponCombinationBonus=F(v,"Stimuli.MaskWeaponCombinationBonus",c.MaskWeaponCombinationBonus); c.DirectAimThreat=F(v,"Stimuli.DirectAimThreat",c.DirectAimThreat); c.VisibleShootingThreat=F(v,"Stimuli.VisibleShootingThreat",c.VisibleShootingThreat); c.HeardGunshotThreat=F(v,"Stimuli.HeardGunshotThreat",c.HeardGunshotThreat); c.DeadBodySuspicion=F(v,"Stimuli.DeadBodySuspicion",c.DeadBodySuspicion); c.CrowdPanicThreat=F(v,"Stimuli.CrowdPanicThreat",c.CrowdPanicThreat); c.QuietWithdrawalSuspicion=F(v,"Stimuli.QuietWithdrawalSuspicion",c.QuietWithdrawalSuspicion); c.HostileRelationshipSuspicion=F(v,"Stimuli.HostileRelationshipSuspicion",c.HostileRelationshipSuspicion);
 
             c.SceneAwarenessEnabled=B(v,"SceneAwareness.Enabled",c.SceneAwarenessEnabled); c.SceneScanIntervalMs=I(v,"SceneAwareness.ScanIntervalMs",c.SceneScanIntervalMs); c.SceneEventMemoryMs=I(v,"SceneAwareness.EventMemoryMs",c.SceneEventMemoryMs); c.MaxSceneEvents=I(v,"SceneAwareness.MaxEvents",c.MaxSceneEvents); c.MaxSceneVehicles=I(v,"SceneAwareness.MaxVehicles",c.MaxSceneVehicles); c.FightVisualRadius=F(v,"SceneAwareness.FightVisualRadius",c.FightVisualRadius); c.FightAudibleRadius=F(v,"SceneAwareness.FightAudibleRadius",c.FightAudibleRadius); c.ExternalWeaponVisualRadius=F(v,"SceneAwareness.ExternalWeaponVisualRadius",c.ExternalWeaponVisualRadius); c.ExternalGunfireVisualRadius=F(v,"SceneAwareness.ExternalGunfireVisualRadius",c.ExternalGunfireVisualRadius); c.ExternalGunfireAudibleRadius=F(v,"SceneAwareness.ExternalGunfireAudibleRadius",c.ExternalGunfireAudibleRadius); c.ExternalBodyVisualRadius=F(v,"SceneAwareness.ExternalBodyVisualRadius",c.ExternalBodyVisualRadius); c.FireAwarenessRadius=F(v,"SceneAwareness.FireAwarenessRadius",c.FireAwarenessRadius); c.FightSuspicion=F(v,"SceneAwareness.FightSuspicion",c.FightSuspicion); c.ExternalWeaponSuspicion=F(v,"SceneAwareness.ExternalWeaponSuspicion",c.ExternalWeaponSuspicion); c.ExternalBodySuspicion=F(v,"SceneAwareness.ExternalBodySuspicion",c.ExternalBodySuspicion); c.CrowdFlightSuspicion=F(v,"SceneAwareness.CrowdFlightSuspicion",c.CrowdFlightSuspicion); c.DirectWarningSuspicion=F(v,"SceneAwareness.DirectWarningSuspicion",c.DirectWarningSuspicion); c.GroupCommunicationRadius=F(v,"SceneAwareness.GroupCommunicationRadius",c.GroupCommunicationRadius); c.SameGroupInformationTrust=F(v,"SceneAwareness.SameGroupInformationTrust",c.SameGroupInformationTrust); c.StrangerWarningTrust=F(v,"SceneAwareness.StrangerWarningTrust",c.StrangerWarningTrust); c.SceneDecisionCooldownMs=I(v,"SceneAwareness.DecisionCooldownMs",c.SceneDecisionCooldownMs); c.SceneVehicleScanRadius=F(v,"SceneAwareness.VehicleScanRadius",c.SceneVehicleScanRadius); c.VehicleHazardMinSpeedMps=F(v,"SceneAwareness.VehicleHazardMinSpeedMps",c.VehicleHazardMinSpeedMps); c.VehicleHazardVisualRadius=F(v,"SceneAwareness.VehicleHazardVisualRadius",c.VehicleHazardVisualRadius); c.VehicleHazardAudibleRadius=F(v,"SceneAwareness.VehicleHazardAudibleRadius",c.VehicleHazardAudibleRadius); c.VehicleHazardHorizonSeconds=F(v,"SceneAwareness.VehicleHazardHorizonSeconds",c.VehicleHazardHorizonSeconds); c.VehicleImmediateTtcSeconds=F(v,"SceneAwareness.VehicleImmediateTtcSeconds",c.VehicleImmediateTtcSeconds); c.VehicleCollisionMargin=F(v,"SceneAwareness.VehicleCollisionMargin",c.VehicleCollisionMargin); c.VehicleSidestepDistance=F(v,"SceneAwareness.VehicleSidestepDistance",c.VehicleSidestepDistance); c.VehicleEmergencySidestepDistance=F(v,"SceneAwareness.VehicleEmergencySidestepDistance",c.VehicleEmergencySidestepDistance); c.ExplosionAwarenessEnabled=B(v,"SceneAwareness.ExplosionAwarenessEnabled",c.ExplosionAwarenessEnabled); c.ExplosionDetectionRadius=F(v,"SceneAwareness.ExplosionDetectionRadius",c.ExplosionDetectionRadius); c.ExplosionAwarenessRadius=F(v,"SceneAwareness.ExplosionAwarenessRadius",c.ExplosionAwarenessRadius); c.BystanderInterventionEnabled=B(v,"SceneAwareness.BystanderInterventionEnabled",c.BystanderInterventionEnabled); c.InterventionMinBravery=I(v,"SceneAwareness.InterventionMinBravery",c.InterventionMinBravery); c.InterventionMaxThreatSeverity=F(v,"SceneAwareness.InterventionMaxThreatSeverity",c.InterventionMaxThreatSeverity); c.InterventionMaxDistance=F(v,"SceneAwareness.InterventionMaxDistance",c.InterventionMaxDistance);
+
+            c.DistractionEnabled=B(v,"Distraction.Enabled",c.DistractionEnabled); c.LogDistractionTransitions=B(v,"Distraction.LogTransitions",c.LogDistractionTransitions); c.DistractionProbeIntervalMs=I(v,"Distraction.ProbeIntervalMs",c.DistractionProbeIntervalMs); c.DistractionRecognitionDelayMinMs=I(v,"Distraction.RecognitionDelayMinMs",c.DistractionRecognitionDelayMinMs); c.DistractionRecognitionDelayMaxMs=I(v,"Distraction.RecognitionDelayMaxMs",c.DistractionRecognitionDelayMaxMs); c.DistractionCloseThreatOverrideDistance=F(v,"Distraction.CloseThreatOverrideDistance",c.DistractionCloseThreatOverrideDistance); c.PhoneVisualAttentionScale=F(v,"Distraction.PhoneVisualAttentionScale",c.PhoneVisualAttentionScale); c.PhoneHearingAttentionScale=F(v,"Distraction.PhoneHearingAttentionScale",c.PhoneHearingAttentionScale); c.PhoneSocialAttentionScale=F(v,"Distraction.PhoneSocialAttentionScale",c.PhoneSocialAttentionScale); c.FilmingVisualAttentionScale=F(v,"Distraction.FilmingVisualAttentionScale",c.FilmingVisualAttentionScale); c.FilmingHearingAttentionScale=F(v,"Distraction.FilmingHearingAttentionScale",c.FilmingHearingAttentionScale); c.ConversationVisualAttentionScale=F(v,"Distraction.ConversationVisualAttentionScale",c.ConversationVisualAttentionScale); c.ConversationHearingAttentionScale=F(v,"Distraction.ConversationHearingAttentionScale",c.ConversationHearingAttentionScale); c.AmbientActivityVisualAttentionScale=F(v,"Distraction.AmbientActivityVisualAttentionScale",c.AmbientActivityVisualAttentionScale); c.AmbientActivityHearingAttentionScale=F(v,"Distraction.AmbientActivityHearingAttentionScale",c.AmbientActivityHearingAttentionScale);
 
             c.MinBravery=I(v,"Personality.MinBravery",c.MinBravery); c.MaxBravery=I(v,"Personality.MaxBravery",c.MaxBravery); c.MinCuriosity=I(v,"Personality.MinCuriosity",c.MinCuriosity); c.MaxCuriosity=I(v,"Personality.MaxCuriosity",c.MaxCuriosity); c.MinAggression=I(v,"Personality.MinAggression",c.MinAggression); c.MaxAggression=I(v,"Personality.MaxAggression",c.MaxAggression); c.MinAlertness=I(v,"Personality.MinAlertness",c.MinAlertness); c.MaxAlertness=I(v,"Personality.MaxAlertness",c.MaxAlertness); c.MinSelfPreservation=I(v,"Personality.MinSelfPreservation",c.MinSelfPreservation); c.MaxSelfPreservation=I(v,"Personality.MaxSelfPreservation",c.MaxSelfPreservation); c.MinConformity=I(v,"Personality.MinConformity",c.MinConformity); c.MaxConformity=I(v,"Personality.MaxConformity",c.MaxConformity); c.MinEmpathy=I(v,"Personality.MinEmpathy",c.MinEmpathy); c.MaxEmpathy=I(v,"Personality.MaxEmpathy",c.MaxEmpathy);
 
