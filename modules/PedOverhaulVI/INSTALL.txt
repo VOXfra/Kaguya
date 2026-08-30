@@ -1,4 +1,4 @@
-PED OVERHAUL VI — V0.3.1
+PED OVERHAUL VI — V0.4.0
 
 TARGET
 - GTA V Enhanced Story Mode
@@ -10,21 +10,33 @@ REQUIRES
 INSTALL
 1. Copy the contents of this package into the GTA V root directory.
 2. PedOverhaulVI.dll and PedOverhaulVI.ini must end up in GTA V\scripts\.
-3. When updating from 0.3.0, overwrite BOTH the DLL and INI; the 0.3.1 traffic tuning lives partly in the INI.
+3. When updating from an older version, overwrite BOTH the DLL and INI.
 
 MODULARITY
 - Police Overhaul VI is NOT required.
 - If Police Overhaul VI is loaded, it owns law-enforcement peds while Ped Overhaul VI handles civilians/gangs/ambient NPCs.
+- Vehicle occupants remain under Rockstar driving AI until the dedicated vehicle/world-life layer owns those behaviours.
 
-V0.3.1 VEHICLE / FALSE-POSITIVE HOTFIX
-- keeps the 0.3 shared scene-awareness runtime
-- vehicle occupants are no longer given pedestrian/navmesh/cower/flee tasks
-- ambient drivers and passengers stay under Rockstar vehicle AI for now instead of abandoning their cars because of a social/traffic cue
-- stale pedestrian states are removed when a ped enters a vehicle, preventing CrowdFlight propagation from a driver
-- vehicle-hazard trajectory thresholds are tightened so ordinary road traffic passing beside a pavement is much less likely to become a collision emergency
-- vehicle hazard look-ahead and audible radius are reduced; imminent direct collision paths still trigger pedestrian evasion
-- crowd-flight and stranger-warning confidence are reduced to prevent self-sustaining panic cascades
-- a mask alone no longer accumulates threat suspicion indefinitely; mask + weapon remains meaningful through the combination bonus
+V0.4 COGNITION STABILITY + DISTRACTION RUNTIME
+- fixes panic task thrashing: Freeze/Cover/Cower/Flee no longer replace one another every tick
+- survival decisions now have a configurable commitment window; only materially harder danger can interrupt low-level actions
+- explicit emergency replanning is rate-limited instead of bypassing every decision lock
+- cognition integrates the real elapsed time between observations instead of repeatedly applying a minimum evidence pulse
+- a visible held weapon can produce concern/confirmed threat and discreet withdrawal without automatically self-amplifying into maximum panic
+- mask detection now uses the actual mask component; ordinary head props are not automatically treated as face coverings
+- stage downgrades use hysteresis so awareness does not flicker around thresholds
+- phone/mobile scenarios are detected as genuine visual/social distraction
+- filming, conversation, eating/drinking and smoking are modeled as different distraction strengths
+- distracted peds can take longer to notice a low-key weapon, mask, body or crowd cue
+- direct aiming, visible shooting, imminent collision and other explicit danger can break through distraction
+- phone use reduces peripheral/visual attention much more than hearing; conversation competes with both
+- distraction also degrades confidence in shared-scene events instead of only player-centric perception
+- optional distraction transition logging can be enabled in the INI
+
+V0.3.1 SAFETY BASE
+- vehicle occupants are never assigned pedestrian flee/cower/navmesh tasks
+- vehicle-hazard thresholds are tightened for normal traffic
+- social panic propagation is damped
 
 V0.3 SHARED-SCENE-AWARENESS BASE
 - attention / suspicion / certainty / fear cognitive model
