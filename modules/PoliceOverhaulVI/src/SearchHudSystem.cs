@@ -11,6 +11,9 @@ namespace VOX.PoliceOverhaulVI
     internal sealed class SearchHudSystem
     {
         private const string UiDirectory = "scripts\\PoliceOverhaulVI\\UI";
+        // CaseMemory can persist for hours, but the player's visible search HUD
+        // must only represent a live/recent search. Evidence memory is internal.
+        private const int SearchPhaseLifetimeMs = 60000;
         private int _innerBlip;
         private int _outerBlip;
         private Vector3 _lastCenter;
@@ -21,13 +24,26 @@ namespace VOX.PoliceOverhaulVI
         private CustomSprite _star;
         private bool _spritesAttempted;
 
-        public void Update(Ped player, CaseMemory memory, int nativeWanted, Config cfg)
+        public void Update(Ped player, CaseMemory memory, int nativeWanted, Config cfg, bool encounterHudAllowed)
         {
-            if (!cfg.SearchHudEnabled || memory == null || (!memory.Active && !memory.WarrantActive))
+            if (!encounterHudAllowed || !cfg.SearchHudEnabled || memory == null || (!memory.Active && !memory.WarrantActive))
             {
                 ClearSearchCircles();
                 return;
             }
+
+            // Once the active wanted phase is over, only keep the VI-style
+            // search/evidence HUD for a bounded search window. A persistent
+            // police case or warrant must never mean persistent red icons.
+            if (nativeWanted == 0)
+            {
+                if (memory.LastWantedEndedAt <= 0 || Game.GameTime - memory.LastWantedEndedAt > SearchPhaseLifetimeMs)
+                {
+                    ClearSearchCircles();
+                    return;
+                }
+            }
+
             bool recentlyObserved = memory.LastObservedGameTime > 0 && Game.GameTime - memory.LastObservedGameTime < cfg.SearchCircleObservationGraceMs;
             bool shouldShowCircles = cfg.ShowSearchCircles && (nativeWanted == 0 || !recentlyObserved);
             if (shouldShowCircles) EnsureCircles(memory.LastKnownPosition, Math.Max(1, memory.ThreatLevel), cfg); else ClearSearchCircles();
@@ -62,6 +78,7 @@ namespace VOX.PoliceOverhaulVI
             DeleteBlip(ref _innerBlip);
             DeleteBlip(ref _outerBlip);
             _lastThreat = 0;
+            _lastCenter = Vector3.Zero;
         }
 
         private static void DeleteBlip(ref int handle)
