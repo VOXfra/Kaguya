@@ -1,0 +1,29 @@
+PED OVERHAUL VI — V0.1.0
+
+TARGET
+- GTA V Enhanced Story Mode
+
+REQUIRES
+- Script Hook V
+- ScriptHookVDotNet Enhanced
+
+INSTALL
+1. Copy the contents of this package into the GTA V root directory.
+2. PedOverhaulVI.dll and PedOverhaulVI.ini must end up in GTA V\scripts\.
+
+MODULARITY
+- Police Overhaul VI is NOT required.
+- If Police Overhaul VI is loaded, it owns law-enforcement peds while Ped Overhaul VI handles civilians/gangs/ambient NPCs.
+- If Police Overhaul VI is absent, Ped Overhaul VI still runs its ambient NPC systems.
+
+V0.1 FOCUS
+- persistent per-ped personality during the session
+- local sight/hearing awareness instead of global reactions
+- differentiated flee/cower/observe/film reactions
+- combat morale, retreat and surrender for hostile non-law NPCs
+- nearby-death / injury morale effects
+- panic propagation through crowds
+- recovery back toward ambient behavior after danger
+- mission/cutscene safety and strict processing budget
+
+No vanilla archive is replaced.
