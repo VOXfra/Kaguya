@@ -84,8 +84,6 @@ namespace VOX.PedOverhaulVI
         public bool SawCrowdPanic;
         public bool SawQuietWithdrawal;
 
-        // Distraction / attention state. This describes what the ped was doing
-        // before danger became the dominant task.
         public DistractionKind Distraction;
         public float DistractionLevel;
         public float VisualAttentionScale = 1f;
@@ -94,8 +92,6 @@ namespace VOX.PedOverhaulVI
         public int LastDistractionProbeAt;
         public int DistractionReactionUntil;
 
-        // Multi-source scene memory. These are deliberately independent from
-        // the player-specific observations above.
         public SceneThreatKind SceneThreatKind;
         public int ThreatSourceHandle;
         public float ExternalThreatConfidence;
@@ -120,7 +116,6 @@ namespace VOX.PedOverhaulVI
         public int LastSocialCueAt;
         public int LastDecisionAt;
         public int DecisionUntil;
-        public int LastLookAt;
         public int LastCognitionAt;
         public int LastStageChangeAt;
         public int LastEmergencyReplanAt;
