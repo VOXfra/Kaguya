@@ -16,6 +16,7 @@ namespace VOX.PedOverhaulVI
         private Config _cfg;
         private readonly Dictionary<int, PedState> _states = new Dictionary<int, PedState>();
         private readonly List<Ped> _nearby = new List<Ped>();
+        private readonly SceneRuntime _sceneRuntime = new SceneRuntime();
         private int _lastRefresh;
         private int _cursor;
         private bool _policeModuleLoaded;
@@ -30,7 +31,7 @@ namespace VOX.PedOverhaulVI
             Tick += OnTick;
             Aborted += OnAborted;
             ProbeModules();
-            Log("Ped Overhaul VI 0.2.0 situational-awareness runtime loaded.");
+            Log("Ped Overhaul VI 0.3.0 shared-scene-awareness runtime loaded.");
         }
 
         private void OnTick(object sender, EventArgs e)
@@ -44,6 +45,7 @@ namespace VOX.PedOverhaulVI
                 if (_cfg.DisableDuringRockstarMissions && ShouldYieldToMission()) return;
 
                 RefreshNearby(player);
+                _sceneRuntime.Update(player, _nearby, _states, _cfg, Log);
                 if (_nearby.Count == 0) return;
 
                 int budget = Math.Max(1, Math.Min(12, _cfg.PedsPerTick));
@@ -71,19 +73,33 @@ namespace VOX.PedOverhaulVI
                 _states[ped.Handle] = state;
             }
 
-            PerceptionFrame frame = SituationModel.Sense(ped, player, _nearby, _states, _cfg);
             AwarenessStage previousStage = state.Stage;
-            SituationModel.UpdateCognition(state, frame, _cfg, Game.GameTime);
+
+            // First: what this ped individually knows about the player.
+            PerceptionFrame playerFrame = SituationModel.Sense(ped, player, _nearby, _states, _cfg);
+            SituationModel.UpdateCognition(state, playerFrame, _cfg, Game.GameTime);
+
+            // Second: what is happening in the rest of the scene. This is a
+            // shared event model, so a fight between two NPCs, an approaching
+            // car or another shooter's gunfire can become the dominant threat.
+            ScenePerception scene = _sceneRuntime.Sense(ped, state, _nearby, _states, _cfg);
+            _sceneRuntime.ApplyCognition(state, scene, _cfg, Game.GameTime);
 
             if (previousStage != state.Stage && _cfg.LogStateTransitions)
             {
                 Log("Ped " + state.Handle + " " + state.Archetype + " awareness " + previousStage + " -> " + state.Stage +
                     " [att=" + (int)state.Attention + " susp=" + (int)state.Suspicion + " cert=" + (int)state.Certainty + " fear=" + (int)state.Fear +
-                    ", weapon=" + state.SawWeapon + ", mask=" + state.SawMask + ", aimed=" + state.WasDirectlyAimedAt + ", gunshot=" + state.HeardGunshot + ", social=" + (int)state.SocialThreatConfidence + "].");
+                    ", playerWeapon=" + state.SawWeapon + ", mask=" + state.SawMask + ", scene=" + state.SceneThreatKind + ", extConf=" + (int)state.ExternalThreatConfidence + "].");
             }
 
             DecisionSystem.UpdateMorale(player, ped, state, _nearby, _cfg, Log);
-            DecisionSystem.Update(player, ped, state, frame, _nearby, _states, _cfg, Log);
+
+            // Non-player scene threats get their own decisions. If no external
+            // threat is currently dominant, the existing player-centric system
+            // handles the ped as before.
+            bool sceneHandled = SceneDecisionSystem.TryUpdate(player, ped, state, scene, _nearby, _states, _cfg, Log);
+            if (!sceneHandled)
+                DecisionSystem.Update(player, ped, state, playerFrame, _nearby, _states, _cfg, Log);
         }
 
         private bool ShouldYieldToMission()
@@ -117,7 +133,7 @@ namespace VOX.PedOverhaulVI
             {
                 if (_nearby.Count >= Math.Max(10, _cfg.MaxProcessedPeds + 10)) break;
                 if (p == null || !p.Exists() || p.Handle == player.Handle || !p.IsHuman) continue;
-                _nearby.Add(p); // dead humans remain useful as visual evidence
+                _nearby.Add(p);
                 if (!p.IsDead && UsablePed(p, player) && !_states.ContainsKey(p.Handle))
                     _states[p.Handle] = PedState.Create(p, _cfg);
             }
