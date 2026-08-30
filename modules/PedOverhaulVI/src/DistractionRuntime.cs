@@ -95,8 +95,6 @@ namespace VOX.PedOverhaulVI
 
             if (state.DistractionReactionUntil > now)
             {
-                // Close/obvious danger still breaks through. Subtle cues wait until
-                // the ped actually looks up from what they were doing.
                 if (frame.DistanceToPlayer > cfg.DistractionCloseThreatOverrideDistance)
                 {
                     frame.SeesWeapon = false;
@@ -111,6 +109,33 @@ namespace VOX.PedOverhaulVI
             {
                 state.DistractionReactionUntil = 0;
             }
+        }
+
+        public static void ApplyToScenePerception(PedState state, ScenePerception scene, Config cfg)
+        {
+            if (state == null || scene == null || !scene.HasThreat || state.Distraction == DistractionKind.None) return;
+
+            // Immediate collision/explosion/gunfire can break concentration. Less
+            // obvious scene information is degraded according to the activity.
+            if (scene.Immediate)
+            {
+                scene.Confidence = Math.Max(scene.Confidence, 0.72f);
+                state.DistractionReactionUntil = 0;
+                return;
+            }
+
+            float scale = 1f;
+            if (scene.Kind == SceneThreatKind.CrowdFlight || scene.Kind == SceneThreatKind.SocialWarning)
+                scale = state.SocialAttentionScale;
+            else if (scene.Visual && !scene.Audible)
+                scale = state.VisualAttentionScale;
+            else if (scene.Audible && !scene.Visual)
+                scale = state.HearingAttentionScale;
+            else
+                scale = Math.Max(state.VisualAttentionScale, state.HearingAttentionScale * 0.85f);
+
+            scene.Confidence *= Math.Max(0.20f, Math.Min(1f, scale));
+            if (scene.Confidence < 0.20f) scene.HasThreat = false;
         }
 
         public static bool ShouldDelayDecision(PedState state, PerceptionFrame frame, Config cfg, int now)
@@ -206,7 +231,8 @@ namespace VOX.PedOverhaulVI
 
             foreach (Ped other in nearby)
             {
-                if (other == null || !other.Exists() || other.IsDead || other.Handle == ped.Handle || other.IsInVehicle()) continue;
+                if (other == null || !other.Exists() || other.IsDead || other.Handle == ped.Handle) continue;
+                try { if (other.IsInVehicle()) continue; } catch { }
                 float distance = SituationModel.Distance(ped.Position, other.Position);
                 if (distance > 2.6f || SafeSpeed(other) > 0.85f) continue;
 
