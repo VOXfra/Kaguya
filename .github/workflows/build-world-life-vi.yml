@@ -1,0 +1,42 @@
+name: Build World Life VI
+
+on:
+  push:
+    paths:
+      - 'modules/WorldLifeVI/**'
+      - '.github/workflows/build-world-life-vi.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Fetch SHVDNE reference
+        shell: pwsh
+        run: |
+          $url = 'https://github.com/Chiheb-Bacha/ScriptHookVDotNetEnhanced/releases/download/v1.1.0.6/ScriptHookVDotNetEnhanced-v1.1.0.6.zip'
+          Invoke-WebRequest -Uri $url -OutFile shvdne.zip
+          Expand-Archive shvdne.zip -DestinationPath shvdne
+          $ref = Get-ChildItem shvdne -Recurse -Filter ScriptHookVDotNet3.dll | Select-Object -First 1
+          if (-not $ref) { throw 'ScriptHookVDotNet3.dll not found in SHVDNE archive.' }
+          New-Item -ItemType Directory -Force modules/WorldLifeVI/refs | Out-Null
+          Copy-Item $ref.FullName modules/WorldLifeVI/refs/ScriptHookVDotNet3.dll
+      - name: Build
+        shell: pwsh
+        run: dotnet build modules/WorldLifeVI/WorldLifeVI.csproj -c Release
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist/scripts | Out-Null
+          Copy-Item modules/WorldLifeVI/bin/Release/net48/WorldLifeVI.dll dist/scripts/WorldLifeVI.dll
+          Copy-Item modules/WorldLifeVI/config/WorldLifeVI.ini dist/scripts/WorldLifeVI.ini
+          Copy-Item modules/WorldLifeVI/INSTALL.txt dist/INSTALL.txt
+          Compress-Archive -Path dist/* -DestinationPath WorldLifeVI-v0.1.0.zip -Force
+      - name: Upload test build
+        uses: actions/upload-artifact@v4
+        with:
+          name: WorldLifeVI-v0.1.0
+          path: WorldLifeVI-v0.1.0.zip
+          if-no-files-found: error
