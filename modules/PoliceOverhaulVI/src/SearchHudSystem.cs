@@ -16,10 +16,11 @@ namespace VOX.PoliceOverhaulVI
         private const int SearchPhaseLifetimeMs = 60000;
         // The main police script intentionally yields while the protagonist is
         // dead. A wanted->0 transition after a long update gap is therefore a
-        // reliable indication that the previous encounter was interrupted by
-        // death/respawn (or another hard scripted transition), not a normal
-        // search phase that should keep drawing evidence icons.
+        // useful fallback indication that the previous encounter was interrupted
+        // by death/respawn or another hard scripted transition.
         private const int HardTransitionGapMs = 2000;
+
+        private static SearchHudSystem _current;
 
         private int _innerBlip;
         private int _outerBlip;
@@ -34,6 +35,23 @@ namespace VOX.PoliceOverhaulVI
         private int _lastNativeWanted;
         private bool _suppressCurrentPhase;
 
+        public SearchHudSystem()
+        {
+            _current = this;
+        }
+
+        // Called by the lightweight death watcher even while the main police
+        // script has yielded because the protagonist is dead.
+        public static void NotifyPlayerDeath()
+        {
+            SearchHudSystem current = _current;
+            if (current == null) return;
+            current._suppressCurrentPhase = true;
+            current._lastNativeWanted = 0;
+            current._lastUpdateAt = Game.GameTime;
+            current.ClearSearchCircles();
+        }
+
         public void Update(Ped player, CaseMemory memory, int nativeWanted, Config cfg)
         {
             int now = Game.GameTime;
@@ -42,8 +60,7 @@ namespace VOX.PoliceOverhaulVI
             // A genuinely new police encounter always re-arms the search HUD.
             if (nativeWanted > 0)
                 _suppressCurrentPhase = false;
-            // Death/respawn used to leave _lastWanted > 0 while the game reset
-            // native wanted to zero. Do not resurrect the previous case HUD.
+            // Fallback for death/respawn or another hard scripted transition.
             else if (_lastNativeWanted > 0 && hardGap)
                 _suppressCurrentPhase = true;
 
