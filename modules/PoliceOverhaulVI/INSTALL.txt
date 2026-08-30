@@ -1,4 +1,4 @@
-POLICE OVERHAUL VI — 0.1.0-alpha
+POLICE OVERHAUL VI — V0.1.0
 
 TARGET
 - GTA V Enhanced Story Mode
@@ -9,25 +9,27 @@ REQUIRES
 
 INSTALL
 1. Copy the contents of this package into the GTA V root directory.
-2. The DLL and INI should end up in GTA V\scripts\.
+2. PoliceOverhaulVI.dll and PoliceOverhaulVI.ini must end up in GTA V\scripts\.
 3. Launch Story Mode with BattlEye disabled as required for script mods.
 
 UNINSTALL
 - Delete scripts\PoliceOverhaulVI.dll
 - Delete scripts\PoliceOverhaulVI.ini
-- Delete scripts\PoliceOverhaulVI\ (logs only)
+- Delete scripts\PoliceOverhaulVI\ to remove logs and persistent police cases.
 
-No vanilla GTA V archive is replaced by this alpha.
+NO VANILLA ARCHIVE IS REPLACED BY V0.1.
 
-WHAT 0.1 TESTS
-- Police blips hidden in free roam.
-- Story missions/random events/cutscenes switch the mod to passthrough.
-- A newly-created vanilla wanted level is suppressed until a real nearby witness has line of sight.
-- Police witnesses confirm quickly; civilian witnesses report after a delay.
-- Once a chase happens, police can retain internal knowledge of face/outfit/vehicle and re-identify later.
-- No search-area circle, suspect text, vehicle text, police-position HUD or debug HUD is shown.
+V0.1 SYSTEMS
+- Physical witnesses and delayed reporting.
+- CCTV reporting/re-identification from world camera props.
+- Hidden face/outfit/weapon/suspect-count/vehicle/color/plate evidence.
+- ANPR-style plate matching and deterministic vehicle trackers.
+- Last-known-position search centering with no police blips/search HUD.
+- Persistent cases and warrants per protagonist.
+- Home stakeouts for active warrants.
+- Traffic camera/police speeding citations and delayed fines.
+- Custom support dispatch from 3 stars upward.
+- Sixth-star military tier: heavy ground units, attack helicopter and jet, plus an extra HUD star.
+- Mission-safe passthrough and custom-unit cleanup.
 
-KNOWN LIMITS
-- Dispatch composition is still mostly vanilla in 0.1.
-- Six-star response tier is not implemented yet; the first alpha intentionally validates perception/mission safety first.
-- CCTV, ANPR/radars, trackers, warrants, home surveillance, traffic tickets and persistent disk cases come in later versions.
+This is the first COMPLETE SYSTEMS PASS. Test point by point and send scripts\PoliceOverhaulVI\PoliceOverhaulVI.log if anything behaves incorrectly.
