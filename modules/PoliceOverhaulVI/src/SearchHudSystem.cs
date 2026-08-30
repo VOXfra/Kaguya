@@ -28,30 +28,18 @@ namespace VOX.PoliceOverhaulVI
                 ClearSearchCircles();
                 return;
             }
-
             bool recentlyObserved = memory.LastObservedGameTime > 0 && Game.GameTime - memory.LastObservedGameTime < cfg.SearchCircleObservationGraceMs;
             bool shouldShowCircles = cfg.ShowSearchCircles && (nativeWanted == 0 || !recentlyObserved);
-            if (shouldShowCircles)
-                EnsureCircles(memory.LastKnownPosition, Math.Max(1, memory.ThreatLevel), cfg);
-            else
-                ClearSearchCircles();
-
-            if (cfg.ShowEvidenceIcons && nativeWanted == 0)
-                DrawEvidence(memory, cfg);
+            if (shouldShowCircles) EnsureCircles(memory.LastKnownPosition, Math.Max(1, memory.ThreatLevel), cfg); else ClearSearchCircles();
+            if (cfg.ShowEvidenceIcons && nativeWanted == 0) DrawEvidence(memory, cfg);
         }
 
-        public void Cleanup()
-        {
-            ClearSearchCircles();
-        }
+        public void Cleanup() { ClearSearchCircles(); }
 
         private void EnsureCircles(Vector3 center, int threat, Config cfg)
         {
-            if (center == Vector3.Zero)
-                return;
-            if (_innerBlip != 0 && _outerBlip != 0 && _lastThreat == threat && Perception.Distance(center, _lastCenter) < 12f)
-                return;
-
+            if (center == Vector3.Zero) return;
+            if (_innerBlip != 0 && _outerBlip != 0 && _lastThreat == threat && Perception.Distance(center, _lastCenter) < 12f) return;
             ClearSearchCircles();
             float inner = cfg.SearchInnerBaseRadius + Math.Max(0, threat - 1) * cfg.SearchRadiusPerStar;
             float outer = inner + cfg.SearchOuterExtraRadius;
@@ -66,10 +54,7 @@ namespace VOX.PoliceOverhaulVI
                 _lastCenter = center;
                 _lastThreat = threat;
             }
-            catch
-            {
-                ClearSearchCircles();
-            }
+            catch { ClearSearchCircles(); }
         }
 
         private void ClearSearchCircles()
@@ -84,8 +69,8 @@ namespace VOX.PoliceOverhaulVI
             if (handle == 0) return;
             try
             {
-                Blip b = Blip.FromHandle(handle);
-                if (b != null && b.Exists()) b.Delete();
+                Blip b = new Blip(handle);
+                if (b.Exists()) b.Delete();
             }
             catch { }
             handle = 0;
@@ -94,11 +79,8 @@ namespace VOX.PoliceOverhaulVI
         private void DrawEvidence(CaseMemory memory, Config cfg)
         {
             EnsureSprites();
-            float x = 1134f;
-            float y = 61f;
-            float size = cfg.EvidenceIconSize;
+            float x = 1134f, y = 61f, size = cfg.EvidenceIconSize;
             int stars = Math.Max(1, Math.Min(6, memory.ThreatLevel));
-
             if (_star != null)
             {
                 for (int i = 0; i < stars; i++)
@@ -108,9 +90,7 @@ namespace VOX.PoliceOverhaulVI
                     _star.ScaledDraw();
                 }
             }
-
-            float iconX = x - (stars - 1) * 25f;
-            float iconY = y + 31f;
+            float iconX = x - (stars - 1) * 25f, iconY = y + 31f;
             if (memory.FaceKnown && _face != null) DrawIcon(_face, ref iconX, iconY, size);
             if (memory.OutfitKnown && _clothes != null) DrawIcon(_clothes, ref iconX, iconY, size);
             if (memory.Vehicle != null && _vehicle != null) DrawIcon(_vehicle, ref iconX, iconY, size);
