@@ -33,10 +33,10 @@ jobs:
           Copy-Item modules/PedOverhaulVI/bin/Release/net48/PedOverhaulVI.dll dist/scripts/PedOverhaulVI.dll
           Copy-Item modules/PedOverhaulVI/config/PedOverhaulVI.ini dist/scripts/PedOverhaulVI.ini
           Copy-Item modules/PedOverhaulVI/INSTALL.txt dist/INSTALL.txt
-          Compress-Archive -Path dist/* -DestinationPath PedOverhaulVI-v0.2.0.zip -Force
+          Compress-Archive -Path dist/* -DestinationPath PedOverhaulVI-v0.3.0.zip -Force
       - name: Upload test build
         uses: actions/upload-artifact@v4
         with:
-          name: PedOverhaulVI-v0.2.0
-          path: PedOverhaulVI-v0.2.0.zip
+          name: PedOverhaulVI-v0.3.0
+          path: PedOverhaulVI-v0.3.0.zip
           if-no-files-found: error
