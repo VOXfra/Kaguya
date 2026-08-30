@@ -10,6 +10,10 @@ namespace VOX.PedOverhaulVI
     {
         public float DistanceToPlayer;
         public float VisualQuality;
+        public float VisualAttentionScale = 1f;
+        public float HearingAttentionScale = 1f;
+        public float SocialAttentionScale = 1f;
+        public bool WasDistracted;
         public bool SeesPlayer;
         public bool SeesWeapon;
         public bool SeesMask;
@@ -80,11 +84,14 @@ namespace VOX.PedOverhaulVI
             s.Decay(cfg, now);
 
             AwarenessStage old = s.Stage;
-            float dt = s.LastStimulusAt > 0 ? Math.Max(0.08f, Math.Min(0.55f, (now - s.LastStimulusAt) / 1000f)) : 0.25f;
+            float dt = s.LastCognitionAt > 0 ? Math.Max(0.01f, Math.Min(0.45f, (now - s.LastCognitionAt) / 1000f)) : Math.Max(0.02f, cfg.TickIntervalMs / 1000f);
+            s.LastCognitionAt = now;
             float alertScale = 0.72f + s.Alertness / 180f;
             float proximity = 1f - Math.Min(1f, f.DistanceToPlayer / Math.Max(1f, cfg.ThreatVisualRadius));
             float selfProtection = 0.65f + s.SelfPreservation / 170f;
             float braveryResistance = 1.22f - s.Bravery / 180f;
+            float hearingScale = Math.Max(0.25f, Math.Min(1f, f.HearingAttentionScale));
+            float socialScale = Math.Max(0.20f, Math.Min(1f, f.SocialAttentionScale));
             bool meaningful = false;
 
             if (f.SeesPlayer)
@@ -112,8 +119,8 @@ namespace VOX.PedOverhaulVI
 
             if (f.SeesMask && f.SeesWeapon)
             {
-                // This combination is the Lucia example: suspicious enough to
-                // change behaviour before a shot is fired, but not necessarily panic.
+                // Mask + weapon means "this may be a crime beginning", not
+                // "instant active shooter". It raises belief before panic.
                 meaningful = true;
                 s.Suspicion = Add(s.Suspicion, cfg.MaskWeaponCombinationBonus * f.VisualQuality * dt);
                 s.Certainty = Add(s.Certainty, 16f * f.VisualQuality * dt);
@@ -145,10 +152,10 @@ namespace VOX.PedOverhaulVI
                 s.HeardGunshot = true;
                 s.LastGunshotAt = now;
                 float hearingCertainty = f.ThreatSourceKnown ? 24f : 10f;
-                s.Attention = Add(s.Attention, 35f * alertScale * dt);
-                s.Suspicion = Add(s.Suspicion, cfg.HeardGunshotThreat * alertScale * dt);
-                s.Certainty = Add(s.Certainty, hearingCertainty * dt);
-                s.Fear = Add(s.Fear, cfg.HeardGunshotThreat * selfProtection * braveryResistance * (0.35f + 0.65f * proximity) * dt);
+                s.Attention = Add(s.Attention, 35f * alertScale * hearingScale * dt);
+                s.Suspicion = Add(s.Suspicion, cfg.HeardGunshotThreat * alertScale * hearingScale * dt);
+                s.Certainty = Add(s.Certainty, hearingCertainty * hearingScale * dt);
+                s.Fear = Add(s.Fear, cfg.HeardGunshotThreat * selfProtection * braveryResistance * hearingScale * (0.35f + 0.65f * proximity) * dt);
             }
 
             if (f.SeesBody)
@@ -156,10 +163,10 @@ namespace VOX.PedOverhaulVI
                 meaningful = true;
                 s.SawBody = true;
                 s.LastBodySeenAt = now;
-                s.Attention = Add(s.Attention, 25f * dt);
-                s.Suspicion = Add(s.Suspicion, cfg.DeadBodySuspicion * alertScale * dt);
-                s.Certainty = Add(s.Certainty, 18f * dt);
-                s.Fear = Add(s.Fear, 22f * selfProtection * braveryResistance * dt);
+                s.Attention = Add(s.Attention, 25f * f.VisualAttentionScale * dt);
+                s.Suspicion = Add(s.Suspicion, cfg.DeadBodySuspicion * alertScale * f.VisualAttentionScale * dt);
+                s.Certainty = Add(s.Certainty, 18f * f.VisualAttentionScale * dt);
+                s.Fear = Add(s.Fear, 22f * selfProtection * braveryResistance * f.VisualAttentionScale * dt);
             }
 
             if (f.CrowdPanic)
@@ -168,10 +175,10 @@ namespace VOX.PedOverhaulVI
                 s.SawCrowdPanic = true;
                 s.LastSocialCueAt = now;
                 s.SocialSourceHandle = f.SocialSourceHandle;
-                s.SocialThreatConfidence = Math.Max(s.SocialThreatConfidence, 45f + s.Conformity * 0.35f);
-                s.Attention = Add(s.Attention, 18f * dt);
-                s.Suspicion = Add(s.Suspicion, cfg.CrowdPanicThreat * (0.55f + s.Conformity / 200f) * dt);
-                s.Fear = Add(s.Fear, cfg.CrowdPanicThreat * selfProtection * (0.55f + s.Conformity / 190f) * dt);
+                s.SocialThreatConfidence = Math.Max(s.SocialThreatConfidence, (45f + s.Conformity * 0.35f) * socialScale);
+                s.Attention = Add(s.Attention, 18f * socialScale * dt);
+                s.Suspicion = Add(s.Suspicion, cfg.CrowdPanicThreat * (0.55f + s.Conformity / 200f) * socialScale * dt);
+                s.Fear = Add(s.Fear, cfg.CrowdPanicThreat * selfProtection * (0.55f + s.Conformity / 190f) * socialScale * dt);
             }
 
             if (f.QuietWithdrawal)
@@ -180,8 +187,8 @@ namespace VOX.PedOverhaulVI
                 s.SawQuietWithdrawal = true;
                 s.LastSocialCueAt = now;
                 s.SocialSourceHandle = f.SocialSourceHandle;
-                s.SocialThreatConfidence = Math.Max(s.SocialThreatConfidence, 18f + s.Conformity * 0.25f);
-                s.Suspicion = Add(s.Suspicion, cfg.QuietWithdrawalSuspicion * (0.55f + s.Conformity / 200f) * dt);
+                s.SocialThreatConfidence = Math.Max(s.SocialThreatConfidence, (18f + s.Conformity * 0.25f) * socialScale);
+                s.Suspicion = Add(s.Suspicion, cfg.QuietWithdrawalSuspicion * (0.55f + s.Conformity / 200f) * socialScale * dt);
             }
 
             if (f.HostileRelationship)
@@ -189,6 +196,11 @@ namespace VOX.PedOverhaulVI
                 meaningful = true;
                 s.Suspicion = Add(s.Suspicion, cfg.HostileRelationshipSuspicion * dt);
             }
+
+            // Simply seeing a held weapon may justify leaving, but it must not
+            // self-amplify into maximum panic without an escalation signal.
+            if (f.SeesWeapon && !f.DirectlyAimedAt && !f.SeesShooting && !s.SawViolence && !s.HeardGunshot)
+                s.Fear = Math.Min(s.Fear, Math.Max(cfg.ConcernedThreshold + 5f, cfg.PanicThreshold - 5f));
 
             if (meaningful)
             {
@@ -198,7 +210,11 @@ namespace VOX.PedOverhaulVI
                 if (f.ThreatSourceKnown) s.ThreatSourceKnown = true;
             }
 
-            s.Stage = DetermineStage(s, cfg);
+            AwarenessStage desired = DetermineStage(s, cfg);
+            if (desired < old && s.LastStageChangeAt > 0 && now - s.LastStageChangeAt < cfg.StageDowngradeHoldMs)
+                desired = old;
+            if (desired != old) s.LastStageChangeAt = now;
+            s.Stage = desired;
             return old;
         }
 
@@ -229,9 +245,11 @@ namespace VOX.PedOverhaulVI
         {
             try
             {
+                // Component 1 is the actual mask slot. A hat/helmet prop is not
+                // automatically a face covering; treating every head prop as a
+                // mask caused false positives with ordinary hats and helmets.
                 int mask = Function.Call<int>(Hash.GET_PED_DRAWABLE_VARIATION, ped.Handle, 1);
-                int helmet = Function.Call<int>(Hash.GET_PED_PROP_INDEX, ped.Handle, 0);
-                return mask != 0 || helmet > 0;
+                return mask != 0;
             }
             catch { return false; }
         }
