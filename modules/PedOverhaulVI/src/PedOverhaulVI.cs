@@ -31,7 +31,7 @@ namespace VOX.PedOverhaulVI
             Tick += OnTick;
             Aborted += OnAborted;
             ProbeModules();
-            Log("Ped Overhaul VI 0.3.1 vehicle-occupant hotfix loaded.");
+            Log("Ped Overhaul VI 0.4.0 cognition-stability + distraction runtime loaded.");
         }
 
         private void OnTick(object sender, EventArgs e)
@@ -75,28 +75,30 @@ namespace VOX.PedOverhaulVI
 
             AwarenessStage previousStage = state.Stage;
 
-            // First: what this ped individually knows about the player.
+            // Ambient activity first: looking at a phone, talking to somebody,
+            // smoking/eating or filming changes what this ped can actually notice.
+            DistractionRuntime.Update(ped, state, _nearby, _cfg, Log);
+
+            // What this ped individually knows about the player.
             PerceptionFrame playerFrame = SituationModel.Sense(ped, player, _nearby, _states, _cfg);
+            DistractionRuntime.ApplyToPerception(ped, state, playerFrame, _cfg);
             SituationModel.UpdateCognition(state, playerFrame, _cfg, Game.GameTime);
 
-            // Second: what is happening in the rest of the scene. This is a
-            // shared event model, so a fight between two NPCs, an approaching
-            // car or another shooter's gunfire can become the dominant threat.
+            // What is happening in the rest of the scene.
             ScenePerception scene = _sceneRuntime.Sense(ped, state, _nearby, _states, _cfg);
+            DistractionRuntime.ApplyToScenePerception(state, scene, _cfg);
             _sceneRuntime.ApplyCognition(state, scene, _cfg, Game.GameTime);
 
             if (previousStage != state.Stage && _cfg.LogStateTransitions)
             {
                 Log("Ped " + state.Handle + " " + state.Archetype + " awareness " + previousStage + " -> " + state.Stage +
                     " [att=" + (int)state.Attention + " susp=" + (int)state.Suspicion + " cert=" + (int)state.Certainty + " fear=" + (int)state.Fear +
-                    ", playerWeapon=" + state.SawWeapon + ", mask=" + state.SawMask + ", scene=" + state.SceneThreatKind + ", extConf=" + (int)state.ExternalThreatConfidence + "].");
+                    ", playerWeapon=" + state.SawWeapon + ", mask=" + state.SawMask + ", distraction=" + state.Distraction +
+                    ", scene=" + state.SceneThreatKind + ", extConf=" + (int)state.ExternalThreatConfidence + "].");
             }
 
             DecisionSystem.UpdateMorale(player, ped, state, _nearby, _cfg, Log);
 
-            // Non-player scene threats get their own decisions. If no external
-            // threat is currently dominant, the existing player-centric system
-            // handles the ped as before.
             bool sceneHandled = SceneDecisionSystem.TryUpdate(player, ped, state, scene, _nearby, _states, _cfg, Log);
             if (!sceneHandled)
                 DecisionSystem.Update(player, ped, state, playerFrame, _nearby, _states, _cfg, Log);
@@ -136,10 +138,9 @@ namespace VOX.PedOverhaulVI
 
                 _nearby.Add(p);
 
-                // 0.3.1 safety boundary: vehicle occupants remain visible to the
-                // shared scene scanner, but Ped Overhaul never assigns them an
-                // on-foot task. GTA's driving AI retains ownership until the
-                // dedicated vehicle-occupant behaviour layer is implemented.
+                // Vehicle occupants remain scene participants, but this module
+                // still does not assign them pedestrian tasks. Dedicated driver
+                // behaviour belongs to Vehicle/World Life runtime.
                 bool inVehicle = false;
                 try { inVehicle = !p.IsDead && p.IsInVehicle(); } catch { }
                 if (inVehicle)
@@ -156,9 +157,6 @@ namespace VOX.PedOverhaulVI
         private bool UsablePed(Ped p, Ped player)
         {
             if (p == null || !p.Exists() || p.Handle == player.Handle || p.IsDead || !p.IsHuman) return false;
-
-            // Never feed pedestrian/navmesh/cower/flee tasks to an occupant.
-            // Those natives can make ambient drivers abandon their vehicles.
             try { if (p.IsInVehicle()) return false; } catch { }
 
             if (_cfg.SkipMissionEntities)
