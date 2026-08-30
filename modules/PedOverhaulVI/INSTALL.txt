@@ -1,4 +1,4 @@
-PED OVERHAUL VI — V0.3.0
+PED OVERHAUL VI — V0.3.1
 
 TARGET
 - GTA V Enhanced Story Mode
@@ -10,34 +10,29 @@ REQUIRES
 INSTALL
 1. Copy the contents of this package into the GTA V root directory.
 2. PedOverhaulVI.dll and PedOverhaulVI.ini must end up in GTA V\scripts\.
+3. When updating from 0.3.0, overwrite BOTH the DLL and INI; the 0.3.1 traffic tuning lives partly in the INI.
 
 MODULARITY
 - Police Overhaul VI is NOT required.
 - If Police Overhaul VI is loaded, it owns law-enforcement peds while Ped Overhaul VI handles civilians/gangs/ambient NPCs.
-- If Police Overhaul VI is absent, Ped Overhaul VI still runs its ambient NPC systems.
 
-V0.3 SHARED-SCENE-AWARENESS PASS
-- keeps the V0.2 attention / suspicion / certainty / fear cognitive model
-- keeps mask + weapon -> notice -> understand -> discreet withdrawal behaviour
-- introduces one shared scene scanner instead of every ped rescanning the world independently
-- scene events can originate from NPCs, vehicles and world hazards rather than only the player
-- nearby NPC gunfire is separately perceived visually or acoustically
-- NPC-vs-NPC fights can be noticed, watched, avoided, filmed or cautiously approached depending on personality and severity
-- visible weapons carried by hostile/combat NPCs become scene threats
-- bodies become persistent visual scene evidence
-- burning entities create local danger independently of the player
-- explosions are detected as high-confidence area events without magically identifying an exact source
-- fleeing/cowering NPCs create crowd-flight social cues
-- group members / shared-vehicle companions trust each other's warnings more than strangers
-- information can propagate with reduced confidence instead of making every NPC omniscient
-- high-speed vehicles are evaluated by trajectory, closest approach and time-to-impact
-- pedestrians can sidestep a projected collision instead of blindly using generic flee behaviour
-- uncertain gunfire can cause freeze/cover-seeking before the shooter is identified
-- confirmed external threats use their own position as the flee/cover reference instead of assuming the player is responsible
-- cautious NPCs can discreetly leave an unrelated fight or armed scene
-- curious/bold NPCs may watch or film from distance
-- protective NPCs may cautiously approach a low-severity fight when brave enough; armed/high-severity scenes suppress this behaviour
-- hostile NPC morale, retreat and surrender remain separate from civilian awareness
-- processing remains bounded: scene scan is throttled, events expire, vehicle/event counts are capped and only a subset of peds is processed each tick
+V0.3.1 VEHICLE / FALSE-POSITIVE HOTFIX
+- keeps the 0.3 shared scene-awareness runtime
+- vehicle occupants are no longer given pedestrian/navmesh/cower/flee tasks
+- ambient drivers and passengers stay under Rockstar vehicle AI for now instead of abandoning their cars because of a social/traffic cue
+- stale pedestrian states are removed when a ped enters a vehicle, preventing CrowdFlight propagation from a driver
+- vehicle-hazard trajectory thresholds are tightened so ordinary road traffic passing beside a pavement is much less likely to become a collision emergency
+- vehicle hazard look-ahead and audible radius are reduced; imminent direct collision paths still trigger pedestrian evasion
+- crowd-flight and stranger-warning confidence are reduced to prevent self-sustaining panic cascades
+- a mask alone no longer accumulates threat suspicion indefinitely; mask + weapon remains meaningful through the combination bonus
+
+V0.3 SHARED-SCENE-AWARENESS BASE
+- attention / suspicion / certainty / fear cognitive model
+- shared scene scanner for NPCs, vehicles, bodies, fire and explosions
+- NPC-vs-NPC fights, external gunfire and visible hostile weapons
+- social information propagation with imperfect confidence
+- vehicle trajectory / closest-approach / time-to-impact awareness
+- discreet withdrawal, watch, film, phone, cover, flee, surrender and morale behaviours
+- personality-driven reactions and bounded processing
 
 No vanilla archive is replaced.
