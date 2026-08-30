@@ -1,38 +1,160 @@
 using GTA;
+using GTA.Math;
 using System;
 
 namespace VOX.PedOverhaulVI
 {
-    internal enum ReactionMode { None, Watch, Film, Cower, Flee, Cover, Surrender }
+    internal enum AwarenessStage
+    {
+        Unaware = 0,
+        Noticed = 1,
+        Suspicious = 2,
+        Concerned = 3,
+        ThreatConfirmed = 4,
+        Panic = 5
+    }
+
+    internal enum ReactionMode
+    {
+        None = 0,
+        Glance = 1,
+        Watch = 2,
+        DiscreetLeave = 3,
+        AlertNearby = 4,
+        Phone = 5,
+        Film = 6,
+        Freeze = 7,
+        Cower = 8,
+        Flee = 9,
+        Cover = 10,
+        Confront = 11,
+        Combat = 12,
+        Surrender = 13
+    }
+
+    internal enum PedArchetype
+    {
+        Cautious,
+        Average,
+        Curious,
+        Bold,
+        Aggressive,
+        Protective,
+        Detached
+    }
 
     internal sealed class PedState
     {
         public int Handle;
         public int ModelHash;
+
+        // Stable personality for this streamed ped.
         public int Bravery;
         public int Curiosity;
         public int Aggression;
-        public float Morale=100f;
+        public int Alertness;
+        public int SelfPreservation;
+        public int Conformity;
+        public int Empathy;
+        public PedArchetype Archetype;
+
+        // Combat morale is separate from civilian threat appraisal.
+        public float Morale = 100f;
         public int LastHealth;
-        public int LastReactionAt;
-        public int LastThreatAt;
-        public int LastSeenAt;
-        public ReactionMode Mode;
         public bool NearbyDeathCounted;
+
+        // Cognitive scene model. These are intentionally continuous values so
+        // one stimulus does not map directly to one canned animation.
+        public float Attention;
+        public float Suspicion;
+        public float Certainty;
+        public float Fear;
+        public AwarenessStage Stage;
+        public ReactionMode Mode;
+
+        public bool SawWeapon;
+        public bool SawMask;
+        public bool SawViolence;
+        public bool SawBody;
+        public bool WasDirectlyAimedAt;
+        public bool HeardGunshot;
+        public bool ThreatSourceKnown;
+        public bool SawCrowdPanic;
+        public bool SawQuietWithdrawal;
+
+        public Vector3 LastThreatPosition;
+        public Vector3 LastSafeDirection;
+
+        public int FirstNoticedAt;
+        public int LastStimulusAt;
+        public int LastVisualAt;
+        public int LastConfirmedThreatAt;
+        public int LastGunshotAt;
+        public int LastBodySeenAt;
+        public int LastSocialCueAt;
+        public int LastDecisionAt;
+        public int DecisionUntil;
+        public int LastLookAt;
+
+        // Used so social behaviour can spread information instead of merely
+        // copying an animation from the nearest frightened pedestrian.
+        public float SocialThreatConfidence;
+        public int SocialSourceHandle;
 
         public static PedState Create(Ped ped, Config cfg)
         {
             int seed = unchecked(ped.Handle * 397 ^ ped.Model.Hash * 17 ^ 0x5F3759DF);
             var r = new Random(seed);
+            int bravery = Range(r, cfg.MinBravery, cfg.MaxBravery);
+            int curiosity = Range(r, cfg.MinCuriosity, cfg.MaxCuriosity);
+            int aggression = Range(r, cfg.MinAggression, cfg.MaxAggression);
+            int alertness = Range(r, cfg.MinAlertness, cfg.MaxAlertness);
+            int preservation = Range(r, cfg.MinSelfPreservation, cfg.MaxSelfPreservation);
+            int conformity = Range(r, cfg.MinConformity, cfg.MaxConformity);
+            int empathy = Range(r, cfg.MinEmpathy, cfg.MaxEmpathy);
+
             return new PedState
             {
                 Handle = ped.Handle,
                 ModelHash = ped.Model.Hash,
-                Bravery = Range(r,cfg.MinBravery,cfg.MaxBravery),
-                Curiosity = Range(r,cfg.MinCuriosity,cfg.MaxCuriosity),
-                Aggression = Range(r,cfg.MinAggression,cfg.MaxAggression),
-                LastHealth = SafeHealth(ped)
+                Bravery = bravery,
+                Curiosity = curiosity,
+                Aggression = aggression,
+                Alertness = alertness,
+                SelfPreservation = preservation,
+                Conformity = conformity,
+                Empathy = empathy,
+                Archetype = PickArchetype(bravery, curiosity, aggression, alertness, preservation, empathy),
+                LastHealth = SafeHealth(ped),
+                Stage = AwarenessStage.Unaware,
+                Mode = ReactionMode.None
             };
+        }
+
+        public void Decay(Config cfg, int now)
+        {
+            int age = LastStimulusAt <= 0 ? 999999 : now - LastStimulusAt;
+            float calmScale = age > cfg.MemoryHoldMs ? 1.0f : 0.18f;
+            Attention = Clamp(Attention - cfg.AttentionDecayPerSecond * cfg.TickIntervalMs / 1000f * calmScale);
+            Suspicion = Clamp(Suspicion - cfg.SuspicionDecayPerSecond * cfg.TickIntervalMs / 1000f * calmScale);
+            Certainty = Clamp(Certainty - cfg.CertaintyDecayPerSecond * cfg.TickIntervalMs / 1000f * calmScale);
+            Fear = Clamp(Fear - cfg.FearDecayPerSecond * cfg.TickIntervalMs / 1000f * calmScale);
+            SocialThreatConfidence = Clamp(SocialThreatConfidence - 3f * cfg.TickIntervalMs / 1000f);
+
+            if (now - LastGunshotAt > cfg.SensoryMemoryMs) HeardGunshot = false;
+            if (now - LastBodySeenAt > cfg.SensoryMemoryMs) SawBody = false;
+            if (now - LastSocialCueAt > cfg.SensoryMemoryMs)
+            {
+                SawCrowdPanic = false;
+                SawQuietWithdrawal = false;
+                SocialSourceHandle = 0;
+            }
+            if (now - LastVisualAt > cfg.SensoryMemoryMs)
+            {
+                SawWeapon = false;
+                SawMask = false;
+                WasDirectlyAimedAt = false;
+            }
         }
 
         public int Roll(int salt)
@@ -40,11 +162,43 @@ namespace VOX.PedOverhaulVI
             unchecked
             {
                 int x = Handle * 1103515245 + ModelHash * 12345 + salt * 265443576;
-                x ^= (x >> 16); if (x < 0) x = -x; return x % 100;
+                x ^= (x >> 16);
+                if (x < 0) x = -x;
+                return x % 100;
             }
         }
 
-        private static int Range(Random r,int min,int max){if(max<min){int t=min;min=max;max=t;}return r.Next(Math.Max(0,min),Math.Max(1,max)+1);}
-        public static int SafeHealth(Ped p){try{return p.Health;}catch{return 100;}}
+        public float Roll01(int salt)
+        {
+            return Roll(salt) / 99f;
+        }
+
+        private static PedArchetype PickArchetype(int bravery, int curiosity, int aggression, int alertness, int preservation, int empathy)
+        {
+            if (aggression >= 72 && bravery >= 58) return PedArchetype.Aggressive;
+            if (empathy >= 72 && bravery >= 48) return PedArchetype.Protective;
+            if (curiosity >= 72 && preservation < 72) return PedArchetype.Curious;
+            if (preservation >= 76 || bravery <= 24) return PedArchetype.Cautious;
+            if (bravery >= 74 && preservation <= 62) return PedArchetype.Bold;
+            if (alertness <= 28 && curiosity <= 40) return PedArchetype.Detached;
+            return PedArchetype.Average;
+        }
+
+        private static int Range(Random r, int min, int max)
+        {
+            if (max < min) { int t = min; min = max; max = t; }
+            return r.Next(Math.Max(0, min), Math.Max(1, max) + 1);
+        }
+
+        private static float Clamp(float value)
+        {
+            return Math.Max(0f, Math.Min(100f, value));
+        }
+
+        public static int SafeHealth(Ped p)
+        {
+            try { return p.Health; }
+            catch { return 100; }
+        }
     }
 }
