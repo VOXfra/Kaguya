@@ -11,9 +11,16 @@ namespace VOX.PoliceOverhaulVI
     internal sealed class SearchHudSystem
     {
         private const string UiDirectory = "scripts\\PoliceOverhaulVI\\UI";
-        // CaseMemory can persist for hours, but the player's visible search HUD
-        // must only represent a live/recent search. Evidence memory is internal.
+        // Internal evidence/case memory can persist for hours. The visible VI
+        // search HUD must represent only a live/recent search phase.
         private const int SearchPhaseLifetimeMs = 60000;
+        // The main police script intentionally yields while the protagonist is
+        // dead. A wanted->0 transition after a long update gap is therefore a
+        // reliable indication that the previous encounter was interrupted by
+        // death/respawn (or another hard scripted transition), not a normal
+        // search phase that should keep drawing evidence icons.
+        private const int HardTransitionGapMs = 2000;
+
         private int _innerBlip;
         private int _outerBlip;
         private Vector3 _lastCenter;
@@ -23,34 +30,58 @@ namespace VOX.PoliceOverhaulVI
         private CustomSprite _vehicle;
         private CustomSprite _star;
         private bool _spritesAttempted;
+        private int _lastUpdateAt;
+        private int _lastNativeWanted;
+        private bool _suppressCurrentPhase;
 
-        public void Update(Ped player, CaseMemory memory, int nativeWanted, Config cfg, bool encounterHudAllowed)
+        public void Update(Ped player, CaseMemory memory, int nativeWanted, Config cfg)
         {
-            if (!encounterHudAllowed || !cfg.SearchHudEnabled || memory == null || (!memory.Active && !memory.WarrantActive))
+            int now = Game.GameTime;
+            bool hardGap = _lastUpdateAt > 0 && now - _lastUpdateAt > HardTransitionGapMs;
+
+            // A genuinely new police encounter always re-arms the search HUD.
+            if (nativeWanted > 0)
+                _suppressCurrentPhase = false;
+            // Death/respawn used to leave _lastWanted > 0 while the game reset
+            // native wanted to zero. Do not resurrect the previous case HUD.
+            else if (_lastNativeWanted > 0 && hardGap)
+                _suppressCurrentPhase = true;
+
+            _lastUpdateAt = now;
+            _lastNativeWanted = nativeWanted;
+
+            if (_suppressCurrentPhase || !cfg.SearchHudEnabled || memory == null || (!memory.Active && !memory.WarrantActive))
             {
                 ClearSearchCircles();
                 return;
             }
 
             // Once the active wanted phase is over, only keep the VI-style
-            // search/evidence HUD for a bounded search window. A persistent
-            // police case or warrant must never mean persistent red icons.
+            // search/evidence HUD for a bounded search window. CaseMemory.Active
+            // means police memory exists; it does NOT mean officers are still
+            // visibly searching right now.
             if (nativeWanted == 0)
             {
-                if (memory.LastWantedEndedAt <= 0 || Game.GameTime - memory.LastWantedEndedAt > SearchPhaseLifetimeMs)
+                if (memory.LastWantedEndedAt <= 0 || now - memory.LastWantedEndedAt > SearchPhaseLifetimeMs)
                 {
                     ClearSearchCircles();
                     return;
                 }
             }
 
-            bool recentlyObserved = memory.LastObservedGameTime > 0 && Game.GameTime - memory.LastObservedGameTime < cfg.SearchCircleObservationGraceMs;
+            bool recentlyObserved = memory.LastObservedGameTime > 0 && now - memory.LastObservedGameTime < cfg.SearchCircleObservationGraceMs;
             bool shouldShowCircles = cfg.ShowSearchCircles && (nativeWanted == 0 || !recentlyObserved);
             if (shouldShowCircles) EnsureCircles(memory.LastKnownPosition, Math.Max(1, memory.ThreatLevel), cfg); else ClearSearchCircles();
             if (cfg.ShowEvidenceIcons && nativeWanted == 0) DrawEvidence(memory, cfg);
         }
 
-        public void Cleanup() { ClearSearchCircles(); }
+        public void Cleanup()
+        {
+            ClearSearchCircles();
+            _lastUpdateAt = 0;
+            _lastNativeWanted = 0;
+            _suppressCurrentPhase = false;
+        }
 
         private void EnsureCircles(Vector3 center, int threat, Config cfg)
         {
