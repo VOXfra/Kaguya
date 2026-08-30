@@ -1,0 +1,7 @@
+**/bin/
+**/obj/
+**/refs/*.dll
+*.user
+*.suo
+*.log
+*.zip
