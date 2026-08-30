@@ -31,7 +31,7 @@ namespace VOX.PedOverhaulVI
             Tick += OnTick;
             Aborted += OnAborted;
             ProbeModules();
-            Log("Ped Overhaul VI 0.3.0 shared-scene-awareness runtime loaded.");
+            Log("Ped Overhaul VI 0.3.1 vehicle-occupant hotfix loaded.");
         }
 
         private void OnTick(object sender, EventArgs e)
@@ -133,7 +133,21 @@ namespace VOX.PedOverhaulVI
             {
                 if (_nearby.Count >= Math.Max(10, _cfg.MaxProcessedPeds + 10)) break;
                 if (p == null || !p.Exists() || p.Handle == player.Handle || !p.IsHuman) continue;
+
                 _nearby.Add(p);
+
+                // 0.3.1 safety boundary: vehicle occupants remain visible to the
+                // shared scene scanner, but Ped Overhaul never assigns them an
+                // on-foot task. GTA's driving AI retains ownership until the
+                // dedicated vehicle-occupant behaviour layer is implemented.
+                bool inVehicle = false;
+                try { inVehicle = !p.IsDead && p.IsInVehicle(); } catch { }
+                if (inVehicle)
+                {
+                    _states.Remove(p.Handle);
+                    continue;
+                }
+
                 if (!p.IsDead && UsablePed(p, player) && !_states.ContainsKey(p.Handle))
                     _states[p.Handle] = PedState.Create(p, _cfg);
             }
@@ -142,6 +156,11 @@ namespace VOX.PedOverhaulVI
         private bool UsablePed(Ped p, Ped player)
         {
             if (p == null || !p.Exists() || p.Handle == player.Handle || p.IsDead || !p.IsHuman) return false;
+
+            // Never feed pedestrian/navmesh/cower/flee tasks to an occupant.
+            // Those natives can make ambient drivers abandon their vehicles.
+            try { if (p.IsInVehicle()) return false; } catch { }
+
             if (_cfg.SkipMissionEntities)
             {
                 try { if (Function.Call<bool>(Hash.IS_ENTITY_A_MISSION_ENTITY, p.Handle)) return false; }
@@ -173,9 +192,15 @@ namespace VOX.PedOverhaulVI
 
         private void CleanupStates()
         {
-            var live = new HashSet<int>(_nearby.Where(p => p != null && p.Exists() && !p.IsDead).Select(p => p.Handle));
+            var live = new HashSet<int>(_nearby.Where(p => p != null && p.Exists() && !p.IsDead && !SafeInVehicle(p)).Select(p => p.Handle));
             var remove = _states.Keys.Where(h => !live.Contains(h)).Take(16).ToList();
             foreach (int h in remove) _states.Remove(h);
+        }
+
+        private static bool SafeInVehicle(Ped p)
+        {
+            try { return p != null && p.Exists() && p.IsInVehicle(); }
+            catch { return false; }
         }
 
         private void OnAborted(object sender, EventArgs e)
