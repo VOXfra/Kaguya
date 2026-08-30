@@ -1,0 +1,33 @@
+POLICE OVERHAUL VI — 0.1.0-alpha
+
+TARGET
+- GTA V Enhanced Story Mode
+
+REQUIRES
+- Script Hook V compatible with the installed GTA V Enhanced build
+- Script Hook V .NET Enhanced (SHVDNE) v1.1.0.6 or compatible newer build
+
+INSTALL
+1. Copy the contents of this package into the GTA V root directory.
+2. The DLL and INI should end up in GTA V\scripts\.
+3. Launch Story Mode with BattlEye disabled as required for script mods.
+
+UNINSTALL
+- Delete scripts\PoliceOverhaulVI.dll
+- Delete scripts\PoliceOverhaulVI.ini
+- Delete scripts\PoliceOverhaulVI\ (logs only)
+
+No vanilla GTA V archive is replaced by this alpha.
+
+WHAT 0.1 TESTS
+- Police blips hidden in free roam.
+- Story missions/random events/cutscenes switch the mod to passthrough.
+- A newly-created vanilla wanted level is suppressed until a real nearby witness has line of sight.
+- Police witnesses confirm quickly; civilian witnesses report after a delay.
+- Once a chase happens, police can retain internal knowledge of face/outfit/vehicle and re-identify later.
+- No search-area circle, suspect text, vehicle text, police-position HUD or debug HUD is shown.
+
+KNOWN LIMITS
+- Dispatch composition is still mostly vanilla in 0.1.
+- Six-star response tier is not implemented yet; the first alpha intentionally validates perception/mission safety first.
+- CCTV, ANPR/radars, trackers, warrants, home surveillance, traffic tickets and persistent disk cases come in later versions.
