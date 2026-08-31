@@ -32,7 +32,8 @@ namespace VOX.PedOverhaulVI
         {
             get
             {
-                return SeesMask || SeesWeapon || DirectlyAimedAt || SeesShooting || HearsGunshot || SeesBody || CrowdPanic || QuietWithdrawal || HostileRelationship;
+                return SeesMask || SeesWeapon || DirectlyAimedAt || SeesShooting || HearsGunshot ||
+                       SeesBody || CrowdPanic || QuietWithdrawal || HostileRelationship;
             }
         }
     }
@@ -59,22 +60,29 @@ namespace VOX.PedOverhaulVI
                 f.SeesShooting = playerShooting;
                 f.ThreatSourceKnown = f.SeesWeapon || f.SeesShooting;
                 f.ThreatPosition = player.Position;
+
+                // Being aimed at is not psychic information. The observer must
+                // actually have visual access to the player before this cue exists.
+                f.DirectlyAimedAt = f.DistanceToPlayer <= cfg.AimThreatRadius && PlayerAimingAt(observer);
+                if (f.DirectlyAimedAt)
+                {
+                    f.ThreatSourceKnown = true;
+                    f.ThreatPosition = player.Position;
+                }
             }
 
-            f.DirectlyAimedAt = f.DistanceToPlayer <= cfg.AimThreatRadius && PlayerAimingAt(observer);
-            if (f.DirectlyAimedAt)
-            {
-                f.ThreatSourceKnown = true;
-                f.ThreatPosition = player.Position;
-            }
-
-            f.HearsGunshot = playerShooting && f.DistanceToPlayer <= cfg.GunshotHearingRadius;
+            // Gunfire is an auditory event, but silencers and solid geometry now
+            // reduce the usable radius instead of broadcasting globally.
+            f.HearsGunshot = playerShooting && SensorySystem.CanHearGunshot(observer, player, cfg.GunshotHearingRadius);
             if (f.HearsGunshot && !f.ThreatSourceKnown)
                 f.ThreatPosition = ApproximateSoundSource(observer, player, f.DistanceToPlayer);
 
-            f.SeesBody = SeesRelevantBody(observer, player, nearby, cfg);
+            f.SeesBody = SeesRelevantBody(observer, nearby, cfg);
             SenseSocialCues(observer, nearby, states, cfg, f);
-            f.HostileRelationship = IsHostileToPlayer(observer, player);
+
+            // Relationship state alone is not a sensory trigger. A hostile gang
+            // or enemy only reacts to the player here after actually seeing them.
+            f.HostileRelationship = f.SeesPlayer && IsHostileToPlayer(observer, player);
             return f;
         }
 
@@ -119,8 +127,6 @@ namespace VOX.PedOverhaulVI
 
             if (f.SeesMask && f.SeesWeapon)
             {
-                // Mask + weapon means "this may be a crime beginning", not
-                // "instant active shooter". It raises belief before panic.
                 meaningful = true;
                 s.Suspicion = Add(s.Suspicion, cfg.MaskWeaponCombinationBonus * f.VisualQuality * dt);
                 s.Certainty = Add(s.Certainty, 16f * f.VisualQuality * dt);
@@ -197,8 +203,6 @@ namespace VOX.PedOverhaulVI
                 s.Suspicion = Add(s.Suspicion, cfg.HostileRelationshipSuspicion * dt);
             }
 
-            // Simply seeing a held weapon may justify leaving, but it must not
-            // self-amplify into maximum panic without an escalation signal.
             if (f.SeesWeapon && !f.DirectlyAimedAt && !f.SeesShooting && !s.SawViolence && !s.HeardGunshot)
                 s.Fear = Math.Min(s.Fear, Math.Max(cfg.ConcernedThreshold + 5f, cfg.PanicThreshold - 5f));
 
@@ -243,14 +247,7 @@ namespace VOX.PedOverhaulVI
 
         public static bool FaceObscured(Ped ped)
         {
-            try
-            {
-                // Component 1 is the actual mask slot. A hat/helmet prop is not
-                // automatically a face covering; treating every head prop as a
-                // mask caused false positives with ordinary hats and helmets.
-                int mask = Function.Call<int>(Hash.GET_PED_DRAWABLE_VARIATION, ped.Handle, 1);
-                return mask != 0;
-            }
+            try { return Function.Call<int>(Hash.GET_PED_DRAWABLE_VARIATION, ped.Handle, 1) != 0; }
             catch { return false; }
         }
 
@@ -268,16 +265,13 @@ namespace VOX.PedOverhaulVI
         private static float VisualQuality(Ped observer, Ped target, Config cfg, float distance)
         {
             if (distance > cfg.ThreatVisualRadius) return 0f;
-            try { if (!Function.Call<bool>(Hash.HAS_ENTITY_CLEAR_LOS_TO_ENTITY, observer.Handle, target.Handle, 17)) return 0f; }
-            catch { return 0f; }
+            if (!SensorySystem.HasLineOfSight(observer, target)) return 0f;
 
             Vector3 f = observer.ForwardVector;
-            Vector3 from = observer.Position;
-            Vector3 to = target.Position;
-            double dx = to.X - from.X, dy = to.Y - from.Y, dz = to.Z - from.Z;
-            double len = Math.Sqrt(dx * dx + dy * dy + dz * dz);
+            Vector3 delta = target.Position - observer.Position;
+            double len = Math.Sqrt(delta.X * delta.X + delta.Y * delta.Y + delta.Z * delta.Z);
             if (len < 0.01) return 1f;
-            double dot = (f.X * dx + f.Y * dy + f.Z * dz) / len;
+            double dot = (f.X * delta.X + f.Y * delta.Y + f.Z * delta.Z) / len;
             double central = Math.Cos(Math.Max(20f, Math.Min(170f, cfg.CentralVisualFovDegrees)) * 0.5 * Math.PI / 180.0);
             double peripheral = Math.Cos(Math.Max(30f, Math.Min(179f, cfg.PeripheralVisualFovDegrees)) * 0.5 * Math.PI / 180.0);
             float distanceQuality = Math.Max(0.20f, 1f - distance / Math.Max(1f, cfg.ThreatVisualRadius) * 0.72f);
@@ -286,15 +280,14 @@ namespace VOX.PedOverhaulVI
             return 0f;
         }
 
-        private static bool SeesRelevantBody(Ped observer, Ped player, IList<Ped> nearby, Config cfg)
+        private static bool SeesRelevantBody(Ped observer, IList<Ped> nearby, Config cfg)
         {
             if (nearby == null) return false;
             foreach (Ped p in nearby)
             {
                 if (p == null || !p.Exists() || !p.IsDead || !p.IsHuman || p.Handle == observer.Handle) continue;
                 if (Distance(observer.Position, p.Position) > cfg.BodyAwarenessRadius) continue;
-                try { if (Function.Call<bool>(Hash.HAS_ENTITY_CLEAR_LOS_TO_ENTITY, observer.Handle, p.Handle, 17)) return true; }
-                catch { }
+                if (SensorySystem.HasVisual(observer, p, cfg.BodyAwarenessRadius, cfg.PeripheralVisualFovDegrees)) return true;
             }
             return false;
         }
@@ -306,6 +299,7 @@ namespace VOX.PedOverhaulVI
             int bestHandle = 0;
             bool panic = false;
             bool quiet = false;
+
             foreach (Ped other in nearby)
             {
                 if (other == null || !other.Exists() || other.Handle == observer.Handle || other.IsDead) continue;
@@ -318,22 +312,20 @@ namespace VOX.PedOverhaulVI
                 bool otherQuiet = os.Mode == ReactionMode.DiscreetLeave || os.Mode == ReactionMode.AlertNearby;
                 if (!otherPanicking && !otherQuiet) continue;
 
-                bool visible = d <= 5f;
-                if (!visible)
-                {
-                    try { visible = Function.Call<bool>(Hash.HAS_ENTITY_CLEAR_LOS_TO_ENTITY, observer.Handle, other.Handle, 17); }
-                    catch { }
-                }
-                if (!visible) continue;
+                // No more "within 5 m means visible" shortcut. Walls matter.
+                bool visible = SensorySystem.HasVisual(observer, other, cfg.SocialAwarenessRadius, cfg.PeripheralVisualFovDegrees);
+                bool explicitAudibleWarning = os.Mode == ReactionMode.AlertNearby && SensorySystem.CanHearVocalCue(observer, other, Math.Min(cfg.GroupCommunicationRadius, 18f));
+                if (!visible && !explicitAudibleWarning) continue;
 
                 if (d < best)
                 {
                     best = d;
                     bestHandle = other.Handle;
-                    panic = otherPanicking;
-                    quiet = !panic && otherQuiet && d <= cfg.QuietWithdrawalAwarenessRadius;
+                    panic = otherPanicking || explicitAudibleWarning;
+                    quiet = !panic && otherQuiet && visible && d <= cfg.QuietWithdrawalAwarenessRadius;
                 }
             }
+
             f.CrowdPanic = panic;
             f.QuietWithdrawal = quiet;
             f.SocialSourceHandle = bestHandle;
