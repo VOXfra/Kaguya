@@ -24,9 +24,7 @@ namespace VOX.WorldLifeVI
         private PendingSwap _pending;
         private readonly HashSet<int> _onlineHashes = new HashSet<int>();
 
-        // Deliberately civilian/non-weaponized Online vehicles only. Pools are
-        // grouped by donor class so traffic composition stays plausible.
-        private static readonly Dictionary<int,string[]> OnlinePools = new Dictionary<int,string[]>
+        private static readonly Dictionary<int, string[]> OnlinePools = new Dictionary<int, string[]>
         {
             { 0, new [] { "brioso2", "club", "issi7", "weevil", "kanjosj" } },
             { 1, new [] { "tailgater2", "deity", "cinquemila", "rhinehart", "schafter5" } },
@@ -43,11 +41,11 @@ namespace VOX.WorldLifeVI
         {
             Directory.CreateDirectory(DataDirectory);
             _cfg = Config.Load(ConfigPath);
-            Interval = 0; // density natives are THIS_FRAME and must be refreshed every frame.
+            Interval = 0;
             BuildOnlineHashSet();
             Tick += OnTick;
             Aborted += OnAborted;
-            Log("World Life VI 0.1.0 dynamic population + Online civilian vehicle runtime loaded.");
+            Log("World Life VI 0.2.1 dynamic population + increased Online civilian traffic runtime loaded.");
         }
 
         private void OnTick(object sender, EventArgs e)
@@ -69,10 +67,8 @@ namespace VOX.WorldLifeVI
                     ApplyDensityThisFrame();
                 }
 
-                if (!yielding && _cfg.OnlineVehicles)
-                    UpdateOnlineVehicles(player);
-                else
-                    CancelPending();
+                if (!yielding && _cfg.OnlineVehicles) UpdateOnlineVehicles(player);
+                else CancelPending();
             }
             catch (Exception ex)
             {
@@ -141,7 +137,7 @@ namespace VOX.WorldLifeVI
 
             if (now - _lastOnlineCheck < Math.Max(2500, _cfg.OnlineVehicleCheckMs)) return;
             _lastOnlineCheck = now;
-            if (_random.Next(0,100) >= Math.Max(0, Math.Min(100, _cfg.OnlineVehicleChancePercent))) return;
+            if (_random.Next(0, 100) >= Math.Max(0, Math.Min(100, _cfg.OnlineVehicleChancePercent))) return;
 
             Vehicle donor = FindDonor(player);
             if (donor == null) return;
@@ -150,9 +146,9 @@ namespace VOX.WorldLifeVI
             if (!OnlinePools.TryGetValue(vehicleClass, out pool) || pool == null || pool.Length == 0) return;
 
             int start = _random.Next(pool.Length);
-            for (int i=0; i<pool.Length; i++)
+            for (int i = 0; i < pool.Length; i++)
             {
-                string modelName = pool[(start+i)%pool.Length];
+                string modelName = pool[(start + i) % pool.Length];
                 int hash = Function.Call<int>(Hash.GET_HASH_KEY, modelName);
                 if (!IsUsableVehicleModel(hash)) continue;
                 if (donor.Model.Hash == hash) continue;
@@ -209,13 +205,13 @@ namespace VOX.WorldLifeVI
                 if (speed > 1f && !_cfg.ReplaceMovingTraffic) continue;
                 if (speed <= 1f && !_cfg.ReplaceParkedVehicles) continue;
                 if (_onlineHashes.Contains(v.Model.Hash)) continue;
-
-                // Prefer vehicles outside the player's LOS and farther away so
-                // replacement is effectively invisible rather than a pop-in.
-                bool visible = HasLineOfSight(player, v);
-                if (visible) continue;
+                if (HasLineOfSight(player, v)) continue;
                 float score = d - speed * 0.7f + (v.Driver != null && v.Driver.Exists() ? 4f : 0f);
-                if (score > bestScore) { bestScore = score; best = v; }
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    best = v;
+                }
             }
             return best;
         }
@@ -229,7 +225,7 @@ namespace VOX.WorldLifeVI
             try
             {
                 int passengers = Function.Call<int>(Hash.GET_VEHICLE_NUMBER_OF_PASSENGERS, v.Handle);
-                if (passengers > 0) return false; // first pass transfers driver only; never strand passengers.
+                if (passengers > 0) return false;
             }
             catch { return false; }
             float d = Distance(player.Position, v.Position);
@@ -284,7 +280,8 @@ namespace VOX.WorldLifeVI
             try
             {
                 return hash != 0 && Function.Call<bool>(Hash.IS_MODEL_IN_CDIMAGE, hash) &&
-                       Function.Call<bool>(Hash.IS_MODEL_VALID, hash) && Function.Call<bool>(Hash.IS_MODEL_A_VEHICLE, hash);
+                       Function.Call<bool>(Hash.IS_MODEL_VALID, hash) &&
+                       Function.Call<bool>(Hash.IS_MODEL_A_VEHICLE, hash);
             }
             catch { return false; }
         }
@@ -321,11 +318,11 @@ namespace VOX.WorldLifeVI
 
         private static float ApplyBudget(float target, int count, int soft, int hard)
         {
-            if (hard <= soft) return count >= hard ? Math.Min(1f,target) : target;
+            if (hard <= soft) return count >= hard ? Math.Min(1f, target) : target;
             if (count <= soft) return target;
-            if (count >= hard) return Math.Min(1f,target);
+            if (count >= hard) return Math.Min(1f, target);
             float t = (count - soft) / (float)(hard - soft);
-            return target + (Math.Min(1f,target) - target) * t;
+            return target + (Math.Min(1f, target) - target) * t;
         }
 
         private static bool IsRural(string z)
@@ -348,11 +345,20 @@ namespace VOX.WorldLifeVI
         private static bool IsBusyUrban(string z)
         {
             z = (z ?? string.Empty).ToUpperInvariant();
-            return z == "DOWNT" || z == "PBOX" || z == "TEXTI" || z == "SKID" || z == "VESP" || z == "DELPE" || z == "VCANA" || z == "HAWICK" || z == "ALTA";
+            return z == "DOWNT" || z == "PBOX" || z == "TEXTI" || z == "SKID" ||
+                   z == "VESP" || z == "DELPE" || z == "VCANA" || z == "HAWICK" || z == "ALTA";
         }
 
-        private static float Clamp(float v,float min,float max){return Math.Max(min,Math.Min(max,v));}
-        private static float Distance(Vector3 a,Vector3 b){double x=a.X-b.X,y=a.Y-b.Y,z=a.Z-b.Z;return (float)Math.Sqrt(x*x+y*y+z*z);}
+        private static float Clamp(float v, float min, float max)
+        {
+            return Math.Max(min, Math.Min(max, v));
+        }
+
+        private static float Distance(Vector3 a, Vector3 b)
+        {
+            double x = a.X - b.X, y = a.Y - b.Y, z = a.Z - b.Z;
+            return (float)Math.Sqrt(x * x + y * y + z * z);
+        }
 
         private static void ReleaseModel(int hash)
         {
@@ -378,7 +384,8 @@ namespace VOX.WorldLifeVI
             try
             {
                 Directory.CreateDirectory(DataDirectory);
-                File.AppendAllText(LogPath, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + " | " + message + Environment.NewLine);
+                File.AppendAllText(LogPath,
+                    DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + " | " + message + Environment.NewLine);
             }
             catch { }
         }
