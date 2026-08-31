@@ -33,10 +33,10 @@ jobs:
           Copy-Item modules/PoliceOverhaulVI/bin/Release/net48/PoliceOverhaulVI.dll dist/scripts/PoliceOverhaulVI.dll
           Copy-Item modules/PoliceOverhaulVI/config/PoliceOverhaulVI.ini dist/scripts/PoliceOverhaulVI.ini
           Copy-Item modules/PoliceOverhaulVI/INSTALL.txt dist/INSTALL.txt
-          Compress-Archive -Path dist/* -DestinationPath PoliceOverhaulVI-v0.2.0.zip -Force
+          Compress-Archive -Path dist/* -DestinationPath PoliceOverhaulVI-v0.3.0.zip -Force
       - name: Upload test build
         uses: actions/upload-artifact@v4
         with:
-          name: PoliceOverhaulVI-v0.2.0
-          path: PoliceOverhaulVI-v0.2.0.zip
+          name: PoliceOverhaulVI-v0.3.0
+          path: PoliceOverhaulVI-v0.3.0.zip
           if-no-files-found: error
