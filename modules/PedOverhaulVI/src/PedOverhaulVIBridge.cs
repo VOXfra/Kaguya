@@ -102,8 +102,14 @@ namespace VOX.PedOverhaulVI
                         new[]{typeof(string),typeof(string),typeof(float),typeof(float),typeof(float),typeof(int),typeof(int),typeof(string),typeof(double),typeof(string)},null);
                 }
                 if(_corePublish==null)return;
-                Ped target=new Ped(pedHandle);if(target==null||!target.Exists())return;
-                Ped player=Game.LocalPlayerPed;int suspect=player!=null&&player.Exists()?player.Model.Hash:0;
+                Ped player=Game.LocalPlayerPed;if(player==null||!player.Exists())return;
+                Ped target=null;
+                foreach(Ped ped in World.GetNearbyPeds(player,120f))
+                {
+                    if(ped!=null&&ped.Exists()&&ped.Handle==pedHandle){target=ped;break;}
+                }
+                if(target==null)return;
+                int suspect=player.Model.Hash;
                 int severity=(intent=="rob"||intent=="threaten")?3:((intent=="antagonize"||intent=="insult")?1:0);
                 var p=target.Position;
                 _corePublish.Invoke(null,new object[]{"social","player_interaction",p.X,p.Y,p.Z,severity,suspect,"InteractionRuntimeVI",2.0,"intent="+intent+";targetModel="+modelHash+";intensity="+intensity.ToString("0.00",System.Globalization.CultureInfo.InvariantCulture)});
