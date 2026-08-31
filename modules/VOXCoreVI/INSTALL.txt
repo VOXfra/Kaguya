@@ -1,0 +1,20 @@
+VOX Core VI 0.1.0
+=================
+
+Shared persistent world-memory layer for the VOX GTA VI-style overhaul.
+It stores world events published by other VOX modules in
+scripts\VOXCoreVI\WorldMemory.xml.
+
+Install:
+1. Install ScriptHookV and ScriptHookVDotNet Enhanced v1.1.0.6.
+2. Copy scripts\VOXCoreVI.dll into the GTA V Enhanced scripts folder.
+3. The data directory is created automatically.
+
+This module does not replace GTA V archives. Other VOX modules can continue
+running when VOX Core is absent.
+
+0.1.0:
+- Persistent WorldEvent store.
+- Expiring events with category, type, severity, location, source and tags.
+- Public bridge for independent VOX modules.
+- XML persistence and periodic cleanup.
