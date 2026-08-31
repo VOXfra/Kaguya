@@ -140,9 +140,9 @@ namespace VOX.PedOverhaulVI
                 case SceneThreatKind.Gunfire:
                     s.Attention = Add(s.Attention, 45f * alert * confidence);
                     s.Suspicion = Math.Max(s.Suspicion, 60f * confidence);
-                    s.Certainty = Add(s.Certainty, p.Visual ? 62f * confidence : 28f * confidence);
+                    s.Certainty = Add(s.Certainty, p.Visual ? 62f * confidence : 22f * confidence);
                     s.Fear = Add(s.Fear, (35f + 50f * proximity) * preservation * brave * confidence);
-                    s.HeardExternalGunfire = true;
+                    s.HeardExternalGunfire = p.Audible;
                     if (p.Visual) s.SawViolence = true;
                     break;
                 case SceneThreatKind.Body:
@@ -170,9 +170,9 @@ namespace VOX.PedOverhaulVI
                 case SceneThreatKind.Explosion:
                     s.Attention = Math.Max(s.Attention, 90f);
                     s.Suspicion = Math.Max(s.Suspicion, 85f);
-                    s.Certainty = Math.Max(s.Certainty, p.Visual ? 96f : 72f);
+                    s.Certainty = Math.Max(s.Certainty, p.Visual ? 96f : 68f);
                     s.Fear = Add(s.Fear, 75f * preservation * brave * confidence);
-                    s.HeardExplosion = true;
+                    s.HeardExplosion = p.Audible;
                     break;
                 case SceneThreatKind.CrowdFlight:
                     s.Attention = Add(s.Attention, 20f * confidence);
@@ -182,7 +182,7 @@ namespace VOX.PedOverhaulVI
                 case SceneThreatKind.SocialWarning:
                     s.Attention = Add(s.Attention, 28f * confidence);
                     s.Suspicion = Add(s.Suspicion, cfg.DirectWarningSuspicion * confidence);
-                    s.Certainty = Add(s.Certainty, 22f * confidence);
+                    s.Certainty = Add(s.Certainty, 18f * confidence);
                     s.SocialThreatConfidence = Math.Max(s.SocialThreatConfidence, confidence * 100f);
                     break;
             }
@@ -214,7 +214,11 @@ namespace VOX.PedOverhaulVI
                 bool armed = VisibleWeaponDrawn(p);
 
                 if (shooting)
-                    AddOrRefresh(SceneThreatKind.Gunfire, p.Handle, 0, p.Position, Vector3.Zero, 96f, cfg.ExternalGunfireVisualRadius, cfg.ExternalGunfireAudibleRadius, now, 2600, true);
+                {
+                    float audible = cfg.ExternalGunfireAudibleRadius;
+                    if (SensorySystem.IsWeaponSuppressed(p)) audible *= 0.22f;
+                    AddOrRefresh(SceneThreatKind.Gunfire, p.Handle, 0, p.Position, Vector3.Zero, 96f, cfg.ExternalGunfireVisualRadius, audible, now, 2600, true);
+                }
                 else if (melee)
                     AddOrRefresh(SceneThreatKind.Fight, p.Handle, 0, p.Position, Vector3.Zero, 46f, cfg.FightVisualRadius, cfg.FightAudibleRadius, now, 1800, true);
 
@@ -229,6 +233,7 @@ namespace VOX.PedOverhaulVI
                     (state.Mode == ReactionMode.Flee || state.Mode == ReactionMode.Cower || state.Mode == ReactionMode.Cover || state.Mode == ReactionMode.Evade) &&
                     state.Stage >= AwarenessStage.Concerned)
                 {
+                    // Crowd flight is a visual cue. It is not a radio network.
                     AddOrRefresh(SceneThreatKind.CrowdFlight, p.Handle, 0, p.Position, Vector3.Zero, 34f, cfg.SocialAwarenessRadius, 0f, now, 1600, false);
                 }
             }
@@ -284,30 +289,30 @@ namespace VOX.PedOverhaulVI
             Vector3 eventPos = ResolvePosition(e);
             float d = Distance(observer.Position, eventPos);
             bool visual = false;
-            bool audible = e.AudibleRadius > 0f && d <= e.AudibleRadius;
-            float confidence = 0f;
+            bool audible = false;
+            float confidence;
 
             if (e.Kind == SceneThreatKind.VehicleHazard)
             {
                 float tti, miss;
                 if (!VehicleTrajectoryThreat(observer.Position, eventPos, e.Velocity, cfg, out tti, out miss)) return null;
                 visual = d <= e.VisualRadius && HasVisualAccess(observer, e.SourceHandle, eventPos, cfg.PeripheralVisualFovDegrees);
-                audible = audible || d <= cfg.VehicleHazardAudibleRadius;
+                audible = SensorySystem.CanHearEvent(observer, e.SourceHandle, eventPos, e.AudibleRadius, e.Kind);
                 if (!visual && !audible) return null;
-                confidence = visual ? 0.95f : 0.62f;
+                confidence = visual ? 0.95f : 0.58f;
                 return new ScenePerception { HasThreat = true, Kind = e.Kind, SourceHandle = e.SourceHandle, Position = eventPos, Velocity = e.Velocity, Distance = d, Confidence = confidence, Severity = e.Severity, Visual = visual, Audible = audible, Immediate = tti <= cfg.VehicleImmediateTtcSeconds, SourceKnown = visual, TimeToImpact = tti };
             }
 
             if (e.VisualRadius > 0f && d <= e.VisualRadius)
                 visual = HasVisualAccess(observer, e.SourceHandle, eventPos, cfg.PeripheralVisualFovDegrees);
+            if (e.AudibleRadius > 0f)
+                audible = SensorySystem.CanHearEvent(observer, e.SourceHandle, eventPos, e.AudibleRadius, e.Kind);
             if (!visual && !audible) return null;
 
-            if (visual)
-                confidence = Math.Max(0.30f, 1f - d / Math.Max(1f, e.VisualRadius) * 0.62f);
-            else if (audible)
-                confidence = Math.Max(0.22f, 1f - d / Math.Max(1f, e.AudibleRadius) * 0.70f);
+            if (visual) confidence = Math.Max(0.30f, 1f - d / Math.Max(1f, e.VisualRadius) * 0.62f);
+            else confidence = Math.Max(0.18f, 1f - d / Math.Max(1f, e.AudibleRadius) * 0.76f);
 
-            bool immediate = e.Kind == SceneThreatKind.Gunfire && d < 24f || e.Kind == SceneThreatKind.Fire && d < 12f || e.Kind == SceneThreatKind.Explosion && d < 28f;
+            bool immediate = (e.Kind == SceneThreatKind.Gunfire && d < 24f) || (e.Kind == SceneThreatKind.Fire && d < 12f) || (e.Kind == SceneThreatKind.Explosion && d < 28f);
             return new ScenePerception
             {
                 HasThreat = true,
@@ -333,6 +338,9 @@ namespace VOX.PedOverhaulVI
             PedState best = null;
             Ped bestPed = null;
             float bestTrust = 0f;
+            bool bestVisual = false;
+            bool bestAudible = false;
+
             foreach (Ped other in nearby)
             {
                 if (other == null || !other.Exists() || other.IsDead || other.Handle == observer.Handle) continue;
@@ -340,31 +348,43 @@ namespace VOX.PedOverhaulVI
                 if (d > cfg.GroupCommunicationRadius) continue;
                 PedState os;
                 if (!states.TryGetValue(other.Handle, out os) || os.LastStimulusAt <= 0 || os.Certainty < cfg.ConcernedThreshold) continue;
-                bool explicitWarning = os.Mode == ReactionMode.AlertNearby || os.Mode == ReactionMode.Phone;
+
+                bool explicitWarning = os.Mode == ReactionMode.AlertNearby;
+                bool visuallyReadableReaction = os.Stage >= AwarenessStage.Concerned &&
+                    SensorySystem.HasVisual(observer, other, cfg.GroupCommunicationRadius, cfg.PeripheralVisualFovDegrees);
+                bool audibleWarning = explicitWarning && SensorySystem.CanHearVocalCue(observer, other, Math.Min(cfg.GroupCommunicationRadius, 18f));
+                if (!visuallyReadableReaction && !audibleWarning) continue;
+
                 bool sameGroup = state.GroupId >= 0 && state.GroupId == os.GroupId;
                 bool sharedVehicle = SameVehicle(observer, other);
-                if (!explicitWarning && !sameGroup && !sharedVehicle) continue;
                 float trust = sameGroup || sharedVehicle ? cfg.SameGroupInformationTrust : cfg.StrangerWarningTrust;
                 trust *= Math.Max(0.35f, os.Certainty / 100f);
+                if (!explicitWarning) trust *= 0.62f;
                 if (trust <= bestTrust) continue;
+
                 bestTrust = trust;
                 best = os;
                 bestPed = other;
+                bestVisual = visuallyReadableReaction;
+                bestAudible = audibleWarning;
             }
+
             if (best == null || bestPed == null) return null;
             return new ScenePerception
             {
                 HasThreat = true,
                 Kind = SceneThreatKind.SocialWarning,
                 SourceHandle = bestPed.Handle,
-                Position = best.LastThreatPosition,
+                Position = best.LastThreatPosition != Vector3.Zero ? best.LastThreatPosition : bestPed.Position,
                 Distance = Distance(observer.Position, bestPed.Position),
                 Confidence = bestTrust,
-                Severity = 48f + best.Certainty * 0.35f,
-                Visual = true,
-                Audible = true,
-                Immediate = best.Stage == AwarenessStage.Panic,
-                SourceKnown = best.ThreatSourceKnown,
+                Severity = 42f + best.Certainty * 0.30f,
+                Visual = bestVisual,
+                Audible = bestAudible,
+                Immediate = false,
+                // A warning can tell the observer that something is wrong and where,
+                // but it does not grant a magic entity handle for the culprit.
+                SourceKnown = false,
                 TimeToImpact = 99f
             };
         }
@@ -403,34 +423,21 @@ namespace VOX.PedOverhaulVI
 
         private static bool VisibleWeaponDrawn(Ped p)
         {
-            if (p == null || !p.Exists()) return false;
-            try
-            {
-                int weapon = Function.Call<int>(Hash.GET_SELECTED_PED_WEAPON, p.Handle);
-                int unarmed = Function.Call<int>(Hash.GET_HASH_KEY, "WEAPON_UNARMED");
-                return weapon != 0 && weapon != unarmed && Function.Call<bool>(Hash.IS_PED_ARMED, p.Handle, 7);
-            }
-            catch { return false; }
+            return SituationModel.VisibleWeaponDrawn(p);
         }
 
         private static bool HasVisualAccess(Ped observer, int sourceHandle, Vector3 position, float fov)
         {
-            Vector3 forward = observer.ForwardVector;
-            Vector3 from = observer.Position;
-            Vector3 delta = position - from;
-            double len = Math.Sqrt(delta.X * delta.X + delta.Y * delta.Y + delta.Z * delta.Z);
-            if (len > 0.05)
-            {
-                double dot = (forward.X * delta.X + forward.Y * delta.Y + forward.Z * delta.Z) / len;
-                double threshold = Math.Cos(Math.Max(30f, Math.Min(179f, fov)) * 0.5 * Math.PI / 180.0);
-                if (dot < threshold) return false;
-            }
             if (sourceHandle > 0)
             {
-                try { return Function.Call<bool>(Hash.HAS_ENTITY_CLEAR_LOS_TO_ENTITY, observer.Handle, sourceHandle, 17); }
+                try
+                {
+                    Entity e = Entity.FromHandle(sourceHandle);
+                    if (e != null && e.Exists()) return SensorySystem.HasVisual(observer, e, 500f, fov);
+                }
                 catch { }
             }
-            return true;
+            return SensorySystem.HasVisual(observer, sourceHandle, position, 500f, fov);
         }
 
         private static bool VehicleTrajectoryThreat(Vector3 pedPos, Vector3 vehiclePos, Vector3 velocity, Config cfg, out float t, out float miss)
@@ -472,8 +479,7 @@ namespace VOX.PedOverhaulVI
 
         private static float Distance(Vector3 a, Vector3 b)
         {
-            double x = a.X - b.X, y = a.Y - b.Y, z = a.Z - b.Z;
-            return (float)Math.Sqrt(x * x + y * y + z * z);
+            return SituationModel.Distance(a, b);
         }
     }
 }
