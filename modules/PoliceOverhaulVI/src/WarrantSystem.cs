@@ -18,7 +18,7 @@ namespace VOX.PoliceOverhaulVI
 
         public bool Update(Ped player,CaseMemory memory,Config cfg,Action<string> log)
         {
-            if(!cfg.WarrantsEnabled||!cfg.HomeSurveillanceEnabled||memory==null||!memory.WarrantActive||!memory.FaceKnown){Cleanup();return false;}
+            if(!cfg.WarrantsEnabled||!cfg.HomeSurveillanceEnabled||memory==null||!memory.WarrantActive||!memory.IdentityConfirmed){Cleanup();return false;}
             if(memory.IsWarrantExpiredUtc()){memory.WarrantActive=false;Cleanup();return false;}
             HomeProfile home=FindNearbyHome(player,memory.SuspectModelHash,cfg.HomeSurveillanceActivationRadius);
             if(home==null){if(HasStakeout()&&Perception.Distance(player.Position,GetEntityPosition(_vehicleHandle))>550f)Cleanup();return false;}
@@ -30,9 +30,8 @@ namespace VOX.PoliceOverhaulVI
             Vector3 observerPos=GetEntityPosition(observer);
             if(Perception.Distance(observerPos,player.Position)>90f||!Function.Call<bool>(Hash.HAS_ENTITY_CLEAR_LOS_TO_ENTITY,observer,player.Handle,17))return false;
 
-            // Identification comes first. Do not aim/fire merely because an old
-            // warrant exists; the main runtime restores wanted and ForcePolicy
-            // then decides the appropriate level of force from the current act.
+            float confidence=IdentificationSystem.MatchConfidence(player,memory,Perception.Distance(observerPos,player.Position),true,cfg);
+            if(!IdentificationSystem.IsConfirmedMatch(confidence,memory,cfg))return false;
             try
             {
                 if(EntityExists(_passengerHandle))Function.Call(Hash.TASK_LOOK_AT_ENTITY,_passengerHandle,player.Handle,2500,0,2);
@@ -40,55 +39,18 @@ namespace VOX.PoliceOverhaulVI
             }
             catch { }
             memory.LastKnownPosition=player.Position;memory.LastSource=ObservationSource.HomeSurveillance;memory.LastObservedGameTime=Game.GameTime;
-            if(log!=null)log("Home-surveillance unit identified wanted suspect; response authorization deferred to force policy.");
+            if(log!=null)log("Home-surveillance unit confirmed warrant match; response authorization deferred to force policy.");
             return true;
         }
 
         public void Cleanup(){DeleteEntity(ref _driverHandle);DeleteEntity(ref _passengerHandle);DeleteEntity(ref _vehicleHandle);}
-
-        private HomeProfile FindNearbyHome(Ped player,int suspectModelHash,float radius)
-        {
-            if(player==null||!player.Exists())return null;
-            foreach(HomeProfile home in _homes)
-            {
-                int h=0;try{h=Function.Call<int>(Hash.GET_HASH_KEY,home.SuspectModel);}catch{}
-                if(h==suspectModelHash&&Perception.Distance(player.Position,home.Home)<=radius)return home;
-            }
-            return null;
-        }
-
+        private HomeProfile FindNearbyHome(Ped player,int suspectModelHash,float radius){if(player==null||!player.Exists())return null;foreach(HomeProfile home in _homes){int h=0;try{h=Function.Call<int>(Hash.GET_HASH_KEY,home.SuspectModel);}catch{}if(h==suspectModelHash&&Perception.Distance(player.Position,home.Home)<=radius)return home;}return null;}
         private void TrySpawnStakeout(HomeProfile home,Action<string> log)
         {
-            _lastSpawnAt=Game.GameTime;
-            int vehicleModel=Function.Call<int>(Hash.GET_HASH_KEY,"police3"),copModel=Function.Call<int>(Hash.GET_HASH_KEY,"s_m_y_cop_01");
-            Function.Call(Hash.REQUEST_MODEL,vehicleModel);Function.Call(Hash.REQUEST_MODEL,copModel);
-            if(!Function.Call<bool>(Hash.HAS_MODEL_LOADED,vehicleModel)||!Function.Call<bool>(Hash.HAS_MODEL_LOADED,copModel))return;
-            try
-            {
-                _vehicleHandle=Function.Call<int>(Hash.CREATE_VEHICLE,vehicleModel,home.Stakeout.X,home.Stakeout.Y,home.Stakeout.Z,home.Heading,false,false);
-                if(_vehicleHandle==0)return;
-                Function.Call(Hash.SET_ENTITY_AS_MISSION_ENTITY,_vehicleHandle,true,true);Function.Call(Hash.SET_VEHICLE_ON_GROUND_PROPERLY,_vehicleHandle);
-                Function.Call(Hash.SET_VEHICLE_ENGINE_ON,_vehicleHandle,false,true,true);Function.Call(Hash.SET_VEHICLE_SIREN,_vehicleHandle,false);Function.Call(Hash.SET_VEHICLE_HANDBRAKE,_vehicleHandle,true);
-                _driverHandle=Function.Call<int>(Hash.CREATE_PED_INSIDE_VEHICLE,_vehicleHandle,6,copModel,-1,false,false);
-                _passengerHandle=Function.Call<int>(Hash.CREATE_PED_INSIDE_VEHICLE,_vehicleHandle,6,copModel,0,false,false);
-                SetupCop(_driverHandle);SetupCop(_passengerHandle);
-                if(log!=null)log("Police stakeout staged near known residence.");
-            }
-            catch(Exception ex){if(log!=null)log("Stakeout spawn failed: "+ex.Message);Cleanup();}
-            finally{Function.Call(Hash.SET_MODEL_AS_NO_LONGER_NEEDED,vehicleModel);Function.Call(Hash.SET_MODEL_AS_NO_LONGER_NEEDED,copModel);}
+            _lastSpawnAt=Game.GameTime;int vehicleModel=Function.Call<int>(Hash.GET_HASH_KEY,"police3"),copModel=Function.Call<int>(Hash.GET_HASH_KEY,"s_m_y_cop_01");Function.Call(Hash.REQUEST_MODEL,vehicleModel);Function.Call(Hash.REQUEST_MODEL,copModel);if(!Function.Call<bool>(Hash.HAS_MODEL_LOADED,vehicleModel)||!Function.Call<bool>(Hash.HAS_MODEL_LOADED,copModel))return;
+            try{_vehicleHandle=Function.Call<int>(Hash.CREATE_VEHICLE,vehicleModel,home.Stakeout.X,home.Stakeout.Y,home.Stakeout.Z,home.Heading,false,false);if(_vehicleHandle==0)return;Function.Call(Hash.SET_ENTITY_AS_MISSION_ENTITY,_vehicleHandle,true,true);Function.Call(Hash.SET_VEHICLE_ON_GROUND_PROPERLY,_vehicleHandle);Function.Call(Hash.SET_VEHICLE_ENGINE_ON,_vehicleHandle,false,true,true);Function.Call(Hash.SET_VEHICLE_SIREN,_vehicleHandle,false);Function.Call(Hash.SET_VEHICLE_HANDBRAKE,_vehicleHandle,true);_driverHandle=Function.Call<int>(Hash.CREATE_PED_INSIDE_VEHICLE,_vehicleHandle,6,copModel,-1,false,false);_passengerHandle=Function.Call<int>(Hash.CREATE_PED_INSIDE_VEHICLE,_vehicleHandle,6,copModel,0,false,false);SetupCop(_driverHandle);SetupCop(_passengerHandle);if(log!=null)log("Police stakeout staged near known residence.");}catch(Exception ex){if(log!=null)log("Stakeout spawn failed: "+ex.Message);Cleanup();}finally{Function.Call(Hash.SET_MODEL_AS_NO_LONGER_NEEDED,vehicleModel);Function.Call(Hash.SET_MODEL_AS_NO_LONGER_NEEDED,copModel);}
         }
-
-        private static void SetupCop(int h)
-        {
-            if(!EntityExists(h))return;
-            try
-            {
-                Function.Call(Hash.SET_PED_AS_COP,h,true);Function.Call(Hash.SET_PED_ACCURACY,h,30);
-                int stun=Function.Call<int>(Hash.GET_HASH_KEY,"WEAPON_STUNGUN");Function.Call(Hash.GIVE_WEAPON_TO_PED,h,stun,20,false,true);
-                Function.Call(Hash.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS,h,true);
-            }
-            catch{}
-        }
+        private static void SetupCop(int h){if(!EntityExists(h))return;try{Function.Call(Hash.SET_PED_AS_COP,h,true);Function.Call(Hash.SET_PED_ACCURACY,h,30);int stun=Function.Call<int>(Hash.GET_HASH_KEY,"WEAPON_STUNGUN");Function.Call(Hash.GIVE_WEAPON_TO_PED,h,stun,20,false,true);Function.Call(Hash.SET_BLOCKING_OF_NON_TEMPORARY_EVENTS,h,true);}catch{}}
         private bool HasStakeout(){return EntityExists(_vehicleHandle)&&(EntityExists(_driverHandle)||EntityExists(_passengerHandle));}
         private static bool EntityExists(int h){return h!=0&&Function.Call<bool>(Hash.DOES_ENTITY_EXIST,h);}
         private static Vector3 GetEntityPosition(int h){if(!EntityExists(h))return Vector3.Zero;try{return Function.Call<Vector3>(Hash.GET_ENTITY_COORDS,h,true);}catch{return Vector3.Zero;}}
