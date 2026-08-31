@@ -35,6 +35,10 @@ namespace VOX.PoliceOverhaulVI
             if (memory == null) return;
             _boundCase = memory;
             _boundModel = memory.SuspectModelHash;
+            // The legacy HUD uses LastWantedEndedAt to create a post-pursuit search.
+            // Once the new owned CustomSearch has already run to completion, do not
+            // start a second full search timer for the same pursuit.
+            if (LastCustomSearchEndedAt > 0) memory.LastWantedEndedAt = 0;
         }
 
         public static CaseMemory CaseFor(Ped player)
@@ -53,8 +57,8 @@ namespace VOX.PoliceOverhaulVI
         public static void CaptureActiveSignalment(Ped player, CaseMemory memory, bool plateKnown)
         {
             if (player == null || !player.Exists()) return;
-            if (memory != null) BindCase(memory);
             LastCustomSearchEndedAt = 0;
+            if (memory != null) BindCase(memory);
 
             ActiveOutfit = OutfitSignature.Capture(player);
             ActiveOutfitValid = ActiveOutfit != null;
@@ -116,6 +120,9 @@ namespace VOX.PoliceOverhaulVI
 
         public static void ResetSearch(bool clearSignalment)
         {
+            if (!clearSignalment && SearchActive && SearchDeadlineAt > 0 && Game.GameTime >= SearchDeadlineAt)
+                LastCustomSearchEndedAt = Game.GameTime;
+
             SearchActive = false;
             ThreatLevel = 0;
             SearchStartedAt = 0;
