@@ -14,6 +14,7 @@ namespace VOX.PoliceOverhaulVI
         public static int ThreatLevel;
         public static int SearchStartedAt;
         public static int SearchDeadlineAt;
+        public static int LastCustomSearchEndedAt;
         public static int LastDirectObservationAt;
         public static int LastTrackerPingAt;
         public static Vector3 LastKnownPosition;
@@ -53,6 +54,7 @@ namespace VOX.PoliceOverhaulVI
         {
             if (player == null || !player.Exists()) return;
             if (memory != null) BindCase(memory);
+            LastCustomSearchEndedAt = 0;
 
             ActiveOutfit = OutfitSignature.Capture(player);
             ActiveOutfitValid = ActiveOutfit != null;
@@ -107,6 +109,11 @@ namespace VOX.PoliceOverhaulVI
             CandidateConfidence = 0f;
         }
 
+        public static void MarkSearchExpired()
+        {
+            LastCustomSearchEndedAt = Game.GameTime;
+        }
+
         public static void ResetSearch(bool clearSignalment)
         {
             SearchActive = false;
@@ -118,6 +125,7 @@ namespace VOX.PoliceOverhaulVI
             LastKnownPosition = Vector3.Zero;
             ResetCandidate();
             if (!clearSignalment) return;
+            LastCustomSearchEndedAt = 0;
             ActiveOutfit = null;
             ActiveOutfitValid = false;
             ActiveVehicle = null;
