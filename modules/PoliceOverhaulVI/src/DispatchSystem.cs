@@ -90,7 +90,10 @@ namespace VOX.PoliceOverhaulVI
             bool rural=IsRural(player.Position);
             if(level==3)
                 return SpawnGroundUnit(player,rural?"sheriff2":"police3",rural?"s_m_y_sheriff_01":"s_m_y_cop_01",level,1,false,false,log);
-            return SpawnGroundUnit(player,"riot","s_m_y_swat_01",level,2,false,true,log);
+            // Tier four/five can bring SWAT vehicles/personnel, but the unit
+            // itself starts non-lethal. ForcePolicySystem owns the actual
+            // lethal escalation based on current threatening behaviour.
+            return SpawnGroundUnit(player,"riot","s_m_y_swat_01",level,2,false,false,log);
         }
 
         private bool SpawnMilitaryGround(Ped player,Action<string> log)
