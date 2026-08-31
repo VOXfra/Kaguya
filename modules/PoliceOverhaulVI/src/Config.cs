@@ -7,132 +7,73 @@ namespace VOX.PoliceOverhaulVI
 {
     internal sealed class Config
     {
-        public bool Enabled = true;
-        public bool HidePoliceBlips = true;
-        public bool MissionSafeMode = true;
-        public bool DebugLogging = true;
-        public bool PersistenceEnabled = true;
-        public int PersistenceSaveIntervalMs = 10000;
-        public int PostMissionGraceMs = 5000;
-        public int MissionFlagConfirmMs = 1800;
-        public int MissionFlagExitHoldMs = 2500;
-        public int ScriptTickIntervalMs = 25;
+        public bool Enabled=true,HidePoliceBlips=true,MissionSafeMode=true,DebugLogging=true,PersistenceEnabled=true;
+        public int PersistenceSaveIntervalMs=10000,PostMissionGraceMs=5000,MissionFlagConfirmMs=1800,MissionFlagExitHoldMs=2500,ScriptTickIntervalMs=25;
 
-        public bool InterceptUnwitnessedWanted = true;
-        public float CivilianWitnessDistance = 50f;
-        public float PoliceWitnessDistance = 95f;
-        public int CivilianReportDelayMs = 4500;
-        public int PoliceConfirmDelayMs = 250;
-        public int PendingIncidentTimeoutMs = 12000;
-        public int PendingWitnessScanIntervalMs = 250;
+        public bool InterceptUnwitnessedWanted=true;
+        public float CivilianWitnessDistance=50f,PoliceWitnessDistance=95f;
+        public int CivilianReportDelayMs=4500,PoliceConfirmDelayMs=250,PendingIncidentTimeoutMs=12000,PendingWitnessScanIntervalMs=250;
 
-        public float FaceRecognitionDistance = 20f;
-        public float OutfitRecognitionDistance = 35f;
-        public float VehicleRecognitionDistance = 70f;
-        public float PlateRecognitionDistance = 48f;
-        public float WeaponRecognitionDistance = 40f;
-        public float SuspectCountRecognitionDistance = 55f;
-        public int ReacquireCooldownMs = 6500;
-        public int CaseMemoryHours = 12;
-        public bool PoliceANPR = true;
+        public float FaceRecognitionDistance=20f,OutfitRecognitionDistance=35f,VehicleRecognitionDistance=70f,PlateRecognitionDistance=48f,WeaponRecognitionDistance=40f,SuspectCountRecognitionDistance=55f;
+        public int ReacquireCooldownMs=6500,CaseMemoryHours=12;
+        public bool PoliceANPR=true;
 
-        public bool CctvEnabled = true;
-        public float CctvScanRadius = 85f;
-        public float CctvFovDegrees = 72f;
-        public int CctvCrimeReportDelayMs = 9000;
-        public int CctvReacquireDelayMs = 1800;
-        public bool CctvCanDispatch = true;
+        public bool CctvEnabled=true,CctvCanDispatch=true;
+        public float CctvScanRadius=85f,CctvFovDegrees=72f;
+        public int CctvCrimeReportDelayMs=9000,CctvReacquireDelayMs=1800;
 
-        public bool TrackersEnabled = true;
-        public bool PoliceVehiclesAlwaysTracked = true;
-        public int PremiumVehicleTrackerChance = 70;
-        public int RegularVehicleTrackerChance = 28;
-        public int TrackerPingIntervalMs = 4500;
-        public int TrackerReacquireDelayMs = 5500;
+        public bool TrackersEnabled=true,PoliceVehiclesAlwaysTracked=true;
+        public int PremiumVehicleTrackerChance=70,RegularVehicleTrackerChance=28,TrackerPingIntervalMs=4500,TrackerReacquireDelayMs=5500;
 
-        public bool TrafficEnforcementEnabled = true;
-        public bool TrafficCameraEnforcement = true;
-        public int UrbanSpeedLimitKph = 80;
-        public int HighwaySpeedLimitKph = 121;
-        public int SpeedToleranceKph = 10;
-        public int SpeedingGraceMs = 2500;
-        public int CitationCooldownMs = 30000;
-        public int SpeedingBaseFine = 50;
-        public int SpeedingFinePerKph = 8;
-        public bool AutoDeductFines = true;
-        public int FineDeliveryDelayMs = 30000;
-        public bool PoliceObservedSpeedingCanEscalate = true;
-        public int PoliceSpeedingReportDelayMs = 3500;
+        public bool TrafficEnforcementEnabled=true,TrafficCameraEnforcement=true,AutoDeductFines=true,PoliceObservedSpeedingCanEscalate=true;
+        public int UrbanSpeedLimitKph=80,HighwaySpeedLimitKph=121,SpeedToleranceKph=10,SpeedingGraceMs=2500,CitationCooldownMs=30000;
+        public int SpeedingBaseFine=50,SpeedingFinePerKph=8,FineDeliveryDelayMs=30000,PoliceSpeedingReportDelayMs=3500;
+        public int RecklessSpeedOverKph=45,RecklessFineBonus=250;
+        public bool FineMailEnabled=true,FineMailArchiveEnabled=true,FineMailSound=true;
+        public string FineMailSender="LSPD Traffic Division";
 
-        public bool WarrantsEnabled = true;
-        public int WarrantMinimumThreat = 3;
-        public int WarrantMemoryHours = 48;
-        public bool HomeSurveillanceEnabled = true;
-        public float HomeSurveillanceActivationRadius = 190f;
-        public int HomeSurveillanceRespawnCooldownMs = 90000;
+        public bool WarrantsEnabled=true,HomeSurveillanceEnabled=true;
+        public int WarrantMinimumThreat=3,WarrantMemoryHours=48,HomeSurveillanceRespawnCooldownMs=90000;
+        public float HomeSurveillanceActivationRadius=190f;
 
-        public bool ProportionalForceEnabled = true;
-        public int LethalForceMinimumWanted = 3;
-        public int PitMinimumWanted = 2;
-        public float PitMinimumSpeedKph = 75f;
-        public float ForcePolicyRadius = 135f;
-        public int ForcePolicyScanIntervalMs = 250;
-        public int NonLethalAccuracy = 12;
-        public int NonLethalShootRate = 28;
+        public bool ProportionalForceEnabled=true,LethalForceRequiresCurrentThreat=true,PitRequiresFleeing=true;
+        public int LethalForceMinimumWanted=3,LethalArmedEscalationWanted=4,PitMinimumWanted=2;
+        public float PitMinimumSpeedKph=75f,ForcePolicyRadius=135f;
+        public int ForcePolicyScanIntervalMs=250,NonLethalAccuracy=12,NonLethalShootRate=28;
 
-        public bool SearchHudEnabled = true;
-        public bool ShowSearchCircles = true;
-        public bool ShowEvidenceIcons = true;
-        public float SearchInnerBaseRadius = 120f;
-        public float SearchRadiusPerStar = 55f;
-        public float SearchOuterExtraRadius = 110f;
-        public int SearchInnerAlpha = 72;
-        public int SearchOuterAlpha = 34;
-        public int SearchCircleObservationGraceMs = 1600;
-        public float EvidenceIconSize = 27f;
+        public bool SearchHudEnabled=true,ShowSearchCircles=true,ShowEvidenceIcons=true;
+        public float SearchInnerBaseRadius=120f,SearchRadiusPerStar=55f,SearchOuterExtraRadius=110f,SearchUncertaintyGrowthPerSecond=3.5f,SearchMaxGrowth=170f;
+        public int SearchInnerAlpha=72,SearchOuterAlpha=34,SearchCircleObservationGraceMs=1600,SearchLostContactDelayMs=2600,SearchPhaseLifetimeMs=60000;
+        public float EvidenceIconSize=27f;
 
-        public bool EnableSixthStar = true;
-        public int SixStarAfterFiveStarSeconds = 50;
-        public int SixStarHeatThreshold = 3;
-        public int FiveStarShootingHeatIntervalMs = 12000;
-        public bool CustomDispatchEnabled = true;
-        public int DispatchSupportIntervalMs = 22000;
-        public int SixStarHeavyIntervalMs = 30000;
-        public int MaxCustomUnits = 6;
-        public bool SixStarMilitaryGround = true;
-        public bool SixStarAttackHelicopter = true;
-        public bool SixStarJet = true;
+        public bool EnableSixthStar=true,CustomDispatchEnabled=true,SixStarMilitaryGround=true,SixStarAttackHelicopter=true,SixStarJet=true;
+        public int SixStarAfterFiveStarSeconds=50,SixStarHeatThreshold=3,FiveStarShootingHeatIntervalMs=12000,DispatchSupportIntervalMs=22000,SixStarHeavyIntervalMs=30000,MaxCustomUnits=6;
 
         public static Config Load(string path)
         {
-            var cfg = new Config();
-            if (!File.Exists(path)) return cfg;
-            var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            string section = string.Empty;
-            foreach (string raw in File.ReadAllLines(path))
+            var cfg=new Config(); if(!File.Exists(path))return cfg;
+            var v=new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase); string section=string.Empty;
+            foreach(string raw in File.ReadAllLines(path))
             {
-                string line = raw.Trim();
-                if (line.Length == 0 || line.StartsWith(";") || line.StartsWith("#")) continue;
-                if (line.StartsWith("[") && line.EndsWith("]")) { section = line.Substring(1, line.Length - 2).Trim(); continue; }
-                int eq = line.IndexOf('='); if (eq <= 0) continue;
-                values[section + "." + line.Substring(0, eq).Trim()] = line.Substring(eq + 1).Trim();
+                string line=raw.Trim(); if(line.Length==0||line.StartsWith(";")||line.StartsWith("#"))continue;
+                if(line.StartsWith("[")&&line.EndsWith("]")){section=line.Substring(1,line.Length-2).Trim();continue;}
+                int eq=line.IndexOf('='); if(eq<=0)continue; v[section+"."+line.Substring(0,eq).Trim()]=line.Substring(eq+1).Trim();
             }
-
-            cfg.Enabled=GetBool(values,"General.Enabled",cfg.Enabled); cfg.HidePoliceBlips=GetBool(values,"General.HidePoliceBlips",cfg.HidePoliceBlips); cfg.MissionSafeMode=GetBool(values,"General.MissionSafeMode",cfg.MissionSafeMode); cfg.DebugLogging=GetBool(values,"General.DebugLogging",cfg.DebugLogging); cfg.PersistenceEnabled=GetBool(values,"General.PersistenceEnabled",cfg.PersistenceEnabled); cfg.PersistenceSaveIntervalMs=GetInt(values,"General.PersistenceSaveIntervalMs",cfg.PersistenceSaveIntervalMs); cfg.PostMissionGraceMs=GetInt(values,"General.PostMissionGraceMs",cfg.PostMissionGraceMs); cfg.MissionFlagConfirmMs=GetInt(values,"General.MissionFlagConfirmMs",cfg.MissionFlagConfirmMs); cfg.MissionFlagExitHoldMs=GetInt(values,"General.MissionFlagExitHoldMs",cfg.MissionFlagExitHoldMs); cfg.ScriptTickIntervalMs=GetInt(values,"General.ScriptTickIntervalMs",cfg.ScriptTickIntervalMs);
-            cfg.InterceptUnwitnessedWanted=GetBool(values,"Witnesses.InterceptUnwitnessedWanted",cfg.InterceptUnwitnessedWanted); cfg.CivilianWitnessDistance=GetFloat(values,"Witnesses.CivilianWitnessDistance",cfg.CivilianWitnessDistance); cfg.PoliceWitnessDistance=GetFloat(values,"Witnesses.PoliceWitnessDistance",cfg.PoliceWitnessDistance); cfg.CivilianReportDelayMs=GetInt(values,"Witnesses.CivilianReportDelayMs",cfg.CivilianReportDelayMs); cfg.PoliceConfirmDelayMs=GetInt(values,"Witnesses.PoliceConfirmDelayMs",cfg.PoliceConfirmDelayMs); cfg.PendingIncidentTimeoutMs=GetInt(values,"Witnesses.PendingIncidentTimeoutMs",cfg.PendingIncidentTimeoutMs); cfg.PendingWitnessScanIntervalMs=GetInt(values,"Witnesses.ScanIntervalMs",cfg.PendingWitnessScanIntervalMs);
-            cfg.FaceRecognitionDistance=GetFloat(values,"Identification.FaceRecognitionDistance",cfg.FaceRecognitionDistance); cfg.OutfitRecognitionDistance=GetFloat(values,"Identification.OutfitRecognitionDistance",cfg.OutfitRecognitionDistance); cfg.VehicleRecognitionDistance=GetFloat(values,"Identification.VehicleRecognitionDistance",cfg.VehicleRecognitionDistance); cfg.PlateRecognitionDistance=GetFloat(values,"Identification.PlateRecognitionDistance",cfg.PlateRecognitionDistance); cfg.WeaponRecognitionDistance=GetFloat(values,"Identification.WeaponRecognitionDistance",cfg.WeaponRecognitionDistance); cfg.SuspectCountRecognitionDistance=GetFloat(values,"Identification.SuspectCountRecognitionDistance",cfg.SuspectCountRecognitionDistance); cfg.ReacquireCooldownMs=GetInt(values,"Identification.ReacquireCooldownMs",cfg.ReacquireCooldownMs); cfg.CaseMemoryHours=GetInt(values,"Identification.CaseMemoryHours",cfg.CaseMemoryHours); cfg.PoliceANPR=GetBool(values,"Identification.PoliceANPR",cfg.PoliceANPR);
-            cfg.CctvEnabled=GetBool(values,"CCTV.Enabled",cfg.CctvEnabled); cfg.CctvScanRadius=GetFloat(values,"CCTV.ScanRadius",cfg.CctvScanRadius); cfg.CctvFovDegrees=GetFloat(values,"CCTV.FovDegrees",cfg.CctvFovDegrees); cfg.CctvCrimeReportDelayMs=GetInt(values,"CCTV.CrimeReportDelayMs",cfg.CctvCrimeReportDelayMs); cfg.CctvReacquireDelayMs=GetInt(values,"CCTV.ReacquireDelayMs",cfg.CctvReacquireDelayMs); cfg.CctvCanDispatch=GetBool(values,"CCTV.CanDispatch",cfg.CctvCanDispatch);
-            cfg.TrackersEnabled=GetBool(values,"Trackers.Enabled",cfg.TrackersEnabled); cfg.PoliceVehiclesAlwaysTracked=GetBool(values,"Trackers.PoliceVehiclesAlwaysTracked",cfg.PoliceVehiclesAlwaysTracked); cfg.PremiumVehicleTrackerChance=GetInt(values,"Trackers.PremiumVehicleTrackerChance",cfg.PremiumVehicleTrackerChance); cfg.RegularVehicleTrackerChance=GetInt(values,"Trackers.RegularVehicleTrackerChance",cfg.RegularVehicleTrackerChance); cfg.TrackerPingIntervalMs=GetInt(values,"Trackers.TrackerPingIntervalMs",cfg.TrackerPingIntervalMs); cfg.TrackerReacquireDelayMs=GetInt(values,"Trackers.TrackerReacquireDelayMs",cfg.TrackerReacquireDelayMs);
-            cfg.TrafficEnforcementEnabled=GetBool(values,"Traffic.Enabled",cfg.TrafficEnforcementEnabled); cfg.TrafficCameraEnforcement=GetBool(values,"Traffic.CameraEnforcement",cfg.TrafficCameraEnforcement); cfg.UrbanSpeedLimitKph=GetInt(values,"Traffic.UrbanSpeedLimitKph",cfg.UrbanSpeedLimitKph); cfg.HighwaySpeedLimitKph=GetInt(values,"Traffic.HighwaySpeedLimitKph",cfg.HighwaySpeedLimitKph); cfg.SpeedToleranceKph=GetInt(values,"Traffic.SpeedToleranceKph",cfg.SpeedToleranceKph); cfg.SpeedingGraceMs=GetInt(values,"Traffic.SpeedingGraceMs",cfg.SpeedingGraceMs); cfg.CitationCooldownMs=GetInt(values,"Traffic.CitationCooldownMs",cfg.CitationCooldownMs); cfg.SpeedingBaseFine=GetInt(values,"Traffic.SpeedingBaseFine",cfg.SpeedingBaseFine); cfg.SpeedingFinePerKph=GetInt(values,"Traffic.SpeedingFinePerKph",cfg.SpeedingFinePerKph); cfg.AutoDeductFines=GetBool(values,"Traffic.AutoDeductFines",cfg.AutoDeductFines); cfg.FineDeliveryDelayMs=GetInt(values,"Traffic.FineDeliveryDelayMs",cfg.FineDeliveryDelayMs); cfg.PoliceObservedSpeedingCanEscalate=GetBool(values,"Traffic.PoliceObservedSpeedingCanEscalate",cfg.PoliceObservedSpeedingCanEscalate); cfg.PoliceSpeedingReportDelayMs=GetInt(values,"Traffic.PoliceSpeedingReportDelayMs",cfg.PoliceSpeedingReportDelayMs);
-            cfg.WarrantsEnabled=GetBool(values,"Warrants.Enabled",cfg.WarrantsEnabled); cfg.WarrantMinimumThreat=GetInt(values,"Warrants.MinimumThreat",cfg.WarrantMinimumThreat); cfg.WarrantMemoryHours=GetInt(values,"Warrants.MemoryHours",cfg.WarrantMemoryHours); cfg.HomeSurveillanceEnabled=GetBool(values,"Warrants.HomeSurveillanceEnabled",cfg.HomeSurveillanceEnabled); cfg.HomeSurveillanceActivationRadius=GetFloat(values,"Warrants.HomeSurveillanceActivationRadius",cfg.HomeSurveillanceActivationRadius); cfg.HomeSurveillanceRespawnCooldownMs=GetInt(values,"Warrants.HomeSurveillanceRespawnCooldownMs",cfg.HomeSurveillanceRespawnCooldownMs);
-            cfg.ProportionalForceEnabled=GetBool(values,"Force.ProportionalForceEnabled",cfg.ProportionalForceEnabled); cfg.LethalForceMinimumWanted=GetInt(values,"Force.LethalForceMinimumWanted",cfg.LethalForceMinimumWanted); cfg.PitMinimumWanted=GetInt(values,"Force.PitMinimumWanted",cfg.PitMinimumWanted); cfg.PitMinimumSpeedKph=GetFloat(values,"Force.PitMinimumSpeedKph",cfg.PitMinimumSpeedKph); cfg.ForcePolicyRadius=GetFloat(values,"Force.PolicyRadius",cfg.ForcePolicyRadius); cfg.ForcePolicyScanIntervalMs=GetInt(values,"Force.ScanIntervalMs",cfg.ForcePolicyScanIntervalMs); cfg.NonLethalAccuracy=GetInt(values,"Force.NonLethalAccuracy",cfg.NonLethalAccuracy); cfg.NonLethalShootRate=GetInt(values,"Force.NonLethalShootRate",cfg.NonLethalShootRate);
-            cfg.SearchHudEnabled=GetBool(values,"SearchHUD.Enabled",cfg.SearchHudEnabled); cfg.ShowSearchCircles=GetBool(values,"SearchHUD.ShowSearchCircles",cfg.ShowSearchCircles); cfg.ShowEvidenceIcons=GetBool(values,"SearchHUD.ShowEvidenceIcons",cfg.ShowEvidenceIcons); cfg.SearchInnerBaseRadius=GetFloat(values,"SearchHUD.InnerBaseRadius",cfg.SearchInnerBaseRadius); cfg.SearchRadiusPerStar=GetFloat(values,"SearchHUD.RadiusPerStar",cfg.SearchRadiusPerStar); cfg.SearchOuterExtraRadius=GetFloat(values,"SearchHUD.OuterExtraRadius",cfg.SearchOuterExtraRadius); cfg.SearchInnerAlpha=GetInt(values,"SearchHUD.InnerAlpha",cfg.SearchInnerAlpha); cfg.SearchOuterAlpha=GetInt(values,"SearchHUD.OuterAlpha",cfg.SearchOuterAlpha); cfg.SearchCircleObservationGraceMs=GetInt(values,"SearchHUD.ObservationGraceMs",cfg.SearchCircleObservationGraceMs); cfg.EvidenceIconSize=GetFloat(values,"SearchHUD.EvidenceIconSize",cfg.EvidenceIconSize);
-            cfg.EnableSixthStar=GetBool(values,"Dispatch.EnableSixthStar",cfg.EnableSixthStar); cfg.SixStarAfterFiveStarSeconds=GetInt(values,"Dispatch.SixStarAfterFiveStarSeconds",cfg.SixStarAfterFiveStarSeconds); cfg.SixStarHeatThreshold=GetInt(values,"Dispatch.SixStarHeatThreshold",cfg.SixStarHeatThreshold); cfg.FiveStarShootingHeatIntervalMs=GetInt(values,"Dispatch.FiveStarShootingHeatIntervalMs",cfg.FiveStarShootingHeatIntervalMs); cfg.CustomDispatchEnabled=GetBool(values,"Dispatch.CustomDispatchEnabled",cfg.CustomDispatchEnabled); cfg.DispatchSupportIntervalMs=GetInt(values,"Dispatch.SupportIntervalMs",cfg.DispatchSupportIntervalMs); cfg.SixStarHeavyIntervalMs=GetInt(values,"Dispatch.SixStarHeavyIntervalMs",cfg.SixStarHeavyIntervalMs); cfg.MaxCustomUnits=GetInt(values,"Dispatch.MaxCustomUnits",cfg.MaxCustomUnits); cfg.SixStarMilitaryGround=GetBool(values,"Dispatch.SixStarMilitaryGround",cfg.SixStarMilitaryGround); cfg.SixStarAttackHelicopter=GetBool(values,"Dispatch.SixStarAttackHelicopter",cfg.SixStarAttackHelicopter); cfg.SixStarJet=GetBool(values,"Dispatch.SixStarJet",cfg.SixStarJet);
+            cfg.Enabled=B(v,"General.Enabled",cfg.Enabled);cfg.HidePoliceBlips=B(v,"General.HidePoliceBlips",cfg.HidePoliceBlips);cfg.MissionSafeMode=B(v,"General.MissionSafeMode",cfg.MissionSafeMode);cfg.DebugLogging=B(v,"General.DebugLogging",cfg.DebugLogging);cfg.PersistenceEnabled=B(v,"General.PersistenceEnabled",cfg.PersistenceEnabled);cfg.PersistenceSaveIntervalMs=I(v,"General.PersistenceSaveIntervalMs",cfg.PersistenceSaveIntervalMs);cfg.PostMissionGraceMs=I(v,"General.PostMissionGraceMs",cfg.PostMissionGraceMs);cfg.MissionFlagConfirmMs=I(v,"General.MissionFlagConfirmMs",cfg.MissionFlagConfirmMs);cfg.MissionFlagExitHoldMs=I(v,"General.MissionFlagExitHoldMs",cfg.MissionFlagExitHoldMs);cfg.ScriptTickIntervalMs=I(v,"General.ScriptTickIntervalMs",cfg.ScriptTickIntervalMs);
+            cfg.InterceptUnwitnessedWanted=B(v,"Witnesses.InterceptUnwitnessedWanted",cfg.InterceptUnwitnessedWanted);cfg.CivilianWitnessDistance=F(v,"Witnesses.CivilianWitnessDistance",cfg.CivilianWitnessDistance);cfg.PoliceWitnessDistance=F(v,"Witnesses.PoliceWitnessDistance",cfg.PoliceWitnessDistance);cfg.CivilianReportDelayMs=I(v,"Witnesses.CivilianReportDelayMs",cfg.CivilianReportDelayMs);cfg.PoliceConfirmDelayMs=I(v,"Witnesses.PoliceConfirmDelayMs",cfg.PoliceConfirmDelayMs);cfg.PendingIncidentTimeoutMs=I(v,"Witnesses.PendingIncidentTimeoutMs",cfg.PendingIncidentTimeoutMs);cfg.PendingWitnessScanIntervalMs=I(v,"Witnesses.ScanIntervalMs",cfg.PendingWitnessScanIntervalMs);
+            cfg.FaceRecognitionDistance=F(v,"Identification.FaceRecognitionDistance",cfg.FaceRecognitionDistance);cfg.OutfitRecognitionDistance=F(v,"Identification.OutfitRecognitionDistance",cfg.OutfitRecognitionDistance);cfg.VehicleRecognitionDistance=F(v,"Identification.VehicleRecognitionDistance",cfg.VehicleRecognitionDistance);cfg.PlateRecognitionDistance=F(v,"Identification.PlateRecognitionDistance",cfg.PlateRecognitionDistance);cfg.WeaponRecognitionDistance=F(v,"Identification.WeaponRecognitionDistance",cfg.WeaponRecognitionDistance);cfg.SuspectCountRecognitionDistance=F(v,"Identification.SuspectCountRecognitionDistance",cfg.SuspectCountRecognitionDistance);cfg.ReacquireCooldownMs=I(v,"Identification.ReacquireCooldownMs",cfg.ReacquireCooldownMs);cfg.CaseMemoryHours=I(v,"Identification.CaseMemoryHours",cfg.CaseMemoryHours);cfg.PoliceANPR=B(v,"Identification.PoliceANPR",cfg.PoliceANPR);
+            cfg.CctvEnabled=B(v,"CCTV.Enabled",cfg.CctvEnabled);cfg.CctvScanRadius=F(v,"CCTV.ScanRadius",cfg.CctvScanRadius);cfg.CctvFovDegrees=F(v,"CCTV.FovDegrees",cfg.CctvFovDegrees);cfg.CctvCrimeReportDelayMs=I(v,"CCTV.CrimeReportDelayMs",cfg.CctvCrimeReportDelayMs);cfg.CctvReacquireDelayMs=I(v,"CCTV.ReacquireDelayMs",cfg.CctvReacquireDelayMs);cfg.CctvCanDispatch=B(v,"CCTV.CanDispatch",cfg.CctvCanDispatch);
+            cfg.TrackersEnabled=B(v,"Trackers.Enabled",cfg.TrackersEnabled);cfg.PoliceVehiclesAlwaysTracked=B(v,"Trackers.PoliceVehiclesAlwaysTracked",cfg.PoliceVehiclesAlwaysTracked);cfg.PremiumVehicleTrackerChance=I(v,"Trackers.PremiumVehicleTrackerChance",cfg.PremiumVehicleTrackerChance);cfg.RegularVehicleTrackerChance=I(v,"Trackers.RegularVehicleTrackerChance",cfg.RegularVehicleTrackerChance);cfg.TrackerPingIntervalMs=I(v,"Trackers.TrackerPingIntervalMs",cfg.TrackerPingIntervalMs);cfg.TrackerReacquireDelayMs=I(v,"Trackers.TrackerReacquireDelayMs",cfg.TrackerReacquireDelayMs);
+            cfg.TrafficEnforcementEnabled=B(v,"Traffic.Enabled",cfg.TrafficEnforcementEnabled);cfg.TrafficCameraEnforcement=B(v,"Traffic.CameraEnforcement",cfg.TrafficCameraEnforcement);cfg.UrbanSpeedLimitKph=I(v,"Traffic.UrbanSpeedLimitKph",cfg.UrbanSpeedLimitKph);cfg.HighwaySpeedLimitKph=I(v,"Traffic.HighwaySpeedLimitKph",cfg.HighwaySpeedLimitKph);cfg.SpeedToleranceKph=I(v,"Traffic.SpeedToleranceKph",cfg.SpeedToleranceKph);cfg.SpeedingGraceMs=I(v,"Traffic.SpeedingGraceMs",cfg.SpeedingGraceMs);cfg.CitationCooldownMs=I(v,"Traffic.CitationCooldownMs",cfg.CitationCooldownMs);cfg.SpeedingBaseFine=I(v,"Traffic.SpeedingBaseFine",cfg.SpeedingBaseFine);cfg.SpeedingFinePerKph=I(v,"Traffic.SpeedingFinePerKph",cfg.SpeedingFinePerKph);cfg.AutoDeductFines=B(v,"Traffic.AutoDeductFines",cfg.AutoDeductFines);cfg.FineDeliveryDelayMs=I(v,"Traffic.FineDeliveryDelayMs",cfg.FineDeliveryDelayMs);cfg.PoliceObservedSpeedingCanEscalate=B(v,"Traffic.PoliceObservedSpeedingCanEscalate",cfg.PoliceObservedSpeedingCanEscalate);cfg.PoliceSpeedingReportDelayMs=I(v,"Traffic.PoliceSpeedingReportDelayMs",cfg.PoliceSpeedingReportDelayMs);cfg.RecklessSpeedOverKph=I(v,"Traffic.RecklessSpeedOverKph",cfg.RecklessSpeedOverKph);cfg.RecklessFineBonus=I(v,"Traffic.RecklessFineBonus",cfg.RecklessFineBonus);cfg.FineMailEnabled=B(v,"Traffic.FineMailEnabled",cfg.FineMailEnabled);cfg.FineMailArchiveEnabled=B(v,"Traffic.FineMailArchiveEnabled",cfg.FineMailArchiveEnabled);cfg.FineMailSound=B(v,"Traffic.FineMailSound",cfg.FineMailSound);cfg.FineMailSender=S(v,"Traffic.FineMailSender",cfg.FineMailSender);
+            cfg.WarrantsEnabled=B(v,"Warrants.Enabled",cfg.WarrantsEnabled);cfg.WarrantMinimumThreat=I(v,"Warrants.MinimumThreat",cfg.WarrantMinimumThreat);cfg.WarrantMemoryHours=I(v,"Warrants.MemoryHours",cfg.WarrantMemoryHours);cfg.HomeSurveillanceEnabled=B(v,"Warrants.HomeSurveillanceEnabled",cfg.HomeSurveillanceEnabled);cfg.HomeSurveillanceActivationRadius=F(v,"Warrants.HomeSurveillanceActivationRadius",cfg.HomeSurveillanceActivationRadius);cfg.HomeSurveillanceRespawnCooldownMs=I(v,"Warrants.HomeSurveillanceRespawnCooldownMs",cfg.HomeSurveillanceRespawnCooldownMs);
+            cfg.ProportionalForceEnabled=B(v,"Force.ProportionalForceEnabled",cfg.ProportionalForceEnabled);cfg.LethalForceMinimumWanted=I(v,"Force.LethalForceMinimumWanted",cfg.LethalForceMinimumWanted);cfg.LethalArmedEscalationWanted=I(v,"Force.LethalArmedEscalationWanted",cfg.LethalArmedEscalationWanted);cfg.LethalForceRequiresCurrentThreat=B(v,"Force.LethalForceRequiresCurrentThreat",cfg.LethalForceRequiresCurrentThreat);cfg.PitMinimumWanted=I(v,"Force.PitMinimumWanted",cfg.PitMinimumWanted);cfg.PitMinimumSpeedKph=F(v,"Force.PitMinimumSpeedKph",cfg.PitMinimumSpeedKph);cfg.PitRequiresFleeing=B(v,"Force.PitRequiresFleeing",cfg.PitRequiresFleeing);cfg.ForcePolicyRadius=F(v,"Force.PolicyRadius",cfg.ForcePolicyRadius);cfg.ForcePolicyScanIntervalMs=I(v,"Force.ScanIntervalMs",cfg.ForcePolicyScanIntervalMs);cfg.NonLethalAccuracy=I(v,"Force.NonLethalAccuracy",cfg.NonLethalAccuracy);cfg.NonLethalShootRate=I(v,"Force.NonLethalShootRate",cfg.NonLethalShootRate);
+            cfg.SearchHudEnabled=B(v,"SearchHUD.Enabled",cfg.SearchHudEnabled);cfg.ShowSearchCircles=B(v,"SearchHUD.ShowSearchCircles",cfg.ShowSearchCircles);cfg.ShowEvidenceIcons=B(v,"SearchHUD.ShowEvidenceIcons",cfg.ShowEvidenceIcons);cfg.SearchInnerBaseRadius=F(v,"SearchHUD.InnerBaseRadius",cfg.SearchInnerBaseRadius);cfg.SearchRadiusPerStar=F(v,"SearchHUD.RadiusPerStar",cfg.SearchRadiusPerStar);cfg.SearchOuterExtraRadius=F(v,"SearchHUD.OuterExtraRadius",cfg.SearchOuterExtraRadius);cfg.SearchInnerAlpha=I(v,"SearchHUD.InnerAlpha",cfg.SearchInnerAlpha);cfg.SearchOuterAlpha=I(v,"SearchHUD.OuterAlpha",cfg.SearchOuterAlpha);cfg.SearchCircleObservationGraceMs=I(v,"SearchHUD.ObservationGraceMs",cfg.SearchCircleObservationGraceMs);cfg.SearchLostContactDelayMs=I(v,"SearchHUD.LostContactDelayMs",cfg.SearchLostContactDelayMs);cfg.SearchPhaseLifetimeMs=I(v,"SearchHUD.SearchPhaseLifetimeMs",cfg.SearchPhaseLifetimeMs);cfg.SearchUncertaintyGrowthPerSecond=F(v,"SearchHUD.UncertaintyGrowthPerSecond",cfg.SearchUncertaintyGrowthPerSecond);cfg.SearchMaxGrowth=F(v,"SearchHUD.MaxGrowth",cfg.SearchMaxGrowth);cfg.EvidenceIconSize=F(v,"SearchHUD.EvidenceIconSize",cfg.EvidenceIconSize);
+            cfg.EnableSixthStar=B(v,"Dispatch.EnableSixthStar",cfg.EnableSixthStar);cfg.SixStarAfterFiveStarSeconds=I(v,"Dispatch.SixStarAfterFiveStarSeconds",cfg.SixStarAfterFiveStarSeconds);cfg.SixStarHeatThreshold=I(v,"Dispatch.SixStarHeatThreshold",cfg.SixStarHeatThreshold);cfg.FiveStarShootingHeatIntervalMs=I(v,"Dispatch.FiveStarShootingHeatIntervalMs",cfg.FiveStarShootingHeatIntervalMs);cfg.CustomDispatchEnabled=B(v,"Dispatch.CustomDispatchEnabled",cfg.CustomDispatchEnabled);cfg.DispatchSupportIntervalMs=I(v,"Dispatch.SupportIntervalMs",cfg.DispatchSupportIntervalMs);cfg.SixStarHeavyIntervalMs=I(v,"Dispatch.SixStarHeavyIntervalMs",cfg.SixStarHeavyIntervalMs);cfg.MaxCustomUnits=I(v,"Dispatch.MaxCustomUnits",cfg.MaxCustomUnits);cfg.SixStarMilitaryGround=B(v,"Dispatch.SixStarMilitaryGround",cfg.SixStarMilitaryGround);cfg.SixStarAttackHelicopter=B(v,"Dispatch.SixStarAttackHelicopter",cfg.SixStarAttackHelicopter);cfg.SixStarJet=B(v,"Dispatch.SixStarJet",cfg.SixStarJet);
             return cfg;
         }
-
-        private static bool GetBool(Dictionary<string,string> v,string key,bool fallback){string s;bool r;return v.TryGetValue(key,out s)&&bool.TryParse(s,out r)?r:fallback;}
-        private static int GetInt(Dictionary<string,string> v,string key,int fallback){string s;int r;return v.TryGetValue(key,out s)&&int.TryParse(s,NumberStyles.Integer,CultureInfo.InvariantCulture,out r)?r:fallback;}
-        private static float GetFloat(Dictionary<string,string> v,string key,float fallback){string s;float r;return v.TryGetValue(key,out s)&&float.TryParse(s,NumberStyles.Float,CultureInfo.InvariantCulture,out r)?r:fallback;}
+        private static bool B(Dictionary<string,string>v,string k,bool d){string s;bool r;return v.TryGetValue(k,out s)&&bool.TryParse(s,out r)?r:d;}
+        private static int I(Dictionary<string,string>v,string k,int d){string s;int r;return v.TryGetValue(k,out s)&&int.TryParse(s,NumberStyles.Integer,CultureInfo.InvariantCulture,out r)?r:d;}
+        private static float F(Dictionary<string,string>v,string k,float d){string s;float r;return v.TryGetValue(k,out s)&&float.TryParse(s,NumberStyles.Float,CultureInfo.InvariantCulture,out r)?r:d;}
+        private static string S(Dictionary<string,string>v,string k,string d){string s;return v.TryGetValue(k,out s)&&!string.IsNullOrWhiteSpace(s)?s:d;}
     }
 }
