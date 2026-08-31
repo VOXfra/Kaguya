@@ -15,7 +15,7 @@ namespace VOX.PoliceOverhaulVI
         private static SearchHudSystem _current;
 
         private int _innerBlip, _outerBlip, _lastThreat, _lastUpdateAt, _lastNativeWanted;
-        private int _searchLatchedUntil, _visualContactSince, _trackerCandidateSince, _lastTrackerReacquireAt;
+        private int _searchLatchedUntil, _visualContactSince;
         private Vector3 _lastCenter;
         private float _lastInnerRadius, _lastOuterRadius;
         private CustomSprite _face, _clothes, _vehicle, _star;
@@ -26,43 +26,60 @@ namespace VOX.PoliceOverhaulVI
         public static void NotifyPlayerDeath()
         {
             SearchHudSystem current = _current;
+            PoliceSearchRuntimeState.ResetSearch(true);
             if (current == null) return;
             current._suppressCurrentPhase = true;
             current._lastNativeWanted = 0;
             current._lastUpdateAt = Game.GameTime;
             current._searchLatchedUntil = 0;
             current._visualContactSince = 0;
-            current._trackerCandidateSince = 0;
             current.ClearSearchCircles();
         }
 
         public void Update(Ped player, CaseMemory memory, int nativeWanted, Config cfg)
         {
+            if (memory != null) PoliceSearchRuntimeState.BindCase(memory);
+            CaseMemory effective = memory ?? PoliceSearchRuntimeState.CaseFor(player);
             int now = Game.GameTime;
+            bool runtimeSearch = PoliceSearchRuntimeState.SearchActive;
+
             bool hardGap = _lastUpdateAt > 0 && now - _lastUpdateAt > HardTransitionGapMs;
-            if (nativeWanted > 0) _suppressCurrentPhase = false;
+            if (nativeWanted > 0 || runtimeSearch) _suppressCurrentPhase = false;
             else if (_lastNativeWanted > 0 && hardGap) _suppressCurrentPhase = true;
             _lastUpdateAt = now;
+            _lastNativeWanted = nativeWanted;
 
-            if (_suppressCurrentPhase || !cfg.SearchHudEnabled || memory == null || (!memory.Active && !memory.WarrantActive))
+            bool hasCase = effective != null && (effective.Active || effective.WarrantActive);
+            if (_suppressCurrentPhase || !cfg.SearchHudEnabled || (!hasCase && !runtimeSearch))
             {
-                _lastNativeWanted = nativeWanted;
                 _searchLatchedUntil = 0;
                 _visualContactSince = 0;
-                _trackerCandidateSince = 0;
                 ClearSearchCircles();
                 return;
             }
 
-            nativeWanted = TryTrackerReacquire(player, memory, nativeWanted, cfg, now);
-            _lastNativeWanted = nativeWanted;
-
-            int threat = Math.Max(1, Math.Min(6, memory.ThreatLevel));
+            int threat = runtimeSearch
+                ? Math.Max(1, Math.Min(6, PoliceSearchRuntimeState.ThreatLevel))
+                : Math.Max(1, Math.Min(6, effective.ThreatLevel));
             int lifetime = SearchLifetimeForThreat(threat, cfg);
-            bool recentlyObserved = memory.LastObservedGameTime > 0 && now - memory.LastObservedGameTime < cfg.SearchCircleObservationGraceMs;
-            int sinceObservation = memory.LastObservedGameTime > 0 ? Math.Max(0, now - memory.LastObservedGameTime) : int.MaxValue;
+
+            if (runtimeSearch)
+            {
+                Vector3 center = PoliceSearchRuntimeState.LastKnownPosition != Vector3.Zero
+                    ? PoliceSearchRuntimeState.LastKnownPosition
+                    : effective.LastKnownPosition;
+                int ageMs = PoliceSearchRuntimeState.LastDirectObservationAt > 0
+                    ? Math.Max(0, now - PoliceSearchRuntimeState.LastDirectObservationAt)
+                    : Math.Max(0, now - PoliceSearchRuntimeState.SearchStartedAt);
+                DrawSearch(center, threat, ageMs, cfg);
+                if (cfg.ShowEvidenceIcons) DrawEvidence(effective, cfg, true);
+                return;
+            }
+
+            bool recentlyObserved = effective.LastObservedGameTime > 0 && now - effective.LastObservedGameTime < cfg.SearchCircleObservationGraceMs;
+            int sinceObservation = effective.LastObservedGameTime > 0 ? Math.Max(0, now - effective.LastObservedGameTime) : int.MaxValue;
             bool lostContact = nativeWanted > 0 && !recentlyObserved && sinceObservation >= Math.Max(250, cfg.SearchLostContactDelayMs);
-            bool postPursuitSearch = nativeWanted == 0 && memory.LastWantedEndedAt > 0 && now - memory.LastWantedEndedAt <= lifetime;
+            bool postPursuitSearch = nativeWanted == 0 && effective.LastWantedEndedAt > 0 && now - effective.LastWantedEndedAt <= lifetime;
 
             if (lostContact || postPursuitSearch)
                 _searchLatchedUntil = Math.Max(_searchLatchedUntil, now + lifetime);
@@ -71,8 +88,6 @@ namespace VOX.PoliceOverhaulVI
             if (nativeWanted > 0 && recentlyObserved)
             {
                 if (_visualContactSince == 0) _visualContactSince = now;
-                // Do not blink the circles because LOS flickered for one scan.
-                // Only sustained reacquisition ends the search visualization.
                 if (now - _visualContactSince >= Math.Max(900, cfg.SearchCircleObservationGraceMs))
                 {
                     _searchLatchedUntil = 0;
@@ -85,25 +100,13 @@ namespace VOX.PoliceOverhaulVI
             if (!searchActive)
             {
                 ClearSearchCircles();
-                if (cfg.ShowEvidenceIcons && nativeWanted > 0) DrawEvidence(memory, cfg);
+                if (cfg.ShowEvidenceIcons && nativeWanted > 0) DrawEvidence(effective, cfg, false);
                 return;
             }
 
-            int ageMs = memory.LastObservedGameTime > 0 ? Math.Max(0, now - memory.LastObservedGameTime) : 0;
-            float growth = Math.Min(Math.Max(0f, cfg.SearchMaxGrowth), ageMs / 1000f * Math.Max(0f, cfg.SearchUncertaintyGrowthPerSecond));
-            float inner = cfg.SearchInnerBaseRadius + Math.Max(0, threat - 1) * cfg.SearchRadiusPerStar + growth * 0.55f;
-            float outer = inner + cfg.SearchOuterExtraRadius + growth;
-
-            // High-level searches cover districts rather than a couple of blocks.
-            if (threat >= 5)
-            {
-                inner = Math.Max(inner, threat >= 6 ? 650f : 460f);
-                outer = Math.Max(outer, threat >= 6 ? 1100f : 760f);
-            }
-
-            if (cfg.ShowSearchCircles) EnsureCircles(memory.LastKnownPosition, threat, inner, outer, cfg);
-            else ClearSearchCircles();
-            if (cfg.ShowEvidenceIcons) DrawEvidence(memory, cfg);
+            int age = effective.LastObservedGameTime > 0 ? Math.Max(0, now - effective.LastObservedGameTime) : 0;
+            DrawSearch(effective.LastKnownPosition, threat, age, cfg);
+            if (cfg.ShowEvidenceIcons) DrawEvidence(effective, cfg, false);
         }
 
         public void Cleanup()
@@ -113,65 +116,36 @@ namespace VOX.PoliceOverhaulVI
             _lastNativeWanted = 0;
             _searchLatchedUntil = 0;
             _visualContactSince = 0;
-            _trackerCandidateSince = 0;
-            _lastTrackerReacquireAt = 0;
             _suppressCurrentPhase = false;
         }
 
-        private int TryTrackerReacquire(Ped player, CaseMemory memory, int nativeWanted, Config cfg, int now)
+        private void DrawSearch(Vector3 center, int threat, int ageMs, Config cfg)
         {
-            if (nativeWanted > 0 || player == null || !player.Exists() || memory == null || !cfg.TrackersEnabled)
+            float growth = Math.Min(Math.Max(0f, cfg.SearchMaxGrowth), ageMs / 1000f * Math.Max(0f, cfg.SearchUncertaintyGrowthPerSecond));
+            float inner = cfg.SearchInnerBaseRadius + Math.Max(0, threat - 1) * cfg.SearchRadiusPerStar + growth * 0.55f;
+            float outer = inner + cfg.SearchOuterExtraRadius + growth;
+
+            // High wanted levels represent district-scale searches. Six stars is
+            // intentionally much larger and longer than vanilla five-star search.
+            if (threat >= 5)
             {
-                _trackerCandidateSince = 0;
-                return nativeWanted;
+                inner = Math.Max(inner, threat >= 6 ? 760f : 520f);
+                outer = Math.Max(outer, threat >= 6 ? 1350f : 860f);
             }
 
-            bool usable = false;
-            try { usable = TrackerSystem.HasPoliceUsableTracker(memory, player, cfg); } catch { }
-            if (!usable)
-            {
-                _trackerCandidateSince = 0;
-                return nativeWanted;
-            }
-
-            if (_trackerCandidateSince == 0)
-            {
-                _trackerCandidateSince = now;
-                return nativeWanted;
-            }
-
-            if (now - _trackerCandidateSince < Math.Max(500, cfg.TrackerReacquireDelayMs)) return nativeWanted;
-            if (now - _lastTrackerReacquireAt < Math.Max(8000, cfg.TrackerPingIntervalMs * 2)) return nativeWanted;
-
-            int restored = Math.Max(1, Math.Min(5, memory.ThreatLevel));
-            try
-            {
-                memory.LastKnownPosition = player.Position;
-                memory.LastSource = ObservationSource.Tracker;
-                memory.LastObservedGameTime = now;
-                memory.Touch(cfg);
-                Function.Call(Hash.SET_PLAYER_WANTED_LEVEL, Game.Player.Handle, restored, false);
-                Function.Call(Hash.SET_PLAYER_WANTED_LEVEL_NOW, Game.Player.Handle, false);
-                Function.Call(Hash.SET_PLAYER_WANTED_CENTRE_POSITION, Game.Player.Handle, player.Position.X, player.Position.Y, player.Position.Z);
-                _lastTrackerReacquireAt = now;
-                _trackerCandidateSince = 0;
-                _searchLatchedUntil = now + SearchLifetimeForThreat(Math.Max(1, memory.ThreatLevel), cfg);
-                return restored;
-            }
-            catch
-            {
-                return nativeWanted;
-            }
+            if (cfg.ShowSearchCircles) EnsureCircles(center, threat, inner, outer, cfg);
+            else ClearSearchCircles();
         }
 
         private static int SearchLifetimeForThreat(int threat, Config cfg)
         {
-            int baseMs = Math.Max(1000, cfg.SearchPhaseLifetimeMs);
-            if (threat >= 6) return Math.Max(baseMs * 4, 240000);
-            if (threat == 5) return Math.Max((int)(baseMs * 2.5f), 150000);
-            if (threat == 4) return Math.Max((int)(baseMs * 1.8f), 100000);
-            if (threat == 3) return Math.Max((int)(baseMs * 1.35f), 75000);
-            return baseMs;
+            int baseMs = Math.Max(60000, cfg.SearchPhaseLifetimeMs);
+            if (threat >= 6) return Math.Max(baseMs * 5, 300000);
+            if (threat == 5) return Math.Max(baseMs * 3, 220000);
+            if (threat == 4) return Math.Max(baseMs * 2, 160000);
+            if (threat == 3) return Math.Max((int)(baseMs * 1.6f), 120000);
+            if (threat == 2) return Math.Max((int)(baseMs * 1.25f), 90000);
+            return Math.Max(baseMs, 75000);
         }
 
         private void EnsureCircles(Vector3 center, int threat, float inner, float outer, Config cfg)
@@ -218,11 +192,12 @@ namespace VOX.PoliceOverhaulVI
             handle = 0;
         }
 
-        private void DrawEvidence(CaseMemory memory, Config cfg)
+        private void DrawEvidence(CaseMemory memory, Config cfg, bool runtimeSearch)
         {
+            if (memory == null) return;
             EnsureSprites();
             float x = 1134f, y = 61f, size = cfg.EvidenceIconSize;
-            int stars = Math.Max(1, Math.Min(6, memory.ThreatLevel));
+            int stars = Math.Max(1, Math.Min(6, runtimeSearch ? PoliceSearchRuntimeState.ThreatLevel : memory.ThreatLevel));
             if (_star != null)
             {
                 for (int i = 0; i < stars; i++)
@@ -232,10 +207,23 @@ namespace VOX.PoliceOverhaulVI
                     _star.ScaledDraw();
                 }
             }
+
             float iconX = x - (stars - 1) * 25f, iconY = y + 31f;
+
+            // Face knowledge is historical identity evidence and remains valid once
+            // police genuinely know the face. Outfit/vehicle are current signalment:
+            // changing either out of sight immediately removes that red badge.
             if (memory.FaceKnown && _face != null) DrawIcon(_face, ref iconX, iconY, size);
-            if (memory.OutfitKnown && _clothes != null) DrawIcon(_clothes, ref iconX, iconY, size);
-            if (memory.Vehicle != null && _vehicle != null) DrawIcon(_vehicle, ref iconX, iconY, size);
+
+            bool outfit = PoliceSearchRuntimeState.ActiveOutfit != null
+                ? PoliceSearchRuntimeState.ActiveOutfitValid
+                : memory.OutfitKnown;
+            bool vehicle = PoliceSearchRuntimeState.ActiveVehicle != null
+                ? PoliceSearchRuntimeState.ActiveVehicleValid
+                : memory.Vehicle != null;
+
+            if (outfit && _clothes != null) DrawIcon(_clothes, ref iconX, iconY, size);
+            if (vehicle && _vehicle != null) DrawIcon(_vehicle, ref iconX, iconY, size);
         }
 
         private static void DrawIcon(CustomSprite sprite, ref float x, float y, float size)
