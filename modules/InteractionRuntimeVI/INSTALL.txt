@@ -1,0 +1,33 @@
+INTERACTION RUNTIME VI — V0.1.0
+
+TARGET
+- GTA V Enhanced Story Mode
+
+REQUIRES
+- Script Hook V
+- ScriptHookVDotNet Enhanced v1.1.0.6 or compatible newer build
+
+INSTALL
+1. Copy package contents to the GTA V root.
+2. InteractionRuntimeVI.dll and InteractionRuntimeVI.ini must end up in GTA V\scripts\.
+3. Ped Overhaul VI 0.5.0 is recommended but not mandatory.
+
+DEFAULT CONTROLS
+- Hold E while looking at a nearby civilian to Focus.
+- 1 = friendly/calm intent
+- 2 = contextual/neutral intent
+- 3 = antagonize/threaten intent
+All controls are configurable in scripts\InteractionRuntimeVI.ini.
+
+V0.1
+- RDR2-inspired hold-to-focus targeting without pausing the world.
+- camera-cone + physical LOS target selection.
+- the target gradually looks back when focused.
+- three contextual intentions change depending on whether the player is visibly armed and whether the target remembers fear.
+- GTA V ambient speech banks are used; no RDR2 dialogue/audio is redistributed.
+- non-verbal responses and movement are preferred when a generic line is insufficient.
+- local opinion/fear/recognition memory.
+- reflection bridge to Ped Overhaul VI 0.5 so interactions can become part of pedestrian memory without hard assembly coupling.
+- disabled during missions and active wanted response by default.
+
+This is the first interaction pass, not the final conversation system. It intentionally avoids long synthetic conversations and preserves GTA V voice identity.
