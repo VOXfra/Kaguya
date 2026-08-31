@@ -19,6 +19,7 @@ namespace VOX.PoliceOverhaulVI
 
         public void Update(Ped player, CaseMemory memory, Config cfg, Action<string> log)
         {
+            _mail.MaintainPersistentInbox(cfg, log);
             DeliverPending(memory, cfg, log);
             if (!cfg.TrafficEnforcementEnabled || player == null || !player.Exists() || !player.IsInVehicle())
             {
@@ -44,9 +45,9 @@ namespace VOX.PoliceOverhaulVI
                 return;
             }
 
-            // The current enforcement is automated owner billing, not a full
-            // roadside identity check. A stolen/borrowed ambient vehicle must
-            // therefore not debit the protagonist just because they drive it.
+            // Fixed cameras bill the registered owner, not whoever happens to
+            // be behind the wheel. Never debit the protagonist for an ambient,
+            // borrowed or explicitly stolen vehicle.
             bool registered = VehicleOwnershipSystem.IsRegisteredToCurrentPlayer(player, vehicle);
             if (!registered)
             {
@@ -63,11 +64,15 @@ namespace VOX.PoliceOverhaulVI
             if (_speedingSince == 0) _speedingSince = now;
             if (now - _speedingSince < cfg.SpeedingGraceMs || now - _lastCitationAt < cfg.CitationCooldownMs) return;
 
-            CameraObservation fixedCamera = cfg.TrafficCameraEnforcement && cfg.CctvEnabled ? CameraSystem.FindTrafficCamera(player, cfg, log) : null;
+            CameraObservation fixedCamera = cfg.TrafficCameraEnforcement && cfg.CctvEnabled
+                ? CameraSystem.FindTrafficCamera(player, cfg, log)
+                : null;
             WitnessObservation police = Perception.FindSeeingPolice(player, cfg.PoliceWitnessDistance);
+
             if (fixedCamera != null)
             {
-                IssueSpeedingCitation(memory, cfg, speedKph, limit, over, street, "fixed traffic camera", false, fixedCamera.CameraId, vehicle, log);
+                IssueSpeedingCitation(memory, cfg, speedKph, limit, over, street,
+                    "fixed traffic camera", false, fixedCamera.CameraId, vehicle, log);
                 return;
             }
 
@@ -77,7 +82,8 @@ namespace VOX.PoliceOverhaulVI
                 if (now - _policeObservedSince >= cfg.PoliceSpeedingReportDelayMs)
                 {
                     bool reckless = over >= Math.Max(cfg.SpeedToleranceKph + 1, cfg.RecklessSpeedOverKph);
-                    IssueSpeedingCitation(memory, cfg, speedKph, limit, over, street, "police observation", reckless, string.Empty, vehicle, log);
+                    IssueSpeedingCitation(memory, cfg, speedKph, limit, over, street,
+                        "police observation", reckless, string.Empty, vehicle, log);
                     if (reckless && cfg.PoliceObservedSpeedingCanEscalate) RequestTrafficStop(log);
                 }
             }
@@ -106,7 +112,8 @@ namespace VOX.PoliceOverhaulVI
             }
         }
 
-        private void IssueSpeedingCitation(CaseMemory memory, Config cfg, int speedKph, int limit, int overKph, string street, string source, bool reckless, string cameraId, Vehicle vehicle, Action<string> log)
+        private void IssueSpeedingCitation(CaseMemory memory, Config cfg, int speedKph, int limit, int overKph,
+            string street, string source, bool reckless, string cameraId, Vehicle vehicle, Action<string> log)
         {
             int now = Game.GameTime;
             int chargeableOver = Math.Max(1, overKph - cfg.SpeedToleranceKph);
@@ -144,7 +151,9 @@ namespace VOX.PoliceOverhaulVI
             _speedingSince = 0;
             _policeObservedSince = 0;
             if (log != null)
-                log("Traffic citation recorded: " + speedKph + "/" + limit + " km/h (+" + overKph + "), $" + amount + ", plate=" + plate + ", source=" + source + (string.IsNullOrEmpty(cameraId) ? "" : " camera=" + cameraId) + ".");
+                log("Traffic citation recorded: " + speedKph + "/" + limit + " km/h (+" + overKph + "), $" + amount +
+                    ", plate=" + plate + ", source=" + source +
+                    (string.IsNullOrEmpty(cameraId) ? "" : " camera=" + cameraId) + ".");
         }
 
         private void DeliverPending(CaseMemory memory, Config cfg, Action<string> log)
@@ -174,7 +183,9 @@ namespace VOX.PoliceOverhaulVI
                 citation.Delivered = true;
                 _pending.RemoveAt(i);
                 _mail.Deliver(citation, paid, unpaid, cfg, log);
-                if (log != null) log("Traffic citation settled. amount=$" + citation.Amount + ", paid=$" + paid + ", unpaid=$" + Math.Max(0, unpaid) + ".");
+                if (log != null)
+                    log("Traffic citation settled. amount=$" + citation.Amount + ", paid=$" + paid +
+                        ", unpaid=$" + Math.Max(0, unpaid) + ".");
             }
         }
 
@@ -193,7 +204,9 @@ namespace VOX.PoliceOverhaulVI
 
         private static int GetSpeedLimit(string street, Config cfg)
         {
-            return !string.IsNullOrEmpty(street) && HighwayNames.Contains(street) ? Math.Max(1, cfg.HighwaySpeedLimitKph) : Math.Max(1, cfg.UrbanSpeedLimitKph);
+            return !string.IsNullOrEmpty(street) && HighwayNames.Contains(street)
+                ? Math.Max(1, cfg.HighwaySpeedLimitKph)
+                : Math.Max(1, cfg.UrbanSpeedLimitKph);
         }
     }
 }
