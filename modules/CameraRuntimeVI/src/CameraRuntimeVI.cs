@@ -120,9 +120,13 @@ namespace VOX.CameraRuntimeVI
             float speed = Math.Max(0f, player.Speed);
             if (speed < 0.35f) return;
 
-            bool sprinting = SafeBool(Hash.IS_PED_SPRINTING, player.Handle);
-            bool running = sprinting || SafeBool(Hash.IS_PED_RUNNING, player.Handle);
-            bool falling = SafeBool(Hash.IS_PED_FALLING, player.Handle) || SafeBool(Hash.IS_PED_RAGDOLL, player.Handle);
+            bool sprinting = false, running = false, falling = false, ragdoll = false;
+            try { sprinting = Function.Call<bool>(Hash.IS_PED_SPRINTING, player.Handle); } catch { }
+            try { running = Function.Call<bool>(Hash.IS_PED_RUNNING, player.Handle); } catch { }
+            try { falling = Function.Call<bool>(Hash.IS_PED_FALLING, player.Handle); } catch { }
+            try { ragdoll = Function.Call<bool>(Hash.IS_PED_RAGDOLL, player.Handle); } catch { }
+            running |= sprinting;
+            falling |= ragdoll;
 
             if (falling) amplitude = _cfg.FallAmplitude;
             else if (sprinting) amplitude = _cfg.SprintAmplitude;
@@ -144,9 +148,6 @@ namespace VOX.CameraRuntimeVI
                 try { if (Function.Call<bool>(Hash.IS_AIM_CAM_ACTIVE)) return true; } catch { }
             }
 
-            // 1/2 are camera axes and 26 is the standard look-behind action.
-            // We never write camera orientation, but yielding here also removes
-            // shake while the player deliberately inspects their surroundings.
             if (_cfg.DisableOnManualLook)
             {
                 if (Math.Abs(ControlValue(1)) > _cfg.ManualLookDeadzone) return true;
@@ -226,12 +227,6 @@ namespace VOX.CameraRuntimeVI
         private static bool ControlPressed(int control)
         {
             try { return Function.Call<bool>(Hash.IS_CONTROL_PRESSED, 0, control); }
-            catch { return false; }
-        }
-
-        private static bool SafeBool(Hash hash, params object[] args)
-        {
-            try { return Function.Call<bool>(hash, args); }
             catch { return false; }
         }
 
