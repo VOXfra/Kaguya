@@ -116,7 +116,7 @@ namespace VOX.PoliceOverhaulVI
 
         public static void AddNotoriety(CaseMemory memory, float amount, Config cfg)
         {
-            if (memory == null || amount <= 0f) return;
+            if (memory == null || Math.Abs(amount) < 0.001f) return;
             memory.Notoriety = Clamp100(memory.Notoriety + amount);
             memory.MostWanted = memory.Notoriety >= cfg.MostWantedNotorietyThreshold || memory.ThreatLevel >= 6;
         }
