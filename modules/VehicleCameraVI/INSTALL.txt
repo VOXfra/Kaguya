@@ -1,0 +1,18 @@
+Vehicle Camera VI 0.1.0
+=======================
+
+Adds subtle speed, acceleration, collision and cornering motion to the ordinary
+GTA V vehicle gameplay camera without replacing it with a scripted camera.
+
+Install:
+- Copy scripts\VehicleCameraVI.dll and scripts\VehicleCameraVI.ini into scripts.
+- Requires ScriptHookV and ScriptHookVDotNet Enhanced v1.1.0.6.
+
+Design:
+- Keeps the player's own mouse/stick camera movement.
+- Small look-ahead offset is injected as a delta, not an absolute camera angle.
+- Road vibration grows smoothly with speed.
+- Acceleration/deceleration and collisions add short extra motion.
+- Effects stop during cutscenes, character switching and free aiming.
+
+All values are configurable in VehicleCameraVI.ini.
