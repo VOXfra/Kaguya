@@ -1,0 +1,42 @@
+name: Build Camera Runtime VI
+
+on:
+  push:
+    paths:
+      - 'modules/CameraRuntimeVI/**'
+      - '.github/workflows/build-camera-runtime-vi.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Fetch SHVDNE reference
+        shell: pwsh
+        run: |
+          $url = 'https://github.com/Chiheb-Bacha/ScriptHookVDotNetEnhanced/releases/download/v1.1.0.6/ScriptHookVDotNetEnhanced-v1.1.0.6.zip'
+          Invoke-WebRequest -Uri $url -OutFile shvdne.zip
+          Expand-Archive shvdne.zip -DestinationPath shvdne
+          $ref = Get-ChildItem shvdne -Recurse -Filter ScriptHookVDotNet3.dll | Select-Object -First 1
+          if (-not $ref) { throw 'ScriptHookVDotNet3.dll not found in SHVDNE archive.' }
+          New-Item -ItemType Directory -Force modules/CameraRuntimeVI/refs | Out-Null
+          Copy-Item $ref.FullName modules/CameraRuntimeVI/refs/ScriptHookVDotNet3.dll
+      - name: Build
+        shell: pwsh
+        run: dotnet build modules/CameraRuntimeVI/CameraRuntimeVI.csproj -c Release
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist/scripts | Out-Null
+          Copy-Item modules/CameraRuntimeVI/bin/Release/net48/CameraRuntimeVI.dll dist/scripts/CameraRuntimeVI.dll
+          Copy-Item modules/CameraRuntimeVI/config/CameraRuntimeVI.ini dist/scripts/CameraRuntimeVI.ini
+          Copy-Item modules/CameraRuntimeVI/INSTALL.txt dist/INSTALL.txt
+          Compress-Archive -Path dist/* -DestinationPath CameraRuntimeVI-v0.1.0.zip -Force
+      - name: Upload test build
+        uses: actions/upload-artifact@v4
+        with:
+          name: CameraRuntimeVI-v0.1.0
+          path: CameraRuntimeVI-v0.1.0.zip
+          if-no-files-found: error
