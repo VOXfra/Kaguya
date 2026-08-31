@@ -8,8 +8,11 @@ namespace VOX.PoliceOverhaulVI
     {
         private int _lastScan;
         private bool _lastLethal, _lastPit, _initialized;
+        private int _lastRiskLog;
         public bool LethalAuthorized { get; private set; }
         public bool PitAuthorized { get; private set; }
+        public float LastCivilianRisk { get; private set; }
+        public float LastPitRisk { get; private set; }
 
         public void Update(Ped player, int wanted, CaseMemory memory, Config cfg, Action<string> log)
         {
@@ -19,7 +22,6 @@ namespace VOX.PoliceOverhaulVI
             }
 
             bool shooting = SafeBool(Hash.IS_PED_SHOOTING, player.Handle);
-            bool armed = SafeBool(Hash.IS_PED_ARMED, player.Handle, 7);
             bool aimingAtLaw = IsAimingAtLawPed(player, cfg.ForcePolicyRadius);
             float speedKph = 0f;
             if (player.IsInVehicle())
@@ -27,19 +29,31 @@ namespace VOX.PoliceOverhaulVI
                 try { speedKph = Function.Call<float>(Hash.GET_ENTITY_SPEED, player.CurrentVehicle.Handle) * 3.6f; } catch { }
             }
 
+            bool threatAllowsLethal;
             if (!cfg.LethalForceRequiresCurrentThreat)
-                LethalAuthorized = wanted >= cfg.LethalForceMinimumWanted || shooting;
+                threatAllowsLethal = wanted >= cfg.LethalForceMinimumWanted || shooting;
             else
-                LethalAuthorized = shooting || aimingAtLaw || wanted >= Math.Max(cfg.LethalArmedEscalationWanted, 4);
+                threatAllowsLethal = shooting || aimingAtLaw || wanted >= Math.Max(cfg.LethalArmedEscalationWanted, 4);
+            if (wanted <= 2 && !shooting && !aimingAtLaw) threatAllowsLethal = false;
 
-            // A historical weapon description or high old case threat is police
-            // intelligence, not permission to shoot a currently compliant suspect.
-            if (wanted <= 2 && !shooting && !aimingAtLaw) LethalAuthorized = false;
+            LastCivilianRisk = cfg.CivilianRiskEnabled ? CivilianRiskSystem.EvaluateTargetArea(player,cfg) : 0f;
+            float generalThreshold = shooting ? cfg.CivilianRiskEmergencyThreshold : cfg.CivilianRiskLethalThreshold;
+            LethalAuthorized = threatAllowsLethal && (!cfg.CivilianRiskEnabled || LastCivilianRisk <= generalThreshold);
 
-            PitAuthorized = wanted >= cfg.PitMinimumWanted && player.IsInVehicle() && speedKph >= cfg.PitMinimumSpeedKph;
-            if (cfg.PitRequiresFleeing && wanted <= 1) PitAuthorized = false;
+            bool pitBase = wanted >= cfg.PitMinimumWanted && player.IsInVehicle() && speedKph >= cfg.PitMinimumSpeedKph;
+            if (cfg.PitRequiresFleeing && wanted <= 1) pitBase = false;
+            LastPitRisk = pitBase && cfg.CivilianRiskEnabled ? CivilianRiskSystem.EvaluatePitRisk(player,cfg) : 0f;
+            float pitThreshold = shooting ? cfg.PitEmergencyRiskThreshold : cfg.PitRiskThreshold;
+            PitAuthorized = pitBase && (!cfg.CivilianRiskEnabled || LastPitRisk <= pitThreshold);
 
             LogTransitions(log);
+            if (cfg.CivilianRiskEnabled && Game.GameTime-_lastRiskLog>3000 && ((threatAllowsLethal&&!LethalAuthorized)||(pitBase&&!PitAuthorized)))
+            {
+                _lastRiskLog=Game.GameTime;
+                if(threatAllowsLethal&&!LethalAuthorized&&log!=null)log("Lethal engagement withheld/avoided: civilian risk="+(int)LastCivilianRisk+".");
+                if(pitBase&&!PitAuthorized&&log!=null)log("PIT withheld/avoided: civilian/traffic risk="+(int)LastPitRisk+".");
+            }
+
             int now = Game.GameTime;
             if (now - _lastScan < Math.Max(100, cfg.ForcePolicyScanIntervalMs)) return;
             _lastScan = now;
@@ -50,25 +64,29 @@ namespace VOX.PoliceOverhaulVI
             foreach (Ped cop in nearby)
             {
                 if (cop == null || !cop.Exists() || cop.IsDead || !Perception.IsLawPed(cop)) continue;
-                ApplyOfficerPolicy(cop, player, wanted, LethalAuthorized, PitAuthorized, cfg);
+                bool officerLethal=LethalAuthorized;
+                float lineRisk=0f;
+                if(cfg.CivilianRiskEnabled&&threatAllowsLethal)
+                    officerLethal=CivilianRiskSystem.LethalAllowedForOfficer(cop,player,true,cfg,out lineRisk);
+                ApplyOfficerPolicy(cop, player, wanted, officerLethal, PitAuthorized, cfg);
             }
         }
 
         public void Reset()
         {
-            LethalAuthorized = false; PitAuthorized = false; _initialized = false;
+            LethalAuthorized = false; PitAuthorized = false; LastCivilianRisk=LastPitRisk=0f; _initialized = false;
         }
 
         private void LogTransitions(Action<string> log)
         {
             if (!_initialized || LethalAuthorized != _lastLethal)
             {
-                if (log != null) log(LethalAuthorized ? "Lethal-force authorization granted for current threat." : "Lethal force restricted; current response remains non-lethal.");
+                if (log != null) log(LethalAuthorized ? "Lethal-force authorization granted for current threat and collateral-risk state." : "Lethal force restricted; current response remains non-lethal/containment.");
                 _lastLethal = LethalAuthorized;
             }
             if (!_initialized || PitAuthorized != _lastPit)
             {
-                if (log != null) log(PitAuthorized ? "PIT authorization granted for fleeing vehicle." : "PIT restricted for current pursuit state.");
+                if (log != null) log(PitAuthorized ? "PIT authorization granted for fleeing vehicle and safe-enough surroundings." : "PIT restricted for current pursuit/risk state.");
                 _lastPit = PitAuthorized;
             }
             _initialized = true;
@@ -87,16 +105,12 @@ namespace VOX.PoliceOverhaulVI
                     Function.Call(Hash.SET_PED_SHOOT_RATE, cop.Handle, Math.Max(10, cfg.NonLethalShootRate));
                     Function.Call(Hash.SET_PED_COMBAT_ATTRIBUTES, cop.Handle, 5, false);
 
-                    if (wanted == 1 && !player.IsInVehicle() && Perception.Distance(cop.Position, player.Position) <= 9f)
+                    if (wanted <= 2 && !player.IsInVehicle() && Perception.Distance(cop.Position, player.Position) <= 9f)
                     {
                         float playerSpeed = 0f;
                         try { playerSpeed = Function.Call<float>(Hash.GET_ENTITY_SPEED, player.Handle); } catch { }
                         if (playerSpeed < 2.2f && !SafeBool(Hash.IS_PED_SHOOTING, player.Handle))
-                        {
-                            // Lets low-level encounters resolve as an arrest attempt
-                            // instead of forcing a combat task immediately.
                             try { Function.Call(Hash.TASK_ARREST_PED, cop.Handle, player.Handle); } catch { }
-                        }
                     }
                 }
                 else
@@ -114,7 +128,7 @@ namespace VOX.PoliceOverhaulVI
                     Vehicle vehicle = cop.CurrentVehicle;
                     if (vehicle != null && vehicle.Exists() && vehicle.Driver != null && vehicle.Driver.Exists() && vehicle.Driver.Handle == cop.Handle)
                     {
-                        float aggression = pit ? 0.82f : (wanted <= 1 ? 0.08f : wanted == 2 ? 0.22f : 0.48f);
+                        float aggression = pit ? 0.82f : (wanted <= 1 ? 0.08f : wanted == 2 ? 0.22f : 0.42f);
                         Function.Call(Hash.SET_DRIVER_AGGRESSIVENESS, cop.Handle, aggression);
                         Function.Call(Hash.SET_DRIVER_ABILITY, cop.Handle, wanted >= 3 ? 0.95f : 0.76f);
                     }
