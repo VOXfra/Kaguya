@@ -47,9 +47,13 @@ namespace VOX.PoliceOverhaulVI
         public static bool FaceObscured(Ped ped)
         {
             if (ped == null || !ped.Exists()) return true;
-            // Component 1 is the actual mask slot. A normal hat is not enough.
-            int mask = Function.Call<int>(Hash.GET_PED_DRAWABLE_VARIATION, ped.Handle, 1);
-            return mask != 0;
+            try
+            {
+                // Component 1 is the actual mask slot. Hats/helmets are props,
+                // and exposed hands/skin are never treated as unique identity.
+                return Function.Call<int>(Hash.GET_PED_DRAWABLE_VARIATION, ped.Handle, 1) != 0;
+            }
+            catch { return true; }
         }
     }
 
@@ -119,6 +123,7 @@ namespace VOX.PoliceOverhaulVI
     {
         public int SuspectModelHash;
         public bool Active;
+        // Legacy evidence flags remain for backward-compatible saves/UI.
         public bool FaceKnown;
         public bool OutfitKnown;
         public OutfitSignature Outfit;
@@ -127,6 +132,19 @@ namespace VOX.PoliceOverhaulVI
         public int WeaponHash;
         public bool SuspectCountKnown;
         public int SuspectCount = 1;
+
+        // 0.3: evidence and identity are deliberately separate. Police can
+        // know the clothes/car without being certain which protagonist it is.
+        public float FaceConfidence;
+        public float OutfitConfidence;
+        public float VehicleConfidence;
+        public float IdentityConfidence;
+        public bool IdentityConfirmed;
+        public float Notoriety;
+        public bool MostWanted;
+        public int MajorHeistsKnown;
+        public int SurrenderCount;
+
         public int ThreatLevel;
         public int HeatPoints;
         public int LastWantedEndedAt;
@@ -158,9 +176,11 @@ namespace VOX.PoliceOverhaulVI
         {
             Active = false; FaceKnown = false; OutfitKnown = false; Outfit = null; Vehicle = null;
             WeaponKnown = false; WeaponHash = 0; SuspectCountKnown = false; SuspectCount = 1;
+            FaceConfidence = OutfitConfidence = VehicleConfidence = IdentityConfidence = 0f; IdentityConfirmed = false;
+            Notoriety = 0f; MostWanted = false; MajorHeistsKnown = 0; SurrenderCount = 0;
             ThreatLevel = 0; HeatPoints = 0; LastWantedEndedAt = 0; ExpiresUtcTicks = 0;
             WarrantActive = false; WarrantExpiresUtcTicks = 0; LastKnownX = LastKnownY = LastKnownZ = 0f;
-            LastSource = ObservationSource.None; LastObservedGameTime = 0;
+            LastSource = ObservationSource.None; LastObservedGameTime = 0; UnpaidFines = 0;
         }
     }
 
@@ -173,6 +193,7 @@ namespace VOX.PoliceOverhaulVI
         public string Reason = string.Empty;
         public string Source = string.Empty;
         public string Street = string.Empty;
+        public string CameraId = string.Empty;
         public int SpeedKph;
         public int LimitKph;
         public int OverKph;
@@ -200,7 +221,7 @@ namespace VOX.PoliceOverhaulVI
             foreach (var pair in _cases)
             {
                 if (pair.Value.IsWarrantExpiredUtc()) { pair.Value.WarrantActive = false; pair.Value.WarrantExpiresUtcTicks = 0; }
-                if (pair.Value.IsExpiredUtc() && !pair.Value.WarrantActive) remove.Add(pair.Key);
+                if (pair.Value.IsExpiredUtc() && !pair.Value.WarrantActive && pair.Value.UnpaidFines <= 0) remove.Add(pair.Key);
             }
             foreach (int key in remove) _cases.Remove(key);
         }
