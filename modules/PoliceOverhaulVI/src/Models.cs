@@ -34,27 +34,22 @@ namespace VOX.PoliceOverhaulVI
 
         public bool Matches(Ped ped)
         {
-            if (ped == null || !ped.Exists())
-                return false;
+            if (ped == null || !ped.Exists()) return false;
             for (int i = 0; i < 12; i++)
             {
-                if (Drawables == null || Textures == null || Drawables.Length <= i || Textures.Length <= i)
-                    return false;
-                if (Drawables[i] != Function.Call<int>(Hash.GET_PED_DRAWABLE_VARIATION, ped.Handle, i))
-                    return false;
-                if (Textures[i] != Function.Call<int>(Hash.GET_PED_TEXTURE_VARIATION, ped.Handle, i))
-                    return false;
+                if (Drawables == null || Textures == null || Drawables.Length <= i || Textures.Length <= i) return false;
+                if (Drawables[i] != Function.Call<int>(Hash.GET_PED_DRAWABLE_VARIATION, ped.Handle, i)) return false;
+                if (Textures[i] != Function.Call<int>(Hash.GET_PED_TEXTURE_VARIATION, ped.Handle, i)) return false;
             }
             return true;
         }
 
         public static bool FaceObscured(Ped ped)
         {
-            if (ped == null || !ped.Exists())
-                return true;
+            if (ped == null || !ped.Exists()) return true;
+            // Component 1 is the actual mask slot. A normal hat is not enough.
             int mask = Function.Call<int>(Hash.GET_PED_DRAWABLE_VARIATION, ped.Handle, 1);
-            int helmet = Function.Call<int>(Hash.GET_PED_PROP_INDEX, ped.Handle, 0);
-            return mask != 0 || helmet > 0;
+            return mask != 0;
         }
     }
 
@@ -70,21 +65,15 @@ namespace VOX.PoliceOverhaulVI
 
         public static VehicleSignature Capture(Vehicle vehicle, bool plateKnown)
         {
-            if (vehicle == null || !vehicle.Exists())
-                return null;
-
-            int primary = -1;
-            int secondary = -1;
+            if (vehicle == null || !vehicle.Exists()) return null;
+            int primary = -1, secondary = -1;
             try
             {
-                var p = new OutputArgument();
-                var s = new OutputArgument();
+                var p = new OutputArgument(); var s = new OutputArgument();
                 Function.Call(Hash.GET_VEHICLE_COLOURS, vehicle.Handle, p, s);
-                primary = p.GetResult<int>();
-                secondary = s.GetResult<int>();
+                primary = p.GetResult<int>(); secondary = s.GetResult<int>();
             }
             catch { }
-
             return new VehicleSignature
             {
                 ModelHash = vehicle.Model.Hash,
@@ -97,31 +86,21 @@ namespace VOX.PoliceOverhaulVI
 
         public bool Matches(Vehicle vehicle, bool requirePlateWhenKnown)
         {
-            if (vehicle == null || !vehicle.Exists() || vehicle.Model.Hash != ModelHash)
-                return false;
-
+            if (vehicle == null || !vehicle.Exists() || vehicle.Model.Hash != ModelHash) return false;
             if (PlateKnown && requirePlateWhenKnown)
             {
                 string currentPlate = NormalizePlate(Function.Call<string>(Hash.GET_VEHICLE_NUMBER_PLATE_TEXT, vehicle.Handle));
                 return string.Equals(Plate, currentPlate, StringComparison.OrdinalIgnoreCase);
             }
-
-            int primary = -1;
-            int secondary = -1;
+            int primary = -1, secondary = -1;
             try
             {
-                var p = new OutputArgument();
-                var s = new OutputArgument();
+                var p = new OutputArgument(); var s = new OutputArgument();
                 Function.Call(Hash.GET_VEHICLE_COLOURS, vehicle.Handle, p, s);
-                primary = p.GetResult<int>();
-                secondary = s.GetResult<int>();
+                primary = p.GetResult<int>(); secondary = s.GetResult<int>();
             }
             catch { }
-
-            bool colorsMatch = PrimaryColor < 0 || (PrimaryColor == primary && SecondaryColor == secondary);
-            if (!colorsMatch)
-                return false;
-
+            if (PrimaryColor >= 0 && (PrimaryColor != primary || SecondaryColor != secondary)) return false;
             if (PlateKnown)
             {
                 string currentPlate = NormalizePlate(Function.Call<string>(Hash.GET_VEHICLE_NUMBER_PLATE_TEXT, vehicle.Handle));
@@ -154,9 +133,7 @@ namespace VOX.PoliceOverhaulVI
         public long ExpiresUtcTicks;
         public bool WarrantActive;
         public long WarrantExpiresUtcTicks;
-        public float LastKnownX;
-        public float LastKnownY;
-        public float LastKnownZ;
+        public float LastKnownX, LastKnownY, LastKnownZ;
         public ObservationSource LastSource;
         public int LastObservedGameTime;
         public int UnpaidFines;
@@ -167,55 +144,23 @@ namespace VOX.PoliceOverhaulVI
             set { LastKnownX = value.X; LastKnownY = value.Y; LastKnownZ = value.Z; }
         }
 
-        public bool IsExpiredUtc()
-        {
-            return Active && ExpiresUtcTicks > 0 && DateTime.UtcNow.Ticks >= ExpiresUtcTicks;
-        }
-
-        public bool IsWarrantExpiredUtc()
-        {
-            return WarrantActive && WarrantExpiresUtcTicks > 0 && DateTime.UtcNow.Ticks >= WarrantExpiresUtcTicks;
-        }
-
-        public void Touch(Config cfg)
-        {
-            ExpiresUtcTicks = DateTime.UtcNow.AddHours(Math.Max(1, cfg.CaseMemoryHours)).Ticks;
-        }
-
+        public bool IsExpiredUtc() { return Active && ExpiresUtcTicks > 0 && DateTime.UtcNow.Ticks >= ExpiresUtcTicks; }
+        public bool IsWarrantExpiredUtc() { return WarrantActive && WarrantExpiresUtcTicks > 0 && DateTime.UtcNow.Ticks >= WarrantExpiresUtcTicks; }
+        public void Touch(Config cfg) { ExpiresUtcTicks = DateTime.UtcNow.AddHours(Math.Max(1, cfg.CaseMemoryHours)).Ticks; }
         public void IssueWarrant(Config cfg)
         {
             WarrantActive = true;
             WarrantExpiresUtcTicks = DateTime.UtcNow.AddHours(Math.Max(1, cfg.WarrantMemoryHours)).Ticks;
-            if (WarrantExpiresUtcTicks > ExpiresUtcTicks)
-                ExpiresUtcTicks = WarrantExpiresUtcTicks;
+            if (WarrantExpiresUtcTicks > ExpiresUtcTicks) ExpiresUtcTicks = WarrantExpiresUtcTicks;
         }
-
-        public void ClearTransientWanted()
-        {
-            HeatPoints = 0;
-            LastWantedEndedAt = 0;
-        }
-
+        public void ClearTransientWanted() { HeatPoints = 0; LastWantedEndedAt = 0; }
         public void ClearAll()
         {
-            Active = false;
-            FaceKnown = false;
-            OutfitKnown = false;
-            Outfit = null;
-            Vehicle = null;
-            WeaponKnown = false;
-            WeaponHash = 0;
-            SuspectCountKnown = false;
-            SuspectCount = 1;
-            ThreatLevel = 0;
-            HeatPoints = 0;
-            LastWantedEndedAt = 0;
-            ExpiresUtcTicks = 0;
-            WarrantActive = false;
-            WarrantExpiresUtcTicks = 0;
-            LastKnownX = LastKnownY = LastKnownZ = 0f;
-            LastSource = ObservationSource.None;
-            LastObservedGameTime = 0;
+            Active = false; FaceKnown = false; OutfitKnown = false; Outfit = null; Vehicle = null;
+            WeaponKnown = false; WeaponHash = 0; SuspectCountKnown = false; SuspectCount = 1;
+            ThreatLevel = 0; HeatPoints = 0; LastWantedEndedAt = 0; ExpiresUtcTicks = 0;
+            WarrantActive = false; WarrantExpiresUtcTicks = 0; LastKnownX = LastKnownY = LastKnownZ = 0f;
+            LastSource = ObservationSource.None; LastObservedGameTime = 0;
         }
     }
 
@@ -226,6 +171,11 @@ namespace VOX.PoliceOverhaulVI
         public int IssuedAtGameTime;
         public int DeliverAtGameTime;
         public string Reason = string.Empty;
+        public string Source = string.Empty;
+        public string Street = string.Empty;
+        public int SpeedKph;
+        public int LimitKph;
+        public int OverKph;
         public bool Delivered;
     }
 
@@ -233,7 +183,6 @@ namespace VOX.PoliceOverhaulVI
     {
         private readonly Dictionary<int, CaseMemory> _cases = new Dictionary<int, CaseMemory>();
         public IEnumerable<CaseMemory> Cases { get { return _cases.Values; } }
-
         public CaseMemory GetOrCreate(int suspectModelHash)
         {
             CaseMemory value;
@@ -244,28 +193,16 @@ namespace VOX.PoliceOverhaulVI
             }
             return value;
         }
-
-        public void Put(CaseMemory memory)
-        {
-            if (memory != null)
-                _cases[memory.SuspectModelHash] = memory;
-        }
-
+        public void Put(CaseMemory memory) { if (memory != null) _cases[memory.SuspectModelHash] = memory; }
         public void ClearExpired()
         {
             var remove = new List<int>();
             foreach (var pair in _cases)
             {
-                if (pair.Value.IsWarrantExpiredUtc())
-                {
-                    pair.Value.WarrantActive = false;
-                    pair.Value.WarrantExpiresUtcTicks = 0;
-                }
-                if (pair.Value.IsExpiredUtc() && !pair.Value.WarrantActive)
-                    remove.Add(pair.Key);
+                if (pair.Value.IsWarrantExpiredUtc()) { pair.Value.WarrantActive = false; pair.Value.WarrantExpiresUtcTicks = 0; }
+                if (pair.Value.IsExpiredUtc() && !pair.Value.WarrantActive) remove.Add(pair.Key);
             }
-            foreach (int key in remove)
-                _cases.Remove(key);
+            foreach (int key in remove) _cases.Remove(key);
         }
     }
 
@@ -273,35 +210,27 @@ namespace VOX.PoliceOverhaulVI
     {
         public static int CountVisibleSuspects(Ped player)
         {
-            if (player == null || !player.Exists() || !player.IsInVehicle())
-                return 1;
-
+            if (player == null || !player.Exists() || !player.IsInVehicle()) return 1;
             Vehicle vehicle = player.CurrentVehicle;
-            if (vehicle == null || !vehicle.Exists())
-                return 1;
-
+            if (vehicle == null || !vehicle.Exists()) return 1;
             int count = 0;
             try
             {
                 Ped driver = vehicle.Driver;
-                if (driver != null && driver.Exists() && !driver.IsDead)
-                    count++;
+                if (driver != null && driver.Exists() && !driver.IsDead) count++;
                 int max = Function.Call<int>(Hash.GET_VEHICLE_MAX_NUMBER_OF_PASSENGERS, vehicle.Handle);
                 for (int seat = 0; seat < max; seat++)
                 {
                     int handle = Function.Call<int>(Hash.GET_PED_IN_VEHICLE_SEAT, vehicle.Handle, seat, false);
-                    if (handle != 0 && Function.Call<bool>(Hash.DOES_ENTITY_EXIST, handle))
-                        count++;
+                    if (handle != 0 && Function.Call<bool>(Hash.DOES_ENTITY_EXIST, handle)) count++;
                 }
             }
             catch { }
             return Math.Max(1, count);
         }
-
         public static int CurrentWeaponHash(Ped player)
         {
-            if (player == null || !player.Exists())
-                return 0;
+            if (player == null || !player.Exists()) return 0;
             try { return Function.Call<int>(Hash.GET_SELECTED_PED_WEAPON, player.Handle); }
             catch { return 0; }
         }
