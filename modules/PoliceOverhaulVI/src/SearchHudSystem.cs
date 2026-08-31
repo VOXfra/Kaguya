@@ -11,37 +11,17 @@ namespace VOX.PoliceOverhaulVI
     internal sealed class SearchHudSystem
     {
         private const string UiDirectory = "scripts\\PoliceOverhaulVI\\UI";
-        // Internal evidence/case memory can persist for hours. The visible VI
-        // search HUD must represent only a live/recent search phase.
-        private const int SearchPhaseLifetimeMs = 60000;
-        // The main police script intentionally yields while the protagonist is
-        // dead. A wanted->0 transition after a long update gap is therefore a
-        // useful fallback indication that the previous encounter was interrupted
-        // by death/respawn or another hard scripted transition.
         private const int HardTransitionGapMs = 2000;
-
         private static SearchHudSystem _current;
 
-        private int _innerBlip;
-        private int _outerBlip;
+        private int _innerBlip, _outerBlip, _lastThreat, _lastUpdateAt, _lastNativeWanted;
         private Vector3 _lastCenter;
-        private int _lastThreat;
-        private CustomSprite _face;
-        private CustomSprite _clothes;
-        private CustomSprite _vehicle;
-        private CustomSprite _star;
-        private bool _spritesAttempted;
-        private int _lastUpdateAt;
-        private int _lastNativeWanted;
-        private bool _suppressCurrentPhase;
+        private float _lastInnerRadius, _lastOuterRadius;
+        private CustomSprite _face, _clothes, _vehicle, _star;
+        private bool _spritesAttempted, _suppressCurrentPhase;
 
-        public SearchHudSystem()
-        {
-            _current = this;
-        }
+        public SearchHudSystem() { _current = this; }
 
-        // Called by the lightweight death watcher even while the main police
-        // script has yielded because the protagonist is dead.
         public static void NotifyPlayerDeath()
         {
             SearchHudSystem current = _current;
@@ -56,57 +36,49 @@ namespace VOX.PoliceOverhaulVI
         {
             int now = Game.GameTime;
             bool hardGap = _lastUpdateAt > 0 && now - _lastUpdateAt > HardTransitionGapMs;
-
-            // A genuinely new police encounter always re-arms the search HUD.
-            if (nativeWanted > 0)
-                _suppressCurrentPhase = false;
-            // Fallback for death/respawn or another hard scripted transition.
-            else if (_lastNativeWanted > 0 && hardGap)
-                _suppressCurrentPhase = true;
-
-            _lastUpdateAt = now;
-            _lastNativeWanted = nativeWanted;
+            if (nativeWanted > 0) _suppressCurrentPhase = false;
+            else if (_lastNativeWanted > 0 && hardGap) _suppressCurrentPhase = true;
+            _lastUpdateAt = now; _lastNativeWanted = nativeWanted;
 
             if (_suppressCurrentPhase || !cfg.SearchHudEnabled || memory == null || (!memory.Active && !memory.WarrantActive))
+            {
+                ClearSearchCircles(); return;
+            }
+
+            bool recentlyObserved = memory.LastObservedGameTime > 0 && now - memory.LastObservedGameTime < cfg.SearchCircleObservationGraceMs;
+            int sinceObservation = memory.LastObservedGameTime > 0 ? Math.Max(0, now - memory.LastObservedGameTime) : int.MaxValue;
+            bool lostContact = nativeWanted > 0 && !recentlyObserved && sinceObservation >= Math.Max(250, cfg.SearchLostContactDelayMs);
+            bool postPursuitSearch = nativeWanted == 0 && memory.LastWantedEndedAt > 0 && now - memory.LastWantedEndedAt <= Math.Max(1000, cfg.SearchPhaseLifetimeMs);
+            bool searchActive = lostContact || postPursuitSearch;
+
+            if (!searchActive)
             {
                 ClearSearchCircles();
                 return;
             }
 
-            // Once the active wanted phase is over, only keep the VI-style
-            // search/evidence HUD for a bounded search window. CaseMemory.Active
-            // means police memory exists; it does NOT mean officers are still
-            // visibly searching right now.
-            if (nativeWanted == 0)
-            {
-                if (memory.LastWantedEndedAt <= 0 || now - memory.LastWantedEndedAt > SearchPhaseLifetimeMs)
-                {
-                    ClearSearchCircles();
-                    return;
-                }
-            }
+            int ageMs = memory.LastObservedGameTime > 0 ? Math.Max(0, now - memory.LastObservedGameTime) : 0;
+            float growth = Math.Min(Math.Max(0f, cfg.SearchMaxGrowth), ageMs / 1000f * Math.Max(0f, cfg.SearchUncertaintyGrowthPerSecond));
+            float inner = cfg.SearchInnerBaseRadius + Math.Max(0, memory.ThreatLevel - 1) * cfg.SearchRadiusPerStar + growth * 0.55f;
+            float outer = inner + cfg.SearchOuterExtraRadius + growth;
 
-            bool recentlyObserved = memory.LastObservedGameTime > 0 && now - memory.LastObservedGameTime < cfg.SearchCircleObservationGraceMs;
-            bool shouldShowCircles = cfg.ShowSearchCircles && (nativeWanted == 0 || !recentlyObserved);
-            if (shouldShowCircles) EnsureCircles(memory.LastKnownPosition, Math.Max(1, memory.ThreatLevel), cfg); else ClearSearchCircles();
-            if (cfg.ShowEvidenceIcons && nativeWanted == 0) DrawEvidence(memory, cfg);
+            if (cfg.ShowSearchCircles) EnsureCircles(memory.LastKnownPosition, Math.Max(1, memory.ThreatLevel), inner, outer, cfg);
+            else ClearSearchCircles();
+            if (cfg.ShowEvidenceIcons) DrawEvidence(memory, cfg);
         }
 
         public void Cleanup()
         {
-            ClearSearchCircles();
-            _lastUpdateAt = 0;
-            _lastNativeWanted = 0;
-            _suppressCurrentPhase = false;
+            ClearSearchCircles(); _lastUpdateAt = 0; _lastNativeWanted = 0; _suppressCurrentPhase = false;
         }
 
-        private void EnsureCircles(Vector3 center, int threat, Config cfg)
+        private void EnsureCircles(Vector3 center, int threat, float inner, float outer, Config cfg)
         {
             if (center == Vector3.Zero) return;
-            if (_innerBlip != 0 && _outerBlip != 0 && _lastThreat == threat && Perception.Distance(center, _lastCenter) < 12f) return;
+            bool same = _innerBlip != 0 && _outerBlip != 0 && _lastThreat == threat &&
+                        Perception.Distance(center, _lastCenter) < 10f && Math.Abs(inner - _lastInnerRadius) < 7f && Math.Abs(outer - _lastOuterRadius) < 10f;
+            if (same) return;
             ClearSearchCircles();
-            float inner = cfg.SearchInnerBaseRadius + Math.Max(0, threat - 1) * cfg.SearchRadiusPerStar;
-            float outer = inner + cfg.SearchOuterExtraRadius;
             try
             {
                 _outerBlip = Function.Call<int>(Hash.ADD_BLIP_FOR_RADIUS, center.X, center.Y, center.Z, outer);
@@ -115,29 +87,21 @@ namespace VOX.PoliceOverhaulVI
                 _innerBlip = Function.Call<int>(Hash.ADD_BLIP_FOR_RADIUS, center.X, center.Y, center.Z, inner);
                 Function.Call(Hash.SET_BLIP_COLOUR, _innerBlip, 1);
                 Function.Call(Hash.SET_BLIP_ALPHA, _innerBlip, cfg.SearchInnerAlpha);
-                _lastCenter = center;
-                _lastThreat = threat;
+                _lastCenter = center; _lastThreat = threat; _lastInnerRadius = inner; _lastOuterRadius = outer;
             }
             catch { ClearSearchCircles(); }
         }
 
         private void ClearSearchCircles()
         {
-            DeleteBlip(ref _innerBlip);
-            DeleteBlip(ref _outerBlip);
-            _lastThreat = 0;
-            _lastCenter = Vector3.Zero;
+            DeleteBlip(ref _innerBlip); DeleteBlip(ref _outerBlip);
+            _lastThreat = 0; _lastCenter = Vector3.Zero; _lastInnerRadius = _lastOuterRadius = 0f;
         }
 
         private static void DeleteBlip(ref int handle)
         {
             if (handle == 0) return;
-            try
-            {
-                Blip b = new Blip(handle);
-                if (b.Exists()) b.Delete();
-            }
-            catch { }
+            try { Blip b = new Blip(handle); if (b.Exists()) b.Delete(); } catch { }
             handle = 0;
         }
 
@@ -150,9 +114,7 @@ namespace VOX.PoliceOverhaulVI
             {
                 for (int i = 0; i < stars; i++)
                 {
-                    _star.Position = new PointF(x - i * 25f, y);
-                    _star.Size = new SizeF(22f, 22f);
-                    _star.ScaledDraw();
+                    _star.Position = new PointF(x - i * 25f, y); _star.Size = new SizeF(22f,22f); _star.ScaledDraw();
                 }
             }
             float iconX = x - (stars - 1) * 25f, iconY = y + 31f;
@@ -163,22 +125,16 @@ namespace VOX.PoliceOverhaulVI
 
         private static void DrawIcon(CustomSprite sprite, ref float x, float y, float size)
         {
-            sprite.Position = new PointF(x, y);
-            sprite.Size = new SizeF(size, size);
-            sprite.ScaledDraw();
-            x += size + 5f;
+            sprite.Position = new PointF(x,y); sprite.Size = new SizeF(size,size); sprite.ScaledDraw(); x += size + 5f;
         }
 
         private void EnsureSprites()
         {
-            if (_spritesAttempted) return;
-            _spritesAttempted = true;
+            if (_spritesAttempted) return; _spritesAttempted = true;
             try
             {
-                _face = TrySprite(Path.Combine(UiDirectory, "face.png"));
-                _clothes = TrySprite(Path.Combine(UiDirectory, "clothes.png"));
-                _vehicle = TrySprite(Path.Combine(UiDirectory, "vehicle.png"));
-                _star = TrySprite(Path.Combine(UiDirectory, "starRED.png"));
+                _face=TrySprite(Path.Combine(UiDirectory,"face.png")); _clothes=TrySprite(Path.Combine(UiDirectory,"clothes.png"));
+                _vehicle=TrySprite(Path.Combine(UiDirectory,"vehicle.png")); _star=TrySprite(Path.Combine(UiDirectory,"starRED.png"));
             }
             catch { }
         }
@@ -186,7 +142,7 @@ namespace VOX.PoliceOverhaulVI
         private static CustomSprite TrySprite(string path)
         {
             if (!File.Exists(path)) return null;
-            return new CustomSprite(Path.GetFullPath(path), new SizeF(28f, 28f), new PointF(0f, 0f), Color.White, 0f, true);
+            return new CustomSprite(Path.GetFullPath(path),new SizeF(28f,28f),new PointF(0f,0f),Color.White,0f,true);
         }
     }
 }
