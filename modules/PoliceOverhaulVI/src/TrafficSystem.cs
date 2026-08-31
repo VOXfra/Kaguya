@@ -108,6 +108,15 @@ namespace VOX.PoliceOverhaulVI
             {
                 CitationRecord citation = _pending[i];
                 if (citation.Delivered || now < citation.DeliverAtGameTime) continue;
+
+                // A delayed citation belongs to the protagonist/suspect who
+                // actually committed the offence. If the player switched
+                // protagonist before delivery, keep it pending instead of
+                // debiting or notifying the wrong character.
+                if (citation.SuspectModelHash != 0 &&
+                    (memory == null || citation.SuspectModelHash != memory.SuspectModelHash))
+                    continue;
+
                 int unpaid = citation.Amount, paid = 0;
                 if (cfg.AutoDeductFines)
                 {
