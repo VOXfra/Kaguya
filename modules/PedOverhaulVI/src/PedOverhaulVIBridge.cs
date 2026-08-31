@@ -1,6 +1,7 @@
 using GTA;
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 
 namespace VOX.PedOverhaulVI
 {
@@ -18,6 +19,8 @@ namespace VOX.PedOverhaulVI
             public int LastAt;
         }
         private static readonly Dictionary<int,Memory> Memories=new Dictionary<int,Memory>();
+        private static MethodInfo _corePublish;
+        private static int _nextCoreResolve;
 
         public static void RegisterPlayerInteraction(int pedHandle,int modelHash,string intent,float intensity)
         {
@@ -36,6 +39,7 @@ namespace VOX.PedOverhaulVI
             else if(i=="threaten"||i=="rob"){m.Opinion-=35f*k;m.Fear+=38f*k;m.Recognition+=35f*k;}
             else{m.Recognition+=5f*k;}
             m.Opinion=ClampSigned(m.Opinion);m.Fear=Clamp(m.Fear);m.Recognition=Clamp(m.Recognition);m.LastIntent=intent??string.Empty;m.LastAt=Game.GameTime;
+            PublishInteraction(pedHandle,modelHash,i,k);
         }
 
         public static float GetOpinion(int pedHandle){Memory m;return Memories.TryGetValue(pedHandle,out m)?m.Opinion:0f;}
@@ -83,6 +87,28 @@ namespace VOX.PedOverhaulVI
                 if((live==null||!live.Contains(pair.Key))&&Game.GameTime-pair.Value.LastAt>600000)remove.Add(pair.Key);
             }
             foreach(int h in remove)Memories.Remove(h);
+        }
+
+        private static void PublishInteraction(int pedHandle,int modelHash,string intent,float intensity)
+        {
+            try
+            {
+                int now=Environment.TickCount;
+                if(_corePublish==null&&now>=_nextCoreResolve)
+                {
+                    _nextCoreResolve=now+5000;
+                    Type t=Type.GetType("VOX.CoreVI.WorldMemoryBridge, VOXCoreVI",false);
+                    if(t!=null)_corePublish=t.GetMethod("Publish",BindingFlags.Public|BindingFlags.Static,null,
+                        new[]{typeof(string),typeof(string),typeof(float),typeof(float),typeof(float),typeof(int),typeof(int),typeof(string),typeof(double),typeof(string)},null);
+                }
+                if(_corePublish==null)return;
+                Ped target=new Ped(pedHandle);if(target==null||!target.Exists())return;
+                Ped player=Game.LocalPlayerPed;int suspect=player!=null&&player.Exists()?player.Model.Hash:0;
+                int severity=(intent=="rob"||intent=="threaten")?3:((intent=="antagonize"||intent=="insult")?1:0);
+                var p=target.Position;
+                _corePublish.Invoke(null,new object[]{"social","player_interaction",p.X,p.Y,p.Z,severity,suspect,"InteractionRuntimeVI",2.0,"intent="+intent+";targetModel="+modelHash+";intensity="+intensity.ToString("0.00",System.Globalization.CultureInfo.InvariantCulture)});
+            }
+            catch{_corePublish=null;_nextCoreResolve=Environment.TickCount+10000;}
         }
 
         private static float Clamp(float v){return Math.Max(0f,Math.Min(100f,v));}
