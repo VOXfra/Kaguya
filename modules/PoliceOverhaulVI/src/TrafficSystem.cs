@@ -9,11 +9,12 @@ namespace VOX.PoliceOverhaulVI
     {
         private readonly List<CitationRecord> _pending = new List<CitationRecord>();
         private readonly FineMailSystem _mail = new FineMailSystem();
-        private int _speedingSince, _lastCitationAt, _policeObservedSince, _lastTrafficScan;
+        private int _speedingSince, _lastCitationAt, _policeObservedSince, _lastTrafficScan, _lastOwnershipLogAt;
+
         private static readonly HashSet<string> HighwayNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            "Los Santos Freeway","Del Perro Freeway","Olympic Freeway","Elysian Fields Freeway",
-            "La Puerta Freeway","Palomino Freeway","Senora Freeway","Great Ocean Highway"
+            "Los Santos Freeway", "Del Perro Freeway", "Olympic Freeway", "Elysian Fields Freeway",
+            "La Puerta Freeway", "Palomino Freeway", "Senora Freeway", "Great Ocean Highway"
         };
 
         public void Update(Ped player, CaseMemory memory, Config cfg, Action<string> log)
@@ -21,8 +22,11 @@ namespace VOX.PoliceOverhaulVI
             DeliverPending(memory, cfg, log);
             if (!cfg.TrafficEnforcementEnabled || player == null || !player.Exists() || !player.IsInVehicle())
             {
-                _speedingSince = 0; _policeObservedSince = 0; return;
+                _speedingSince = 0;
+                _policeObservedSince = 0;
+                return;
             }
+
             int now = Game.GameTime;
             if (now - _lastTrafficScan < 250) return;
             _lastTrafficScan = now;
@@ -35,16 +39,35 @@ namespace VOX.PoliceOverhaulVI
             int over = speedKph - limit;
             if (over <= cfg.SpeedToleranceKph)
             {
-                _speedingSince = 0; _policeObservedSince = 0; return;
+                _speedingSince = 0;
+                _policeObservedSince = 0;
+                return;
             }
+
+            // The current enforcement is automated owner billing, not a full
+            // roadside identity check. A stolen/borrowed ambient vehicle must
+            // therefore not debit the protagonist just because they drive it.
+            bool registered = VehicleOwnershipSystem.IsRegisteredToCurrentPlayer(player, vehicle);
+            if (!registered)
+            {
+                _speedingSince = 0;
+                _policeObservedSince = 0;
+                if (now - _lastOwnershipLogAt > 8000)
+                {
+                    _lastOwnershipLogAt = now;
+                    if (log != null) log("Traffic offence observed in unregistered/stolen vehicle; automated owner citation suppressed.");
+                }
+                return;
+            }
+
             if (_speedingSince == 0) _speedingSince = now;
             if (now - _speedingSince < cfg.SpeedingGraceMs || now - _lastCitationAt < cfg.CitationCooldownMs) return;
 
-            CameraObservation fixedCamera = cfg.TrafficCameraEnforcement && cfg.CctvEnabled ? CameraSystem.FindTrafficCamera(player,cfg,log) : null;
+            CameraObservation fixedCamera = cfg.TrafficCameraEnforcement && cfg.CctvEnabled ? CameraSystem.FindTrafficCamera(player, cfg, log) : null;
             WitnessObservation police = Perception.FindSeeingPolice(player, cfg.PoliceWitnessDistance);
             if (fixedCamera != null)
             {
-                IssueSpeedingCitation(memory, cfg, speedKph, limit, over, street, "fixed traffic camera", false, fixedCamera.CameraId, log);
+                IssueSpeedingCitation(memory, cfg, speedKph, limit, over, street, "fixed traffic camera", false, fixedCamera.CameraId, vehicle, log);
                 return;
             }
 
@@ -54,14 +77,18 @@ namespace VOX.PoliceOverhaulVI
                 if (now - _policeObservedSince >= cfg.PoliceSpeedingReportDelayMs)
                 {
                     bool reckless = over >= Math.Max(cfg.SpeedToleranceKph + 1, cfg.RecklessSpeedOverKph);
-                    IssueSpeedingCitation(memory, cfg, speedKph, limit, over, street, "police observation", reckless, string.Empty, log);
+                    IssueSpeedingCitation(memory, cfg, speedKph, limit, over, street, "police observation", reckless, string.Empty, vehicle, log);
                     if (reckless && cfg.PoliceObservedSpeedingCanEscalate) RequestTrafficStop(log);
                 }
             }
             else _policeObservedSince = 0;
         }
 
-        public void ResetTransient(){_speedingSince=0;_policeObservedSince=0;}
+        public void ResetTransient()
+        {
+            _speedingSince = 0;
+            _policeObservedSince = 0;
+        }
 
         private static void RequestTrafficStop(Action<string> log)
         {
@@ -73,25 +100,51 @@ namespace VOX.PoliceOverhaulVI
                 Function.Call(Hash.SET_PLAYER_WANTED_LEVEL_NOW, Game.Player.Handle, false);
                 if (log != null) log("Traffic officer requested a one-star stop for reckless speeding.");
             }
-            catch (Exception ex) { if (log != null) log("Traffic-stop request failed: " + ex.Message); }
+            catch (Exception ex)
+            {
+                if (log != null) log("Traffic-stop request failed: " + ex.Message);
+            }
         }
 
-        private void IssueSpeedingCitation(CaseMemory memory, Config cfg, int speedKph, int limit, int overKph, string street, string source, bool reckless, string cameraId, Action<string> log)
+        private void IssueSpeedingCitation(CaseMemory memory, Config cfg, int speedKph, int limit, int overKph, string street, string source, bool reckless, string cameraId, Vehicle vehicle, Action<string> log)
         {
             int now = Game.GameTime;
             int chargeableOver = Math.Max(1, overKph - cfg.SpeedToleranceKph);
             int amount = Math.Max(1, cfg.SpeedingBaseFine + chargeableOver * Math.Max(0, cfg.SpeedingFinePerKph));
             if (reckless) amount += Math.Max(0, cfg.RecklessFineBonus);
+
+            string plate = string.Empty;
+            int vehicleModel = 0;
+            try
+            {
+                plate = VehicleSignature.NormalizePlate(Function.Call<string>(Hash.GET_VEHICLE_NUMBER_PLATE_TEXT, vehicle.Handle));
+                vehicleModel = vehicle.Model.Hash;
+            }
+            catch { }
+
             _pending.Add(new CitationRecord
             {
                 SuspectModelHash = memory == null ? 0 : memory.SuspectModelHash,
-                Amount = amount, IssuedAtGameTime = now,
+                Amount = amount,
+                IssuedAtGameTime = now,
                 DeliverAtGameTime = now + Math.Max(1000, cfg.FineDeliveryDelayMs),
-                Reason = reckless ? "Reckless speeding" : "Speeding", Source = source, Street = street, CameraId=cameraId??string.Empty,
-                SpeedKph = speedKph, LimitKph = limit, OverKph = overKph, Delivered = false
+                Reason = reckless ? "Reckless speeding" : "Speeding",
+                Source = source,
+                Street = street,
+                CameraId = cameraId ?? string.Empty,
+                VehiclePlate = plate,
+                VehicleModelHash = vehicleModel,
+                SpeedKph = speedKph,
+                LimitKph = limit,
+                OverKph = overKph,
+                Delivered = false
             });
-            _lastCitationAt = now; _speedingSince = 0; _policeObservedSince = 0;
-            if (log != null) log("Traffic citation recorded: " + speedKph + "/" + limit + " km/h (+" + overKph + "), $" + amount + ", source=" + source + (string.IsNullOrEmpty(cameraId)?"":" camera="+cameraId) + ".");
+
+            _lastCitationAt = now;
+            _speedingSince = 0;
+            _policeObservedSince = 0;
+            if (log != null)
+                log("Traffic citation recorded: " + speedKph + "/" + limit + " km/h (+" + overKph + "), $" + amount + ", plate=" + plate + ", source=" + source + (string.IsNullOrEmpty(cameraId) ? "" : " camera=" + cameraId) + ".");
         }
 
         private void DeliverPending(CaseMemory memory, Config cfg, Action<string> log)
@@ -103,18 +156,23 @@ namespace VOX.PoliceOverhaulVI
                 CitationRecord citation = _pending[i];
                 if (citation.Delivered || now < citation.DeliverAtGameTime) continue;
                 if (citation.SuspectModelHash != 0 && (memory == null || citation.SuspectModelHash != memory.SuspectModelHash)) continue;
+
                 int unpaid = citation.Amount, paid = 0;
                 if (cfg.AutoDeductFines)
                 {
                     try
                     {
-                        int money = Game.Player.Money; paid = Math.Min(Math.Max(0, money), citation.Amount);
-                        if (paid > 0) Game.Player.Money = money - paid; unpaid -= paid;
+                        int money = Game.Player.Money;
+                        paid = Math.Min(Math.Max(0, money), citation.Amount);
+                        if (paid > 0) Game.Player.Money = money - paid;
+                        unpaid -= paid;
                     }
                     catch { }
                 }
+
                 if (memory != null && unpaid > 0) memory.UnpaidFines += unpaid;
-                citation.Delivered = true; _pending.RemoveAt(i);
+                citation.Delivered = true;
+                _pending.RemoveAt(i);
                 _mail.Deliver(citation, paid, unpaid, cfg, log);
                 if (log != null) log("Traffic citation settled. amount=$" + citation.Amount + ", paid=$" + paid + ", unpaid=$" + Math.Max(0, unpaid) + ".");
             }
@@ -124,12 +182,18 @@ namespace VOX.PoliceOverhaulVI
         {
             try
             {
-                var streetHash=new OutputArgument();var crossingHash=new OutputArgument();
-                Function.Call(Hash.GET_STREET_NAME_AT_COORD,player.Position.X,player.Position.Y,player.Position.Z,streetHash,crossingHash);
-                int hash=streetHash.GetResult<int>();return hash==0?string.Empty:(Function.Call<string>(Hash.GET_STREET_NAME_FROM_HASH_KEY,hash)??string.Empty).Trim();
+                var streetHash = new OutputArgument();
+                var crossingHash = new OutputArgument();
+                Function.Call(Hash.GET_STREET_NAME_AT_COORD, player.Position.X, player.Position.Y, player.Position.Z, streetHash, crossingHash);
+                int hash = streetHash.GetResult<int>();
+                return hash == 0 ? string.Empty : (Function.Call<string>(Hash.GET_STREET_NAME_FROM_HASH_KEY, hash) ?? string.Empty).Trim();
             }
-            catch{return string.Empty;}
+            catch { return string.Empty; }
         }
-        private static int GetSpeedLimit(string street,Config cfg){return !string.IsNullOrEmpty(street)&&HighwayNames.Contains(street)?Math.Max(1,cfg.HighwaySpeedLimitKph):Math.Max(1,cfg.UrbanSpeedLimitKph);}
+
+        private static int GetSpeedLimit(string street, Config cfg)
+        {
+            return !string.IsNullOrEmpty(street) && HighwayNames.Contains(street) ? Math.Max(1, cfg.HighwaySpeedLimitKph) : Math.Max(1, cfg.UrbanSpeedLimitKph);
+        }
     }
 }
