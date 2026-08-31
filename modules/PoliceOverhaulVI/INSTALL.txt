@@ -1,4 +1,4 @@
-POLICE OVERHAUL VI — V0.3.0
+POLICE OVERHAUL VI — V0.4.0
 
 TARGET
 - GTA V Enhanced Story Mode
@@ -7,6 +7,9 @@ REQUIRES
 - Script Hook V compatible with the installed GTA V Enhanced build
 - Script Hook V .NET Enhanced (SHVDNE) v1.1.0.6 or compatible newer build
 
+RECOMMENDED
+- VOX Core VI 0.1.0. Police 0.4 continues to run without it, but shared world events are then not persisted in the common VOX memory.
+
 INSTALL
 1. Copy the contents of this package into the GTA V root directory.
 2. PoliceOverhaulVI.dll and PoliceOverhaulVI.ini must end up in GTA V\scripts\.
@@ -14,46 +17,48 @@ INSTALL
 4. Keep scripts\PoliceOverhaulVI\UI\ if you already installed the private VI-style face/clothes/vehicle/star PNG assets.
 5. Launch Story Mode with BattlEye disabled as required for script mods.
 
-UNINSTALL
-- Delete scripts\PoliceOverhaulVI.dll
-- Delete scripts\PoliceOverhaulVI.ini
-- Delete scripts\PoliceOverhaulVI\ to also remove logs, camera registry, fine-mail archive and persistent police cases.
-
 NO VANILLA ARCHIVE IS REPLACED.
 
-V0.3 MAJOR CHANGES
-- Police identity is confidence-based. Face, outfit and vehicle are separate evidence channels; seeing clothes or a known vehicle is not automatically proof of who is driving/wearing them.
-- A real mask caps face confidence. Exposed hands/skin/body shape are descriptive only and never treated as unique biometric identity.
-- High notoriety / Most Wanted status lowers the confirmation threshold, but never grants magical position or identity knowledge.
-- Story heist scripts (Vangelico, Merryweather, Bureau and Union Depository variants) are monitored read-only during Rockstar mission passthrough; sufficiently long completed runs add historical notoriety without private-global offsets.
-- Warrants/home stakeouts require confirmed identity rather than a single FaceKnown boolean.
-- Voluntary surrender is available on foot at Mission Row LSPD, Sandy Shores Sheriff and Paleto Bay Sheriff: holster weapons and hold the context key near the station.
-- Surrender clears the active wanted/warrant phase and reduces heat/notoriety slightly; archived evidence/history can remain.
-- Fixed traffic-camera enforcement uses a persistent exact-position registry of prop_cctv_cam_* objects only. prop_cctv_pole_* is never considered a speed camera.
-- The registry seeds known exact world positions, discovers the physical Enhanced props encountered in-game and writes scripts\PoliceOverhaulVI\TrafficCameras.csv.
-- A camera must physically exist at the recorded coordinate, have line of sight and be traffic-validated by seeing a vehicle on-road before issuing a citation.
-- Traffic notices include the camera identity when applicable.
-- Dispatch can use GTA Online law-enforcement vehicle models when present, with vanilla fallbacks if a model is missing from the installed build.
-- Tier 4/5 tactical units start in interception/containment mode; current threat + Force Policy controls lethal escalation.
-- Civilian collateral risk now affects lethal fire and PIT authorization. High risk delays/withholds the action; an immediate lethal threat uses a higher emergency threshold rather than an absolute ban.
-- Sixth-star explosive air response performs a civilian-risk check. High-risk scenes prefer police-helicopter overwatch/ground containment; jet attack is delayed until collateral risk is acceptable.
+V0.4 WORLD CONTINUITY
+- Serious wanted incidents create persistent crime-scene records in scripts\PoliceOverhaulVI\CrimeScenes.xml.
+- Returning later can reveal a bounded investigation zone plus physical-style evidence markers rather than an empty location.
+- Nearby violent/fatal evidence can strengthen/extend an existing scene instead of creating duplicate scenes.
+- Crime scenes decay over configurable real-time hours according to severity.
+- With VOX Core installed, crime scenes are also published to the shared persistent world memory.
+- BOLO merchant recognition is enabled after a serious prior case when the suspect face was genuinely identified.
+- Recognition requires a nearby streamed merchant, clear line of sight, exposed face and a short confirmation period.
+- The merchant then makes a delayed discreet report; it does not magically know the current suspect position after the player leaves.
+- Masking the face blocks merchant face recognition.
 
-RETAINED SYSTEMS
+V0.3 SYSTEMS RETAINED
+- confidence-based face/outfit/vehicle identification and re-identification
 - physical witnesses and delayed reporting
 - CCTV reporting/re-identification
-- weapon/suspect-count/vehicle/color/plate evidence
 - ANPR-style plate matching and deterministic trackers
-- persistent cases and warrants per protagonist
-- home stakeouts
+- persistent cases, warrants and home stakeouts
+- proportional force / PIT separation and civilian-risk checks
 - sixth-star military escalation
 - bounded search HUD + death cleanup
-- proportional force / PIT separation
-- iFruit-style traffic fine notices + TrafficMail.log
-- mission-safe passthrough
+- traffic camera enforcement and vehicle-ownership-aware citations
+- GTA Online police-vehicle support when models exist
+- mission-safe passthrough with free-roam pursuit ownership hysteresis
+- iFruit-style fine notification + persistent TrafficMail.log archive
 
-IMPORTANT
-- Compile success proves SHVDNE API compatibility, not every runtime behavior. Test actual pursuits, stations and camera positions in Enhanced.
-- The phone fine notice intentionally uses stable native feed/message UI instead of direct writes into version-sensitive appemail global memory.
-- Old Cases.xml files are migrated: old FaceKnown/OutfitKnown flags are converted to initial confidence values instead of discarded.
+KNOWN LIMITATION: VANILLA MAIL APP
+- Arbitrary persistent text cannot safely be inserted into Story Mode appEmail through SHVDNE alone.
+- FiveM/Cfx ADD_TEXT_ENTRY is not a GTA V native and is intentionally not used.
+- Until an Enhanced-specific GXT2 text-bank/hook is packaged, traffic fines use the iFruit notification plus TrafficMail.log history.
 
-For testing, delete scripts\PoliceOverhaulVI\PoliceOverhaulVI.log before a session and send the new log if a pursuit, identification, surrender, radar, PIT or military response behaves incorrectly.
+CRIME-SCENE SCOPE IN 0.4
+The first runtime provides persistence, investigation zones and evidence marks. Forensic officers, tape/barriers, coroners, EMS, tow trucks and staged cleanup are future scene-lifecycle layers and are not claimed as implemented yet.
+
+TESTING
+Delete scripts\PoliceOverhaulVI\PoliceOverhaulVI.log before a clean test. Useful checks are:
+- return to a serious crime location after escaping
+- enter a shop unmasked after a 4+ star case in which the face was identified
+- re-identification by police using known face/outfit/vehicle evidence
+- tracker-led searches
+- five-to-six-star escalation and search duration
+- death/respawn HUD cleanup
+
+Compile success proves SHVDNE API compatibility, not every runtime behavior. Runtime logs remain the source of truth.
