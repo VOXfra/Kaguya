@@ -1,4 +1,4 @@
-POLICE OVERHAUL VI — V0.2.0
+POLICE OVERHAUL VI — V0.3.0
 
 TARGET
 - GTA V Enhanced Story Mode
@@ -11,42 +11,49 @@ INSTALL
 1. Copy the contents of this package into the GTA V root directory.
 2. PoliceOverhaulVI.dll and PoliceOverhaulVI.ini must end up in GTA V\scripts\.
 3. When updating, overwrite BOTH DLL and INI.
-4. Keep scripts\PoliceOverhaulVI\UI\ if you already installed the VI-style face/clothes/vehicle/star PNG assets.
+4. Keep scripts\PoliceOverhaulVI\UI\ if you already installed the private VI-style face/clothes/vehicle/star PNG assets.
 5. Launch Story Mode with BattlEye disabled as required for script mods.
 
 UNINSTALL
 - Delete scripts\PoliceOverhaulVI.dll
 - Delete scripts\PoliceOverhaulVI.ini
-- Delete scripts\PoliceOverhaulVI\ to also remove logs, fine-mail archive and persistent police cases.
+- Delete scripts\PoliceOverhaulVI\ to also remove logs, camera registry, fine-mail archive and persistent police cases.
 
 NO VANILLA ARCHIVE IS REPLACED.
 
-V0.2 MAJOR CHANGES
-- Traffic fines are no longer silent balance deductions: a native iFruit-style LSPD Traffic Division notice gives reason, speed/limit, location, amount paid and outstanding balance.
-- A persistent scripts\PoliceOverhaulVI\TrafficMail.log archive records delivered traffic notices.
-- Police-observed reckless speeding can request a one-star traffic stop; fixed cameras only issue remote citations.
-- Search HUD is now a bounded live search phase rather than a direct reflection of persistent CaseMemory.Active.
-- Search circles appear only after contact is lost / during the post-pursuit search and expand with uncertainty as the last-known position gets older.
-- Player death immediately suppresses the prior search HUD while the internal police case can remain in memory.
-- Historical evidence/warrants do not themselves authorize lethal force.
-- One/two-star response remains non-lethal unless the player actually shoots or directly aims at law enforcement.
-- One-star close compliant encounters can resolve into an arrest task instead of immediate combat.
-- PIT authorization remains separate from lethal-force authorization.
-- Tier-three custom dispatch is non-lethal interception support; tier four/five tactical units are lethal-ready; tier six is military.
-- Rural tier-three support uses sheriff units where appropriate.
-- Warrant stakeouts identify first and defer force decisions to the central Force Policy instead of aiming a gun immediately.
+V0.3 MAJOR CHANGES
+- Police identity is confidence-based. Face, outfit and vehicle are separate evidence channels; seeing clothes or a known vehicle is not automatically proof of who is driving/wearing them.
+- A real mask caps face confidence. Exposed hands/skin/body shape are descriptive only and never treated as unique biometric identity.
+- High notoriety / Most Wanted status lowers the confirmation threshold, but never grants magical position or identity knowledge.
+- Story heist scripts (Vangelico, Merryweather, Bureau and Union Depository variants) are monitored read-only during Rockstar mission passthrough; sufficiently long completed runs add historical notoriety without private-global offsets.
+- Warrants/home stakeouts require confirmed identity rather than a single FaceKnown boolean.
+- Voluntary surrender is available on foot at Mission Row LSPD, Sandy Shores Sheriff and Paleto Bay Sheriff: holster weapons and hold the context key near the station.
+- Surrender clears the active wanted/warrant phase and reduces heat/notoriety slightly; archived evidence/history can remain.
+- Fixed traffic-camera enforcement uses a persistent exact-position registry of prop_cctv_cam_* objects only. prop_cctv_pole_* is never considered a speed camera.
+- The registry seeds known exact world positions, discovers the physical Enhanced props encountered in-game and writes scripts\PoliceOverhaulVI\TrafficCameras.csv.
+- A camera must physically exist at the recorded coordinate, have line of sight and be traffic-validated by seeing a vehicle on-road before issuing a citation.
+- Traffic notices include the camera identity when applicable.
+- Dispatch can use GTA Online law-enforcement vehicle models when present, with vanilla fallbacks if a model is missing from the installed build.
+- Tier 4/5 tactical units start in interception/containment mode; current threat + Force Policy controls lethal escalation.
+- Civilian collateral risk now affects lethal fire and PIT authorization. High risk delays/withholds the action; an immediate lethal threat uses a higher emergency threshold rather than an absolute ban.
+- Sixth-star explosive air response performs a civilian-risk check. High-risk scenes prefer police-helicopter overwatch/ground containment; jet attack is delayed until collateral risk is acceptable.
 
 RETAINED SYSTEMS
 - physical witnesses and delayed reporting
 - CCTV reporting/re-identification
-- face/outfit/weapon/suspect-count/vehicle/color/plate evidence
+- weapon/suspect-count/vehicle/color/plate evidence
 - ANPR-style plate matching and deterministic trackers
 - persistent cases and warrants per protagonist
 - home stakeouts
 - sixth-star military escalation
+- bounded search HUD + death cleanup
+- proportional force / PIT separation
+- iFruit-style traffic fine notices + TrafficMail.log
 - mission-safe passthrough
 
 IMPORTANT
-The phone fine notice intentionally uses stable native feed/message UI instead of writing directly into version-sensitive appemail global memory. It behaves like a phone-delivered official notice and the detailed archive persists on disk without risking cellphone state corruption after title updates.
+- Compile success proves SHVDNE API compatibility, not every runtime behavior. Test actual pursuits, stations and camera positions in Enhanced.
+- The phone fine notice intentionally uses stable native feed/message UI instead of direct writes into version-sensitive appemail global memory.
+- Old Cases.xml files are migrated: old FaceKnown/OutfitKnown flags are converted to initial confidence values instead of discarded.
 
-For testing, delete scripts\PoliceOverhaulVI\PoliceOverhaulVI.log before a session and send the new log if a pursuit, search, traffic stop or fine behaves incorrectly.
+For testing, delete scripts\PoliceOverhaulVI\PoliceOverhaulVI.log before a session and send the new log if a pursuit, identification, surrender, radar, PIT or military response behaves incorrectly.
