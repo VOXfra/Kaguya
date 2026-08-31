@@ -23,25 +23,24 @@ namespace VOX.PoliceOverhaulVI
 
             foreach (Ped ped in nearby)
             {
-                if (!IsUsableWitness(ped, player))
-                    continue;
+                if (!IsUsableWitness(ped, player)) continue;
 
                 float distance = Distance(ped.Position, player.Position);
                 bool police = IsLawPed(ped);
                 float max = police ? cfg.PoliceWitnessDistance : cfg.CivilianWitnessDistance;
-                if (distance > max)
-                    continue;
+                if (distance > max) continue;
 
-                if (!IsFacing(ped, player, police ? -0.20f : 0.15f))
-                    continue;
-                if (!Function.Call<bool>(Hash.HAS_ENTITY_CLEAR_LOS_TO_ENTITY, ped.Handle, player.Handle, 17))
-                    continue;
+                // Civilians in the immediate scene do not need to stare directly
+                // at the player to notice an obvious crime, but someone with their
+                // back fully turned still is not an omniscient witness.
+                float facing = police ? -0.35f : (distance <= 14f ? -0.35f : -0.05f);
+                if (!IsFacing(ped, player, facing)) continue;
+                if (!Function.Call<bool>(Hash.HAS_ENTITY_CLEAR_LOS_TO_ENTITY, ped.Handle, player.Handle, 17)) continue;
 
                 var obs = new WitnessObservation { Witness = ped, IsPolice = police, Distance = distance };
                 if (police)
                 {
-                    if (bestPolice == null || distance < bestPolice.Distance)
-                        bestPolice = obs;
+                    if (bestPolice == null || distance < bestPolice.Distance) bestPolice = obs;
                 }
                 else if (bestCivilian == null || distance < bestCivilian.Distance)
                 {
@@ -57,14 +56,13 @@ namespace VOX.PoliceOverhaulVI
             WitnessObservation best = null;
             foreach (Ped ped in World.GetNearbyPeds(player, radius))
             {
-                if (!IsUsableWitness(ped, player) || !IsLawPed(ped))
-                    continue;
+                if (!IsUsableWitness(ped, player) || !IsLawPed(ped)) continue;
 
                 float distance = Distance(ped.Position, player.Position);
-                if (!IsFacing(ped, player, -0.25f))
-                    continue;
-                if (!Function.Call<bool>(Hash.HAS_ENTITY_CLEAR_LOS_TO_ENTITY, ped.Handle, player.Handle, 17))
-                    continue;
+                // Officers actively scanning during/after an incident get a wider
+                // useful visual cone than generic civilian witnesses.
+                if (!IsFacing(ped, player, -0.40f)) continue;
+                if (!Function.Call<bool>(Hash.HAS_ENTITY_CLEAR_LOS_TO_ENTITY, ped.Handle, player.Handle, 17)) continue;
 
                 if (best == null || distance < best.Distance)
                     best = new WitnessObservation { Witness = ped, IsPolice = true, Distance = distance };
@@ -91,8 +89,7 @@ namespace VOX.PoliceOverhaulVI
             double dy = to.Y - from.Y;
             double dz = to.Z - from.Z;
             double len = Math.Sqrt(dx * dx + dy * dy + dz * dz);
-            if (len < 0.001)
-                return true;
+            if (len < 0.001) return true;
 
             Vector3 f = observer.ForwardVector;
             double dot = (f.X * dx + f.Y * dy + f.Z * dz) / len;
