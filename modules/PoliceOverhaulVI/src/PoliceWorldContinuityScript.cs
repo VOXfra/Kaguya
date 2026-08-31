@@ -1,6 +1,7 @@
 using GTA;
 using GTA.Native;
 using System;
+using System.Collections.Generic;
 using System.IO;
 
 namespace VOX.PoliceOverhaulVI
@@ -16,10 +17,13 @@ namespace VOX.PoliceOverhaulVI
         private CaseRepository _repository = new CaseRepository();
         private readonly CrimeSceneSystem _crimeScenes;
         private readonly BoloRecognitionSystem _bolo = new BoloRecognitionSystem();
+        private readonly HashSet<int> _capturedPendingVictims = new HashSet<int>();
         private DateTime _lastCasesWriteUtc = DateTime.MinValue;
         private int _lastCaseReload;
         private int _lastWanted;
         private int _currentModel;
+        private int _lastPendingShotScene;
+        private int _lastPendingVictimScan;
 
         public PoliceWorldContinuityScript()
         {
@@ -55,10 +59,18 @@ namespace VOX.PoliceOverhaulVI
                 {
                     _currentModel = model;
                     _bolo.Reset();
+                    _capturedPendingVictims.Clear();
                 }
 
-                // A newly confirmed wanted event leaves a persistent origin even
-                // if the player escapes before any body/firearm scan can see it.
+                // Police Overhaul can deliberately suppress the vanilla wanted
+                // level while waiting for a physical witness. Capture the crime
+                // itself during that window so the later scene stays at the crime
+                // location instead of wherever the wanted level eventually appears.
+                if (wanted == 0)
+                    CapturePendingWindowEvidence(player, model, now);
+
+                // A newly confirmed wanted event still leaves an origin for crimes
+                // that did not expose direct firearm/body evidence to this script.
                 if (_lastWanted == 0 && wanted >= 2)
                 {
                     bool shooting = false;
@@ -87,6 +99,30 @@ namespace VOX.PoliceOverhaulVI
             catch (Exception ex)
             {
                 Log("World-continuity tick error: " + ex);
+            }
+        }
+
+        private void CapturePendingWindowEvidence(Ped player, int model, int now)
+        {
+            bool shooting = false;
+            try { shooting = Function.Call<bool>(Hash.IS_PED_SHOOTING, player.Handle); } catch { }
+            if (shooting && now - _lastPendingShotScene >= 1000)
+            {
+                _lastPendingShotScene = now;
+                _crimeScenes.RecordIncident(player.Position, 2, model, ObservationSource.None, true, false, 1, Log);
+            }
+
+            if (now - _lastPendingVictimScan < 500) return;
+            _lastPendingVictimScan = now;
+            foreach (Ped ped in World.GetNearbyPeds(player, 45f))
+            {
+                if (ped == null || !ped.Exists() || ped.Handle == player.Handle || !ped.IsDead) continue;
+                if (_capturedPendingVictims.Contains(ped.Handle)) continue;
+                bool damagedByPlayer = false;
+                try { damagedByPlayer = Function.Call<bool>(Hash.HAS_ENTITY_BEEN_DAMAGED_BY_ENTITY, ped.Handle, player.Handle, true); } catch { }
+                if (!damagedByPlayer) continue;
+                _capturedPendingVictims.Add(ped.Handle);
+                _crimeScenes.RecordIncident(ped.Position, 3, model, ObservationSource.None, shooting, true, 3, Log);
             }
         }
 
