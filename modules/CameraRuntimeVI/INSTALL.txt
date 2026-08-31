@@ -1,0 +1,54 @@
+CAMERA RUNTIME VI — V0.1.0 TEST BUILD
+
+TARGET
+- GTA V Enhanced Story Mode
+
+REQUIRES
+- Script Hook V
+- Script Hook V .NET Enhanced v1.1.0.6 or compatible newer build
+
+INSTALL
+1. REMOVE or disable VehicleCameraVI.dll / VehicleCameraVI.ini. Do not run both camera modules together.
+2. Copy this package into the GTA V root directory.
+3. CameraRuntimeVI.dll and CameraRuntimeVI.ini must end up in GTA V\scripts\.
+
+DESIGN
+- This replaces the failed VehicleCameraVI 0.1 prototype.
+- Camera Runtime VI NEVER writes GET/SET_GAMEPLAY_CAM_RELATIVE_HEADING and does not force yaw/pitch/recentering.
+- The player always owns camera direction.
+- It adds only secondary camera motion/shake according to context.
+
+V0.1 CONTEXTS
+- walking
+- running
+- sprinting
+- falling/ragdoll
+- road speed
+- vehicle acceleration/deceleration
+- motorcycle/bicycle class multiplier
+- collision impulse boost
+- reduced first-person amplitude
+
+VANILLA-FIRST SAFETY
+The runtime immediately yields and removes its effect during:
+- any Rockstar mission flag
+- cutscene
+- protagonist switch
+- cinematic/non-gameplay camera
+- aiming/free aim
+- deliberate mouse/stick camera movement
+- look-behind input
+
+KNOWN SCOPE
+This is deliberately a safe foundation, not the final cinematic camera. It does NOT yet add FOV-speed curves, positional spring lag, shoulder offsets or scripted look-ahead because those features must be implemented without fighting the player's own camera controls.
+
+TEST
+- look behind on foot and in a vehicle: vanilla behavior must remain completely usable
+- rotate camera continuously with mouse/controller: no tug-of-war or unwanted recentering
+- drive slowly then quickly: subtle speed movement should increase
+- accelerate/brake hard and collide lightly: additional motion should be noticeable but not nauseating
+- walk/run/sprint: progressively stronger but subtle secondary movement
+- aim a weapon: custom camera effect should stop
+- launch a story mission/cutscene: custom camera effect should stop immediately
+
+Send scripts\CameraRuntimeVI\CameraRuntimeVI.log with feedback.
