@@ -56,7 +56,7 @@ namespace VOX.PoliceOverhaulVI
 
             if (_reportingHandle != 0)
             {
-                Ped reporter = new Ped(_reportingHandle);
+                Ped reporter = FindPedByHandle(player, _reportingHandle);
                 if (reporter == null || !reporter.Exists() || reporter.IsDead)
                 {
                     ResetCandidate(); return none;
@@ -134,6 +134,15 @@ namespace VOX.PoliceOverhaulVI
             return best;
         }
 
+        private Ped FindPedByHandle(Ped player, int handle)
+        {
+            foreach (Ped ped in World.GetNearbyPeds(player, _settings.RecognitionDistance * 1.8f))
+            {
+                if (ped != null && ped.Exists() && ped.Handle == handle) return ped;
+            }
+            return null;
+        }
+
         private int RecognitionTimeFor(CaseMemory memory, Ped merchant, Ped player)
         {
             float distance = Perception.Distance(merchant.Position, player.Position);
@@ -154,7 +163,7 @@ namespace VOX.PoliceOverhaulVI
 
         private void AddMerchant(string modelName)
         {
-            try { _merchantModels.Add(Game.GenerateHash(modelName)); } catch { }
+            try { _merchantModels.Add(Function.Call<int>(Hash.GET_HASH_KEY, modelName)); } catch { }
         }
 
         private void ResetCandidate()
