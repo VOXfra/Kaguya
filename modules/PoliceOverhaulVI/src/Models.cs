@@ -47,12 +47,7 @@ namespace VOX.PoliceOverhaulVI
         public static bool FaceObscured(Ped ped)
         {
             if (ped == null || !ped.Exists()) return true;
-            try
-            {
-                // Component 1 is the actual mask slot. Hats/helmets are props,
-                // and exposed hands/skin are never treated as unique identity.
-                return Function.Call<int>(Hash.GET_PED_DRAWABLE_VARIATION, ped.Handle, 1) != 0;
-            }
+            try { return Function.Call<int>(Hash.GET_PED_DRAWABLE_VARIATION, ped.Handle, 1) != 0; }
             catch { return true; }
         }
     }
@@ -123,7 +118,6 @@ namespace VOX.PoliceOverhaulVI
     {
         public int SuspectModelHash;
         public bool Active;
-        // Legacy evidence flags remain for backward-compatible saves/UI.
         public bool FaceKnown;
         public bool OutfitKnown;
         public OutfitSignature Outfit;
@@ -133,8 +127,6 @@ namespace VOX.PoliceOverhaulVI
         public bool SuspectCountKnown;
         public int SuspectCount = 1;
 
-        // 0.3: evidence and identity are deliberately separate. Police can
-        // know the clothes/car without being certain which protagonist it is.
         public float FaceConfidence;
         public float OutfitConfidence;
         public float VehicleConfidence;
@@ -194,6 +186,8 @@ namespace VOX.PoliceOverhaulVI
         public string Source = string.Empty;
         public string Street = string.Empty;
         public string CameraId = string.Empty;
+        public string VehiclePlate = string.Empty;
+        public int VehicleModelHash;
         public int SpeedKph;
         public int LimitKph;
         public int OverKph;
