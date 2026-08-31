@@ -31,7 +31,7 @@ namespace VOX.PedOverhaulVI
             Tick += OnTick;
             Aborted += OnAborted;
             ProbeModules();
-            Log("Ped Overhaul VI 0.5.0 causal-social-memory runtime loaded.");
+            Log("Ped Overhaul VI 0.5.1 ambient-awareness stabilization loaded.");
         }
 
         private void OnTick(object sender, EventArgs e)
@@ -138,15 +138,29 @@ namespace VOX.PedOverhaulVI
         {
             if (state == null || frame == null) return;
             bool hasScene = scene != null && scene.HasThreat;
-            bool recentViolentContext = state.SawViolence || state.HeardGunshot || state.HeardExternalGunfire || state.WasDirectlyAimedAt || state.HeardExplosion || state.SawFire || state.SawVehicleHazard;
+            bool recentViolentContext = state.SawViolence || state.HeardGunshot || state.HeardExternalGunfire ||
+                                        state.WasDirectlyAimedAt || state.HeardExplosion || state.SawFire || state.SawVehicleHazard;
             bool recentHardContext = recentViolentContext || state.SawWeapon || state.SawExternalWeapon;
 
-            bool maskOnly = frame.SeesMask && !frame.SeesWeapon && !frame.DirectlyAimedAt && !frame.SeesShooting && !frame.HearsGunshot && !frame.SeesBody && !frame.CrowdPanic && !frame.QuietWithdrawal && !frame.HostileRelationship && !hasScene && !recentHardContext;
+            bool maskOnly = frame.SeesMask && !frame.SeesWeapon && !frame.DirectlyAimedAt && !frame.SeesShooting &&
+                            !frame.HearsGunshot && !frame.SeesBody && !frame.CrowdPanic && !frame.QuietWithdrawal &&
+                            !frame.HostileRelationship && !hasScene && !recentHardContext;
             if (maskOnly)
             {
                 state.Suspicion = Math.Min(state.Suspicion, 6f);
                 state.Certainty = Math.Min(state.Certainty, 8f);
                 state.Fear = Math.Min(state.Fear, 4f);
+
+                // MaskSuspicion is intentionally zero in the default config.
+                // Seeing a face covering can be remembered as context, but it
+                // must not create a 300 ms Unaware <-> Noticed oscillation just
+                // because generic visual attention crossed the threshold.
+                if (state.Suspicion < _cfg.NoticedThreshold && state.Certainty < _cfg.NoticedThreshold && state.Fear < _cfg.NoticedThreshold)
+                {
+                    state.Attention = Math.Min(state.Attention, _cfg.NoticedThreshold - 2f);
+                    state.Stage = AwarenessStage.Unaware;
+                    return;
+                }
             }
 
             if (hasScene)
@@ -158,8 +172,6 @@ namespace VOX.PedOverhaulVI
                 }
                 if (scene.Kind == SceneThreatKind.VisibleWeapon && !recentViolentContext)
                     state.Fear = Math.Min(state.Fear, _cfg.PanicThreshold - 8f);
-                // Hearsay cannot create more certainty than the source knowledge
-                // that reached this ped. Each social hop therefore has a hard cap.
                 if ((scene.Kind == SceneThreatKind.SocialWarning || scene.Kind == SceneThreatKind.CrowdFlight) && state.KnowledgeHops > 0)
                 {
                     float cap = Math.Max(_cfg.NoticedThreshold, state.KnownThreatConfidence + 12f);
@@ -167,7 +179,8 @@ namespace VOX.PedOverhaulVI
                 }
             }
 
-            bool pureAmbient = !frame.HasAnyStimulus && !hasScene && !recentHardContext && state.Suspicion < _cfg.NoticedThreshold && state.Certainty < _cfg.NoticedThreshold && state.Fear < _cfg.NoticedThreshold;
+            bool pureAmbient = !frame.HasAnyStimulus && !hasScene && !recentHardContext &&
+                               state.Suspicion < _cfg.NoticedThreshold && state.Certainty < _cfg.NoticedThreshold && state.Fear < _cfg.NoticedThreshold;
             if (pureAmbient)
             {
                 state.Attention = Math.Min(state.Attention, _cfg.NoticedThreshold - 2f);
@@ -183,9 +196,17 @@ namespace VOX.PedOverhaulVI
             if (scene.Kind != SceneThreatKind.Body) return false;
             switch (state.Mode)
             {
-                case ReactionMode.Freeze: case ReactionMode.Cower: case ReactionMode.Flee: case ReactionMode.Cover:
-                case ReactionMode.Surrender: case ReactionMode.Combat: case ReactionMode.Evade: case ReactionMode.DriveAway: return true;
-                default: return false;
+                case ReactionMode.Freeze:
+                case ReactionMode.Cower:
+                case ReactionMode.Flee:
+                case ReactionMode.Cover:
+                case ReactionMode.Surrender:
+                case ReactionMode.Combat:
+                case ReactionMode.Evade:
+                case ReactionMode.DriveAway:
+                    return true;
+                default:
+                    return false;
             }
         }
 
@@ -195,55 +216,121 @@ namespace VOX.PedOverhaulVI
             if (state.Stage != AwarenessStage.Noticed && state.Stage != AwarenessStage.Unaware) return false;
             if (frame.HasAnyStimulus) return false;
             if (scene != null && scene.HasThreat) return false;
-            if (state.SawWeapon || state.SawViolence || state.HeardGunshot || state.WasDirectlyAimedAt || state.SawExternalWeapon || state.HeardExternalGunfire || state.SawFire || state.HeardExplosion || state.SawVehicleHazard) return false;
+            if (state.SawWeapon || state.SawViolence || state.HeardGunshot || state.WasDirectlyAimedAt ||
+                state.SawExternalWeapon || state.HeardExternalGunfire || state.SawFire || state.HeardExplosion || state.SawVehicleHazard)
+                return false;
             return state.Suspicion < 12f && state.Certainty < 12f && state.Fear < 12f;
         }
 
         private bool ShouldYieldToMission()
         {
-            bool cut=false,switching=false,flag=false;
-            try{cut=Function.Call<bool>(Hash.IS_CUTSCENE_ACTIVE);}catch{}
-            try{switching=Function.Call<bool>(Hash.IS_PLAYER_SWITCH_IN_PROGRESS);}catch{}
-            try{flag=Function.Call<bool>(Hash.GET_MISSION_FLAG);}catch{}
-            if(cut||switching)return true;
-            int wanted=0;try{wanted=Function.Call<int>(Hash.GET_PLAYER_WANTED_LEVEL,Game.Player.Handle);}catch{}
-            bool shooting=false;try{shooting=Function.Call<bool>(Hash.IS_PED_SHOOTING,Game.LocalPlayerPed.Handle);}catch{}
-            if(!flag){_missionFlagSince=0;return false;}if(wanted>0||shooting)return false;if(_missionFlagSince==0)_missionFlagSince=Game.GameTime;return Game.GameTime-_missionFlagSince>1800;
+            bool cut = false, switching = false, flag = false;
+            try { cut = Function.Call<bool>(Hash.IS_CUTSCENE_ACTIVE); } catch { }
+            try { switching = Function.Call<bool>(Hash.IS_PLAYER_SWITCH_IN_PROGRESS); } catch { }
+            try { flag = Function.Call<bool>(Hash.GET_MISSION_FLAG); } catch { }
+            if (cut || switching) return true;
+            int wanted = 0;
+            try { wanted = Function.Call<int>(Hash.GET_PLAYER_WANTED_LEVEL, Game.Player.Handle); } catch { }
+            bool shooting = false;
+            try { shooting = Function.Call<bool>(Hash.IS_PED_SHOOTING, Game.LocalPlayerPed.Handle); } catch { }
+            if (!flag)
+            {
+                _missionFlagSince = 0;
+                return false;
+            }
+            if (wanted > 0 || shooting) return false;
+            if (_missionFlagSince == 0) _missionFlagSince = Game.GameTime;
+            return Game.GameTime - _missionFlagSince > 1800;
         }
 
         private void RefreshNearby(Ped player)
         {
-            if(Game.GameTime-_lastRefresh<Math.Max(150,_cfg.RefreshNearbyPedsMs))return;_lastRefresh=Game.GameTime;_nearby.Clear();
-            Ped[] peds;try{peds=World.GetNearbyPeds(player,_cfg.ProcessRadius);}catch{return;}
-            foreach(Ped p in peds)
+            if (Game.GameTime - _lastRefresh < Math.Max(150, _cfg.RefreshNearbyPedsMs)) return;
+            _lastRefresh = Game.GameTime;
+            _nearby.Clear();
+            Ped[] peds;
+            try { peds = World.GetNearbyPeds(player, _cfg.ProcessRadius); }
+            catch { return; }
+            foreach (Ped p in peds)
             {
-                if(_nearby.Count>=Math.Max(10,_cfg.MaxProcessedPeds+10))break;
-                if(p==null||!p.Exists()||p.Handle==player.Handle||!p.IsHuman)continue;
+                if (_nearby.Count >= Math.Max(10, _cfg.MaxProcessedPeds + 10)) break;
+                if (p == null || !p.Exists() || p.Handle == player.Handle || !p.IsHuman) continue;
                 _nearby.Add(p);
-                bool inVehicle=false;try{inVehicle=!p.IsDead&&p.IsInVehicle();}catch{}
-                if(inVehicle){_states.Remove(p.Handle);continue;}
-                if(!p.IsDead&&UsablePed(p,player)&&!_states.ContainsKey(p.Handle))_states[p.Handle]=PedState.Create(p,_cfg);
+                bool inVehicle = false;
+                try { inVehicle = !p.IsDead && p.IsInVehicle(); } catch { }
+                if (inVehicle)
+                {
+                    _states.Remove(p.Handle);
+                    continue;
+                }
+                if (!p.IsDead && UsablePed(p, player) && !_states.ContainsKey(p.Handle))
+                    _states[p.Handle] = PedState.Create(p, _cfg);
             }
         }
 
-        private bool UsablePed(Ped p,Ped player)
+        private bool UsablePed(Ped p, Ped player)
         {
-            if(p==null||!p.Exists()||p.Handle==player.Handle||p.IsDead||!p.IsHuman)return false;try{if(p.IsInVehicle())return false;}catch{}
-            if(_cfg.SkipMissionEntities){try{if(Function.Call<bool>(Hash.IS_ENTITY_A_MISSION_ENTITY,p.Handle))return false;}catch{}}
-            if(_cfg.PoliceOverhaulOwnsLawPeds&&_policeModuleLoaded&&IsLawPed(p))return false;return true;
+            if (p == null || !p.Exists() || p.Handle == player.Handle || p.IsDead || !p.IsHuman) return false;
+            try { if (p.IsInVehicle()) return false; } catch { }
+            if (_cfg.SkipMissionEntities)
+            {
+                try { if (Function.Call<bool>(Hash.IS_ENTITY_A_MISSION_ENTITY, p.Handle)) return false; } catch { }
+            }
+            if (_cfg.PoliceOverhaulOwnsLawPeds && _policeModuleLoaded && IsLawPed(p)) return false;
+            return true;
         }
 
-        private static bool IsLawPed(Ped p){try{int t=(int)p.PedType;return t==6||t==27||t==29;}catch{return false;}}
-        private void ProbeModules(){_lastModuleProbe=Game.GameTime;try{_policeModuleLoaded=AppDomain.CurrentDomain.GetAssemblies().Any(a=>string.Equals(a.GetName().Name,"PoliceOverhaulVI",StringComparison.OrdinalIgnoreCase));}catch{_policeModuleLoaded=false;}}
+        private static bool IsLawPed(Ped p)
+        {
+            try
+            {
+                int t = (int)p.PedType;
+                return t == 6 || t == 27 || t == 29;
+            }
+            catch { return false; }
+        }
+
+        private void ProbeModules()
+        {
+            _lastModuleProbe = Game.GameTime;
+            try
+            {
+                _policeModuleLoaded = AppDomain.CurrentDomain.GetAssemblies().Any(a =>
+                    string.Equals(a.GetName().Name, "PoliceOverhaulVI", StringComparison.OrdinalIgnoreCase));
+            }
+            catch { _policeModuleLoaded = false; }
+        }
 
         private void CleanupStates()
         {
-            var live=new HashSet<int>(_nearby.Where(p=>p!=null&&p.Exists()&&!p.IsDead&&!SafeInVehicle(p)).Select(p=>p.Handle));
-            var remove=_states.Keys.Where(h=>!live.Contains(h)).Take(16).ToList();foreach(int h in remove)_states.Remove(h);
+            var live = new HashSet<int>(_nearby.Where(p => p != null && p.Exists() && !p.IsDead && !SafeInVehicle(p)).Select(p => p.Handle));
+            var remove = _states.Keys.Where(h => !live.Contains(h)).Take(16).ToList();
+            foreach (int h in remove) _states.Remove(h);
             PedOverhaulVIBridge.Cleanup(live);
         }
-        private static bool SafeInVehicle(Ped p){try{return p!=null&&p.Exists()&&p.IsInVehicle();}catch{return false;}}
-        private void OnAborted(object sender,EventArgs e){_states.Clear();_nearby.Clear();}
-        private void Log(string message){if(_cfg!=null&&!_cfg.DebugLogging)return;try{Directory.CreateDirectory(DataDirectory);File.AppendAllText(LogPath,DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff")+" | "+message+Environment.NewLine);}catch{}}
+
+        private static bool SafeInVehicle(Ped p)
+        {
+            try { return p != null && p.Exists() && p.IsInVehicle(); }
+            catch { return false; }
+        }
+
+        private void OnAborted(object sender, EventArgs e)
+        {
+            _states.Clear();
+            _nearby.Clear();
+        }
+
+        private void Log(string message)
+        {
+            if (_cfg != null && !_cfg.DebugLogging) return;
+            try
+            {
+                Directory.CreateDirectory(DataDirectory);
+                File.AppendAllText(LogPath,
+                    DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + " | " + message + Environment.NewLine);
+            }
+            catch { }
+        }
     }
 }
