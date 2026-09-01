@@ -1,28 +1,26 @@
-CHARACTER RUNTIME VI — 0.1.1
+CHARACTER RUNTIME VI — 0.2.0
 
 Requires Script Hook V + Script Hook V .NET Enhanced.
 
 INSTALL
-- copy VOXBodyMorphVI.asi into the GTA V root directory (beside ScriptHookV.dll / the ASI loader)
+- copy VOXBodyMorphVI.asi into the GTA V root directory
 - copy scripts/CharacterRuntimeVI.dll into GTA V\scripts\
 
 FITNESS / SPORT
 - separate persistent fitness profile per protagonist/model
-- sprinting/running/swimming train endurance slowly
-- melee and swimming contribute to strength/lean mass
-- actual free-weight sessions are now available at Muscle Beach and near recognised barbell/weight-bench props
-- when the prompt appears, press Context (default E) to start a 15-second native WORLD_HUMAN_MUSCLE_FREE_WEIGHTS session
-- press Context again after the session starts to cancel; cancelled sets give no progression
-- a completed set credits strength, a little endurance and lean mass
-- progression persists in scripts\CharacterRuntimeVI\FitnessStats.txt
-- endurance gives a bounded sprint-speed multiplier
-- strength gives a bounded melee-damage multiplier
+- sprinting/running/swimming train endurance slowly; melee and swimming contribute to strength/lean mass
+- recognised real workout locations/props use Rockstar's WORLD_HUMAN_MUSCLE_FREE_WEIGHTS scenario
+- Context starts/stops the physical session; there is no workout menu, stat-selection screen, repetition minigame or countdown HUD
+- completed physical sessions credit bounded progression; cancelled sessions do not
+- endurance and strength produce small bounded gameplay effects
+
+STORY MODE SAFETY
+- mission flag, cutscene, protagonist switch, loss of player control and fades disable progression and return gameplay modifiers to vanilla values
+- body morph output is disabled while Rockstar owns the scene
+- a five-second grace period prevents custom modifiers/body output from snapping back during mission handoff
+- workout rewards are rejected while Rockstar owns the scene
 
 VISIBLE BODY CHANGE
-FiveM examples use SetEntityMatrix, but that call is a Cfx extra native and does not exist in normal GTA V Story Mode. Character Runtime therefore uses its own small native bridge instead of pretending the Cfx native works in ScriptHookVDotNet.
+CharacterRuntimeVI writes a narrowly bounded body target to scripts\CharacterRuntimeVI\BodyMorphState.txt. VOXBodyMorphVI.asi validates the current ped transform before any write and fails closed if the expected entity layout is not found. Width remains capped at +4.5%; height is never changed.
 
-CharacterRuntimeVI.dll writes a narrowly bounded body target to scripts\CharacterRuntimeVI\BodyMorphState.txt. VOXBodyMorphVI.asi asks Script Hook V for the current ped's base address, scans only a small part of that entity for a writable 4x4 transform matching the ped's actual position and an orthonormal basis, and only then changes the two horizontal basis lengths. If that validation fails, it performs no write and records the failure in BodyMorphBridge.log.
-
-The transform changes the whole rendered ped, including attached clothing, rather than growing bare body vertices underneath unchanged clothes. That reduces classic body-through-shirt clipping, but it is still a first-pass physique approximation: wider proportions can slightly distort clothes, weapons and animation alignment. Width is capped at +4.5%; height is never changed.
-
-Morphing is disabled in vehicles, swimming, jumping/falling/ragdoll states, cutscenes, switches and Rockstar missions. This remains an experimental Enhanced runtime technique: compile success cannot prove the entity layout at runtime, so the bridge is deliberately fail-closed and should be validated from scripts\CharacterRuntimeVI\BodyMorphBridge.log during the first test.
+The native body bridge is still experimental. Compile success is not runtime proof: BodyMorphBridge.log remains authoritative during Enhanced testing.
