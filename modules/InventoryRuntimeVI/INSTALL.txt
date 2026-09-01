@@ -1,24 +1,25 @@
-INVENTORY RUNTIME VI — 0.2.0
+INVENTORY RUNTIME VI — 0.3.0
 
 Requires Script Hook V + Script Hook V .NET Enhanced.
 Copy scripts/InventoryRuntimeVI.dll into GTA V\scripts\.
 
 Physical trunk inventory:
-- stand behind a non-mission vehicle and hold H
-- select a radial action, then release H to store the equipped weapon or retrieve a stored weapon
-- the trunk opens, the protagonist performs a physical pickup animation, and the transfer occurs afterwards
+- stand behind a non-mission vehicle
+- with a weapon equipped, press H to physically store it in that vehicle's trunk
+- while unarmed, press H to physically retrieve the most recently stored weapon
+- the trunk opens and the protagonist performs a physical pickup animation before the transfer
 - each physical vehicle has its own persistent five-weapon capacity
 - ammunition is preserved; no weapon is silently deleted
+- there is no inventory list, radial inventory menu or storage minigame
 
-Accessory wheel:
-- while on foot in free roam, hold M
-- select mask, glasses, or headwear and release M
-- removing an accessory remembers it separately for each protagonist so it can be put back on
-- the wheel does not create arbitrary clothing; it only toggles an accessory the character has actually worn
+Mask affordance:
+- while on foot in free roam, press M to remove the currently worn mask
+- press M again to restore the last mask actually worn by that protagonist
+- no clothing catalogue or accessory menu is created
 
 Story Mode safety:
 - mission entities are never used as storage
-- missions, cutscenes, character switches, fades, and loss of player control suspend the runtime
-- a five-second grace period prevents the wheel from reopening as Rockstar returns control
+- missions, cutscenes, protagonist switches, fades and loss of player control suspend the runtime
+- a five-second grace period prevents an interaction from firing as Rockstar returns control
 
-This build deliberately keeps transfers explicit and reversible. The carried-weapon category limit remains disabled until its migration path can guarantee that existing Story Mode loadouts are preserved.
+The carried-weapon category limit remains deliberately disabled until a mission-safe migration path can preserve Rockstar-authored loadouts without blind weapon deletion.
