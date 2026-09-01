@@ -14,7 +14,11 @@ namespace VOX.VehicleRuntimeVI
         private const string LogPath = DataDir + "\\VehicleRuntimeVI.log";
         private const string ProfilesPath = DataDir + "\\VehicleProfiles.txt";
         private const string ActiveStatePath = DataDir + "\\ActiveVehicleState.txt";
+        private const string LockpickEnterDict = "amb@prop_human_parking_meter@male@enter";
+        private const string LockpickBaseDict = "amb@prop_human_parking_meter@male@base";
+        private const string LockpickExitDict = "amb@prop_human_parking_meter@male@exit";
         private const int InputContext = 51;
+        private const int InputEnter = 23;
 
         private sealed class VehicleProfile
         {
@@ -40,6 +44,8 @@ namespace VOX.VehicleRuntimeVI
         private int _lastSave;
         private int _lastStateWrite;
         private int _lastHelp;
+        private bool _enterControlDown;
+        private int _storyYieldUntil;
 
         public VehicleRuntimeVIScript()
         {
@@ -48,7 +54,7 @@ namespace VOX.VehicleRuntimeVI
             Interval = 50;
             Tick += OnTick;
             Aborted += OnAborted;
-            Log("Vehicle Runtime VI 0.1.1 loaded: personal-vehicle normalization + safe running-engine theft state.");
+            Log("Vehicle Runtime VI 0.2.0 loaded: entry-triggered lockpicking + safe vehicle state.");
         }
 
         private void OnTick(object sender, EventArgs e)
@@ -57,12 +63,18 @@ namespace VOX.VehicleRuntimeVI
             {
                 Ped player = Game.LocalPlayerPed;
                 if (player == null || !player.Exists() || player.IsDead) { ResetActions(); return; }
-                if (RockstarOwnsScene()) { ResetActions(); return; }
+                if (RockstarOwnsScene())
+                {
+                    _storyYieldUntil = Game.GameTime + 5000;
+                    ResetActions();
+                    return;
+                }
+                if (Game.GameTime < _storyYieldUntil) { ResetActions(); return; }
 
                 if (player.IsInVehicle())
                 {
                     Vehicle current = player.CurrentVehicle;
-                    if (current != null && current.Exists()) UpdateInsideVehicle(player, current);
+                    if (current != null && current.Exists() && !IsMissionEntity(current)) UpdateInsideVehicle(player, current);
                 }
                 else
                 {
@@ -80,7 +92,36 @@ namespace VOX.VehicleRuntimeVI
 
         private void UpdateNearbyVehicleInteraction(Ped player)
         {
+            // Lockpicking is an explicit response to an attempted entry, not an
+            // ambient proximity prompt. Once started it owns the short action until
+            // completion or until the player/vehicle invalidates it.
+            if (string.Equals(_actionKind, "lockpick", StringComparison.Ordinal) && _actionVehicle != 0)
+            {
+                Vehicle activeVehicle = FindVehicleByHandle(player.Position, 7.0f, _actionVehicle);
+                if (activeVehicle == null || !activeVehicle.Exists() || IsMissionEntity(activeVehicle))
+                {
+                    ResetAction();
+                    return;
+                }
+
+                if (Distance(player.Position, activeVehicle.Position) > 4.0f)
+                {
+                    ResetAction();
+                    return;
+                }
+
+                VehicleProfile activeProfile = GetProfile(activeVehicle);
+                DisableControl(InputEnter);
+                ShowHelp("Crochetage de la serrure...");
+                MaintainLockpickAnimation(player, activeVehicle);
+                HandleTimedAction(activeVehicle, activeProfile, "lockpick", 1700 + activeProfile.LockTier * 1050, true);
+                return;
+            }
+
             Vehicle nearest = FindNearestVehicle(player.Position, 4.0f);
+            bool enterPressed = ReadControlPressed(InputEnter);
+            bool enterJustPressed = enterPressed && !_enterControlDown;
+            _enterControlDown = enterPressed;
             if (nearest == null || !nearest.Exists()) { ResetAction(); return; }
             if (IsMissionEntity(nearest)) { ResetAction(); return; }
 
@@ -101,10 +142,19 @@ namespace VOX.VehicleRuntimeVI
             float distance = Distance(player.Position, nearest.Position);
             if (profile.Locked && !profile.HasKey && !profile.AccessBypassed && distance <= 3.2f)
             {
-                DisableControl(InputContext);
-                int duration = 1700 + profile.LockTier * 1050;
-                ShowHelp("Maintenez ~INPUT_CONTEXT~ pres de la porte pour crocheter la serrure.");
-                HandleTimedAction(nearest, profile, "lockpick", duration, IsDisabledControlPressed(InputContext));
+                // Do nothing merely because the player is near the car. GTA's normal
+                // enter control is the sole trigger, matching the proven theft flow
+                // studied in Enhanced Car Theft without reusing its minigame/UI.
+                if (enterJustPressed && IsIntendedEntryVehicle(player, nearest))
+                {
+                    _actionVehicle = nearest.Handle;
+                    _actionKind = "lockpick";
+                    _actionStarted = Game.GameTime;
+                    DisableControl(InputEnter);
+                    ShowHelp("Crochetage de la serrure...");
+                    BeginLockpickAnimation(player, nearest);
+                    Log("Lockpick started from an actual entry attempt key=" + profile.Key + ".");
+                }
                 return;
             }
 
@@ -143,7 +193,12 @@ namespace VOX.VehicleRuntimeVI
                     }
                     catch { }
                 }
-                Log("Vehicle access bypassed key=" + profile.Key + " tier=" + profile.LockTier + ". Release Context, then use the normal enter control.");
+                Ped player = Game.LocalPlayerPed;
+                if (player != null && player.Exists())
+                {
+                    try { Function.Call(Hash.TASK_ENTER_VEHICLE, player.Handle, vehicle.Handle, 7000, -1, 1.0f, 1, 0); } catch { }
+                }
+                Log("Vehicle access bypassed after entry-triggered lockpick key=" + profile.Key + " tier=" + profile.LockTier + ".");
             }
             else if (kind == "tracker")
             {
@@ -152,6 +207,66 @@ namespace VOX.VehicleRuntimeVI
             }
             SaveProfiles();
             ResetAction();
+        }
+
+        private static void BeginLockpickAnimation(Ped player, Vehicle vehicle)
+        {
+            if (player == null || !player.Exists() || vehicle == null || !vehicle.Exists()) return;
+            RequestLockpickAnimations();
+            try { Function.Call(Hash.TASK_TURN_PED_TO_FACE_ENTITY, player.Handle, vehicle.Handle, 400); } catch { }
+        }
+
+        private void MaintainLockpickAnimation(Ped player, Vehicle vehicle)
+        {
+            if (player == null || !player.Exists() || vehicle == null || !vehicle.Exists()) return;
+            RequestLockpickAnimations();
+
+            int elapsed = Math.Max(0, Game.GameTime - _actionStarted);
+            if (elapsed < 350) return;
+
+            if (elapsed < 1050)
+            {
+                if (!IsPlayingAnimation(player, LockpickEnterDict, "enter"))
+                {
+                    try { Function.Call(Hash.TASK_PLAY_ANIM, player.Handle, LockpickEnterDict, "enter", 4.0f, -4.0f, 850, 0, 0f, false, false, false); } catch { }
+                }
+                return;
+            }
+
+            if (!IsPlayingAnimation(player, LockpickBaseDict, "base"))
+            {
+                try { Function.Call(Hash.TASK_PLAY_ANIM, player.Handle, LockpickBaseDict, "base", 4.0f, -4.0f, -1, 1, 0f, false, false, false); } catch { }
+            }
+        }
+
+        private static void RequestLockpickAnimations()
+        {
+            try
+            {
+                Function.Call(Hash.REQUEST_ANIM_DICT, LockpickEnterDict);
+                Function.Call(Hash.REQUEST_ANIM_DICT, LockpickBaseDict);
+                Function.Call(Hash.REQUEST_ANIM_DICT, LockpickExitDict);
+            }
+            catch { }
+        }
+
+        private static bool IsPlayingAnimation(Ped player, string dict, string name)
+        {
+            try { return Function.Call<bool>(Hash.IS_ENTITY_PLAYING_ANIM, player.Handle, dict, name, 3); }
+            catch { return false; }
+        }
+
+        private static void StopLockpickAnimation()
+        {
+            Ped player = Game.LocalPlayerPed;
+            if (player == null || !player.Exists()) return;
+            try
+            {
+                Function.Call(Hash.STOP_ANIM_TASK, player.Handle, LockpickEnterDict, "enter", 2.0f);
+                Function.Call(Hash.STOP_ANIM_TASK, player.Handle, LockpickBaseDict, "base", 2.0f);
+                Function.Call(Hash.STOP_ANIM_TASK, player.Handle, LockpickExitDict, "exit", 2.0f);
+            }
+            catch { }
         }
 
         private void UpdateInsideVehicle(Ped player, Vehicle vehicle)
@@ -301,6 +416,34 @@ namespace VOX.VehicleRuntimeVI
             return best;
         }
 
+        private static Vehicle FindVehicleByHandle(Vector3 pos, float radius, int handle)
+        {
+            if (handle == 0) return null;
+            Vehicle[] vehicles;
+            try { vehicles = World.GetNearbyVehicles(pos, radius); } catch { return null; }
+            foreach (Vehicle v in vehicles)
+            {
+                if (v != null && v.Exists() && v.Handle == handle) return v;
+            }
+            return null;
+        }
+
+        private static bool IsIntendedEntryVehicle(Ped player, Vehicle fallback)
+        {
+            if (player == null || !player.Exists() || fallback == null || !fallback.Exists()) return false;
+            try
+            {
+                int attempted = Function.Call<int>(Hash.GET_VEHICLE_PED_IS_TRYING_TO_ENTER, player.Handle);
+                if (attempted != 0) return attempted == fallback.Handle;
+            }
+            catch { }
+
+            // The native may not expose the target until the following frame. The
+            // fallback is deliberately narrow and is only evaluated on the rising
+            // edge of the normal vehicle-enter control.
+            return Distance(player.Position, fallback.Position) <= 3.2f;
+        }
+
         private static Vector3 RearPoint(Vehicle v)
         {
             try { return Function.Call<Vector3>(Hash.GET_OFFSET_FROM_ENTITY_IN_WORLD_COORDS, v.Handle, 0f, -2.25f, 0f); }
@@ -316,6 +459,14 @@ namespace VOX.VehicleRuntimeVI
         {
             try { if (Function.Call<bool>(Hash.IS_CUTSCENE_ACTIVE)) return true; } catch { }
             try { if (Function.Call<bool>(Hash.IS_PLAYER_SWITCH_IN_PROGRESS)) return true; } catch { }
+            try { if (!Function.Call<bool>(Hash.IS_PLAYER_CONTROL_ON, Game.Player.Handle)) return true; } catch { }
+            try
+            {
+                if (Function.Call<bool>(Hash.IS_SCREEN_FADED_OUT) ||
+                    Function.Call<bool>(Hash.IS_SCREEN_FADING_OUT) ||
+                    Function.Call<bool>(Hash.IS_SCREEN_FADING_IN)) return true;
+            }
+            catch { }
             try { return Function.Call<bool>(Hash.GET_MISSION_FLAG); } catch { return false; }
         }
 
@@ -327,6 +478,16 @@ namespace VOX.VehicleRuntimeVI
         private static bool IsDisabledControlPressed(int control)
         {
             try { return Function.Call<bool>(Hash.IS_DISABLED_CONTROL_PRESSED, 0, control); } catch { return false; }
+        }
+
+        private static bool ReadControlPressed(int control)
+        {
+            try
+            {
+                return Function.Call<bool>(Hash.IS_CONTROL_PRESSED, 0, control) ||
+                       Function.Call<bool>(Hash.IS_DISABLED_CONTROL_PRESSED, 0, control);
+            }
+            catch { return false; }
         }
 
         private void ShowHelp(string text)
@@ -413,8 +574,14 @@ namespace VOX.VehicleRuntimeVI
             return (float)Math.Sqrt(x * x + y * y + z * z);
         }
 
-        private void ResetAction() { _actionVehicle = 0; _actionStarted = 0; _actionKind = string.Empty; }
-        private void ResetActions() { ResetAction(); _hotwireVehicle = 0; _hotwireStarted = 0; }
+        private void ResetAction()
+        {
+            if (string.Equals(_actionKind, "lockpick", StringComparison.Ordinal)) StopLockpickAnimation();
+            _actionVehicle = 0;
+            _actionStarted = 0;
+            _actionKind = string.Empty;
+        }
+        private void ResetActions() { ResetAction(); _hotwireVehicle = 0; _hotwireStarted = 0; _enterControlDown = false; }
         private static int ParseInt(string s) { int v; return int.TryParse(s, out v) ? v : 0; }
         private static bool ParseBool(string s) { bool v; return bool.TryParse(s, out v) && v; }
         private void OnAborted(object sender, EventArgs e) { SaveProfiles(); ResetActions(); }
