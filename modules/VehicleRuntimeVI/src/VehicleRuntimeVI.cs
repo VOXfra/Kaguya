@@ -14,10 +14,14 @@ namespace VOX.VehicleRuntimeVI
         private const string LogPath = DataDir + "\\VehicleRuntimeVI.log";
         private const string ProfilesPath = DataDir + "\\VehicleProfiles.txt";
         private const string ActiveStatePath = DataDir + "\\ActiveVehicleState.txt";
-        private const string LockpickEnterDict = "amb@prop_human_parking_meter@male@enter";
-        private const string LockpickBaseDict = "amb@prop_human_parking_meter@male@base";
-        private const string LockpickExitDict = "amb@prop_human_parking_meter@male@exit";
-        private const int InputEnter = 23;
+        private const string QuietDict = "veh@break_in@0h@p_m_one@";
+        private const string QuietAnim = "low_force_entry_ds";
+        private const string ForceDict = "veh@break_in@0h@p_m_zero@";
+        private const string ForceAnim = "std_force_entry_ds";
+        private const int InputEnter = 23;  // F / Y
+        private const int InputAttack = 24; // LMB / RT
+
+        private enum BreakInMode { Undecided, Quiet, Smash }
 
         private sealed class VehicleProfile
         {
@@ -32,33 +36,30 @@ namespace VOX.VehicleRuntimeVI
             public bool Stolen;
             public bool TrackerPresent;
             public bool TrackerDisabled;
-            // Kept only to read old profile rows safely. 0.4 no longer exposes a
-            // control-panel wheel for these ordinary vanilla vehicle functions.
-            public bool EngineCommandedOff;
-            public bool UserLocked;
-            public bool InteriorLightOn;
-            public bool HeadlightsOn;
-            public bool DriverWindowDown;
         }
 
         private readonly Dictionary<string, VehicleProfile> _profiles = new Dictionary<string, VehicleProfile>(StringComparer.OrdinalIgnoreCase);
-        private int _lockVehicle;
-        private int _lockStarted;
-        private bool _enterControlDown;
+        private int _breakVehicle;
+        private int _breakStarted;
+        private int _breakAnimStarted;
+        private BreakInMode _breakMode;
+        private bool _enterWasDown;
+        private bool _attackWasDown;
         private int _hotwireVehicle;
         private int _hotwireStarted;
         private int _lastSave;
         private int _lastStateWrite;
+        private int _lastHelp;
         private int _storyYieldUntil;
 
         public VehicleRuntimeVIScript()
         {
             Directory.CreateDirectory(DataDir);
             LoadProfiles();
-            Interval = 50;
+            Interval = 25;
             Tick += OnTick;
             Aborted += OnAborted;
-            Log("Vehicle Runtime VI 0.4.0 loaded: story-first physical theft, no theft/vehicle menu.");
+            Log("Vehicle Runtime VI 0.5.0 loaded: Rockstar break-in animation, aligned driver-door approach, quiet/smash choice and stricter ambient locks.");
         }
 
         private void OnTick(object sender, EventArgs e)
@@ -77,9 +78,8 @@ namespace VOX.VehicleRuntimeVI
 
                 if (player.IsInVehicle())
                 {
-                    StopLockAnimation(player);
-                    _lockVehicle = 0;
-                    _lockStarted = 0;
+                    StopBreakAnimation(player);
+                    _breakVehicle = 0;
                     Vehicle current = player.CurrentVehicle;
                     if (current != null && current.Exists() && !IsMissionEntity(current)) UpdateInsideVehicle(player, current);
                 }
@@ -94,65 +94,112 @@ namespace VOX.VehicleRuntimeVI
                 if (now - _lastSave > 12000) { _lastSave = now; SaveProfiles(); }
                 if (now - _lastStateWrite > 1000) { _lastStateWrite = now; WriteActiveState(player); }
             }
-            catch (Exception ex) { Log("Tick error: " + ex.Message); }
+            catch (Exception ex) { Log("Tick error: " + ex); }
         }
 
         private void UpdateEntryInteraction(Ped player)
         {
-            bool enterPressed = ReadControlPressed(InputEnter);
-            bool enterJustPressed = enterPressed && !_enterControlDown;
-            _enterControlDown = enterPressed;
+            bool enter = Pressed(InputEnter);
+            bool attack = Pressed(InputAttack);
+            bool enterJust = enter && !_enterWasDown;
+            bool attackJust = attack && !_attackWasDown;
+            _enterWasDown = enter;
+            _attackWasDown = attack;
 
-            if (_lockVehicle != 0)
+            if (_breakVehicle != 0)
             {
-                Vehicle active = FindVehicleByHandle(player.Position, 6.0f, _lockVehicle);
-                if (active == null || !active.Exists() || IsMissionEntity(active) || Distance(player.Position, active.Position) > 3.8f)
+                Vehicle active = FindVehicleByHandle(player.Position, 8f, _breakVehicle);
+                if (active == null || !active.Exists() || IsMissionEntity(active) || Distance(player.Position, active.Position) > 5.0f)
                 {
-                    ResetLockAction(player);
+                    ResetBreakAction(player);
                     return;
                 }
 
-                VehicleProfile profile = GetProfile(active);
                 DisableControl(InputEnter);
-                MaintainLockAnimation(player, active);
-                int duration = 1700 + Math.Max(1, profile.LockTier) * 1050;
-                if (Game.GameTime - _lockStarted < duration) return;
+                VehicleProfile profile = GetProfile(active);
+                int elapsed = Game.GameTime - _breakStarted;
 
+                if (_breakMode == BreakInMode.Undecided)
+                {
+                    ApproachDriverDoor(player, active);
+                    ShowHelp("Ouverture discrete...  ~INPUT_ATTACK~ pour briser la vitre");
+                    if (attackJust) _breakMode = BreakInMode.Smash;
+                    else if (elapsed >= 900) _breakMode = BreakInMode.Quiet;
+                    if (_breakMode != BreakInMode.Undecided) _breakAnimStarted = Game.GameTime;
+                    else return;
+                }
+
+                if (_breakMode == BreakInMode.Smash)
+                {
+                    PlayBreakAnimation(player, active, ForceDict, ForceAnim);
+                    if (Game.GameTime - _breakAnimStarted < 850) return;
+                    try
+                    {
+                        Function.Call(Hash.SMASH_VEHICLE_WINDOW, active.Handle, 0);
+                        Function.Call(Hash.SET_VEHICLE_DOORS_LOCKED, active.Handle, 1);
+                    }
+                    catch { }
+                    profile.AccessBypassed = true;
+                    profile.Locked = false;
+                    profile.Stolen = true;
+                    TriggerAlarm(active, profile, 82);
+                    CompleteEntry(player, active, profile, "forced-window");
+                    return;
+                }
+
+                PlayBreakAnimation(player, active, QuietDict, QuietAnim);
+                int duration = 1700 + Math.Max(1, profile.LockTier) * 850;
+                if (Game.GameTime - _breakAnimStarted < duration) return;
                 profile.AccessBypassed = true;
                 profile.Locked = false;
                 profile.Stolen = true;
                 try { Function.Call(Hash.SET_VEHICLE_DOORS_LOCKED, active.Handle, 1); } catch { }
-                if (profile.LockTier >= 2 && StableRoll(profile.Key + ":alarm") < 58)
-                {
-                    try
-                    {
-                        Function.Call(Hash.SET_VEHICLE_ALARM, active.Handle, true);
-                        Function.Call(Hash.START_VEHICLE_ALARM, active.Handle);
-                    }
-                    catch { }
-                }
-                SaveProfiles();
-                StopLockAnimation(player);
-                _lockVehicle = 0;
-                _lockStarted = 0;
-                try { Function.Call(Hash.TASK_ENTER_VEHICLE, player.Handle, active.Handle, 7000, -1, 1.0f, 1, 0); } catch { }
-                Log("Physical lock bypass completed key=" + profile.Key + " tier=" + profile.LockTier + ".");
+                TriggerAlarm(active, profile, profile.LockTier >= 3 ? 58 : (profile.LockTier == 2 ? 35 : 18));
+                CompleteEntry(player, active, profile, "quiet-lockwork");
                 return;
             }
 
-            if (!enterJustPressed) return;
+            if (!enterJust) return;
             Vehicle target = IntendedEntryVehicle(player);
             if (target == null || !target.Exists() || IsMissionEntity(target)) return;
             VehicleProfile p = GetProfile(target);
             ApplyDoorState(target, p);
-            if (!p.Locked || p.HasKey || p.AccessBypassed) return; // vanilla owns normal entry
+            if (!p.Locked || p.HasKey || p.AccessBypassed) return;
 
+            // Only the actual vanilla Enter attempt is intercepted. Merely standing
+            // near a car never creates a theft affordance.
             DisableControl(InputEnter);
             try { Function.Call(Hash.CLEAR_PED_TASKS, player.Handle); } catch { }
-            _lockVehicle = target.Handle;
-            _lockStarted = Game.GameTime;
-            BeginLockAnimation(player, target);
-            Log("Locked entry attempt became one physical lock-bypass action vehicle=" + target.Handle + ".");
+            _breakVehicle = target.Handle;
+            _breakStarted = Game.GameTime;
+            _breakAnimStarted = 0;
+            _breakMode = BreakInMode.Undecided;
+            RequestBreakAnimations();
+            ApproachDriverDoor(player, target);
+            Log("Locked entry intercepted vehicle=" + target.Handle + " tier=" + p.LockTier + ". Attack during alignment selects smash; otherwise Rockstar low-force lockwork is used.");
+        }
+
+        private void CompleteEntry(Ped player, Vehicle active, VehicleProfile profile, string method)
+        {
+            SaveProfiles();
+            StopBreakAnimation(player);
+            _breakVehicle = 0;
+            _breakStarted = 0;
+            _breakAnimStarted = 0;
+            _breakMode = BreakInMode.Undecided;
+            try { Function.Call(Hash.TASK_ENTER_VEHICLE, player.Handle, active.Handle, 7000, -1, 1.0f, 1, 0); } catch { }
+            Log("Vehicle access completed method=" + method + " key=" + profile.Key + ".");
+        }
+
+        private static void TriggerAlarm(Vehicle v, VehicleProfile p, int chance)
+        {
+            if (StableRoll(p.Key + ":alarm:" + Game.GameTime / 10000) >= chance) return;
+            try
+            {
+                Function.Call(Hash.SET_VEHICLE_ALARM, v.Handle, true);
+                Function.Call(Hash.START_VEHICLE_ALARM, v.Handle);
+            }
+            catch { }
         }
 
         private void UpdateInsideVehicle(Ped player, Vehicle vehicle)
@@ -168,16 +215,12 @@ namespace VOX.VehicleRuntimeVI
             profile.Stolen = true;
             profile.Locked = false;
             profile.AccessBypassed = true;
-
-            // If the engine was already running, stealing the running vehicle must
-            // not magically switch it off just to force a custom mechanic.
             if (IsEngineRunning(vehicle))
             {
                 if (!profile.Hotwired)
                 {
                     profile.Hotwired = true;
                     SaveProfiles();
-                    Log("Running unkeyed vehicle accepted without artificial hotwire key=" + profile.Key + ".");
                 }
                 _hotwireVehicle = 0;
                 _hotwireStarted = 0;
@@ -189,65 +232,80 @@ namespace VOX.VehicleRuntimeVI
             {
                 _hotwireVehicle = vehicle.Handle;
                 _hotwireStarted = Game.GameTime;
-                Log("Physical ignition bypass started key=" + profile.Key + ".");
+                Log("Ignition bypass started key=" + profile.Key + ".");
             }
 
             try { Function.Call(Hash.SET_VEHICLE_ENGINE_ON, vehicle.Handle, false, true, true); } catch { }
-            int duration = 2100 + Math.Max(1, profile.LockTier) * 1000;
+            int duration = 1800 + Math.Max(1, profile.LockTier) * 800;
             if (Game.GameTime - _hotwireStarted < duration) return;
-
             profile.Hotwired = true;
             try { Function.Call(Hash.SET_VEHICLE_ENGINE_ON, vehicle.Handle, true, true, false); } catch { }
             SaveProfiles();
             Log("Ignition bypass completed key=" + profile.Key + " tracker=" + profile.TrackerPresent + ".");
         }
 
-        private static void BeginLockAnimation(Ped player, Vehicle vehicle)
+        private void ApproachDriverDoor(Ped player, Vehicle vehicle)
         {
-            RequestLockAnimations();
-            try { Function.Call(Hash.TASK_TURN_PED_TO_FACE_ENTITY, player.Handle, vehicle.Handle, 350); } catch { }
-        }
-
-        private void MaintainLockAnimation(Ped player, Vehicle vehicle)
-        {
-            RequestLockAnimations();
-            int elapsed = Math.Max(0, Game.GameTime - _lockStarted);
-            if (elapsed < 300) return;
-            if (elapsed < 1050)
+            Vector3 door = DriverDoorPosition(vehicle);
+            Vector3 outward = OutwardFromVehicle(vehicle, door);
+            Vector3 stand = door + outward * 0.72f;
+            float heading = HeadingTo(stand, door);
+            if (Distance(player.Position, stand) <= 0.38f)
             {
-                if (!IsPlayingAnimation(player, LockpickEnterDict, "enter"))
-                { try { Function.Call(Hash.TASK_PLAY_ANIM, player.Handle, LockpickEnterDict, "enter", 4.0f, -4.0f, 850, 0, 0f, false, false, false); } catch { } }
+                try { Function.Call(Hash.TASK_TURN_PED_TO_FACE_COORD, player.Handle, door.X, door.Y, door.Z, 250); } catch { }
                 return;
             }
-            if (!IsPlayingAnimation(player, LockpickBaseDict, "base"))
-            { try { Function.Call(Hash.TASK_PLAY_ANIM, player.Handle, LockpickBaseDict, "base", 4.0f, -4.0f, -1, 1, 0f, false, false, false); } catch { } }
+            try { Function.Call(Hash.TASK_GO_STRAIGHT_TO_COORD, player.Handle, stand.X, stand.Y, stand.Z, 1.0f, 600, heading, 0.08f); } catch { }
         }
 
-        private static void RequestLockAnimations()
+        private static Vector3 DriverDoorPosition(Vehicle v)
         {
             try
             {
-                Function.Call(Hash.REQUEST_ANIM_DICT, LockpickEnterDict);
-                Function.Call(Hash.REQUEST_ANIM_DICT, LockpickBaseDict);
-                Function.Call(Hash.REQUEST_ANIM_DICT, LockpickExitDict);
+                int bone = Function.Call<int>(Hash.GET_ENTITY_BONE_INDEX_BY_NAME, v.Handle, "door_dside_f");
+                if (bone >= 0) return Function.Call<Vector3>(Hash.GET_WORLD_POSITION_OF_ENTITY_BONE, v.Handle, bone);
+            }
+            catch { }
+            try { return Function.Call<Vector3>(Hash.GET_OFFSET_FROM_ENTITY_IN_WORLD_COORDS, v.Handle, -0.85f, 0.35f, 0.35f); }
+            catch { return v.Position; }
+        }
+
+        private static Vector3 OutwardFromVehicle(Vehicle v, Vector3 door)
+        {
+            try
+            {
+                Vector3 center = v.Position;
+                Vector3 d = door - center;
+                float len = (float)Math.Sqrt(d.X*d.X + d.Y*d.Y);
+                if (len > 0.05f) return new Vector3(d.X/len, d.Y/len, 0f);
+            }
+            catch { }
+            return new Vector3(-1f,0f,0f);
+        }
+
+        private static void PlayBreakAnimation(Ped player, Vehicle vehicle, string dict, string anim)
+        {
+            RequestAnim(dict);
+            Vector3 door = DriverDoorPosition(vehicle);
+            try { Function.Call(Hash.TASK_TURN_PED_TO_FACE_COORD, player.Handle, door.X, door.Y, door.Z, 150); } catch { }
+            try
+            {
+                if (Function.Call<bool>(Hash.HAS_ANIM_DICT_LOADED, dict) && !Function.Call<bool>(Hash.IS_ENTITY_PLAYING_ANIM, player.Handle, dict, anim, 3))
+                    Function.Call(Hash.TASK_PLAY_ANIM, player.Handle, dict, anim, 4.0f, -4.0f, -1, 16, 0f, false, false, false);
             }
             catch { }
         }
 
-        private static bool IsPlayingAnimation(Ped player, string dict, string name)
-        {
-            try { return Function.Call<bool>(Hash.IS_ENTITY_PLAYING_ANIM, player.Handle, dict, name, 3); }
-            catch { return false; }
-        }
+        private static void RequestBreakAnimations() { RequestAnim(QuietDict); RequestAnim(ForceDict); }
+        private static void RequestAnim(string dict) { try { Function.Call(Hash.REQUEST_ANIM_DICT, dict); } catch { } }
 
-        private static void StopLockAnimation(Ped player)
+        private static void StopBreakAnimation(Ped player)
         {
             if (player == null || !player.Exists()) return;
             try
             {
-                Function.Call(Hash.STOP_ANIM_TASK, player.Handle, LockpickEnterDict, "enter", 2.0f);
-                Function.Call(Hash.STOP_ANIM_TASK, player.Handle, LockpickBaseDict, "base", 2.0f);
-                Function.Call(Hash.STOP_ANIM_TASK, player.Handle, LockpickExitDict, "exit", 2.0f);
+                Function.Call(Hash.STOP_ANIM_TASK, player.Handle, QuietDict, QuietAnim, 2.0f);
+                Function.Call(Hash.STOP_ANIM_TASK, player.Handle, ForceDict, ForceAnim, 2.0f);
             }
             catch { }
         }
@@ -265,16 +323,21 @@ namespace VOX.VehicleRuntimeVI
                 return p;
             }
 
+            bool occupied = false;
+            try { occupied = vehicle.Driver != null && vehicle.Driver.Exists(); } catch { }
             int roll = StableRoll(key);
+            // Empty street cars should usually be locked. Occupied traffic remains
+            // vanilla-carjackable and is not turned into a sealed moving box.
+            bool locked = !personal && !occupied && roll < 90;
             p = new VehicleProfile
             {
                 Key = key,
                 ModelHash = model,
                 Plate = plate,
                 HasKey = personal,
-                Locked = !personal && roll < 64,
-                LockTier = personal ? 0 : (roll < 42 ? 1 : (roll < 82 ? 2 : 3)),
-                TrackerPresent = !personal && StableRoll(key + ":tracker") < (IsPremium(vehicle) ? 72 : 28)
+                Locked = locked,
+                LockTier = personal ? 0 : (roll < 35 ? 1 : (roll < 78 ? 2 : 3)),
+                TrackerPresent = !personal && StableRoll(key + ":tracker") < (IsPremium(vehicle) ? 74 : 30)
             };
             if (personal) NormalizePersonalProfile(p);
             _profiles[key] = p;
@@ -284,12 +347,7 @@ namespace VOX.VehicleRuntimeVI
         private static void NormalizePersonalProfile(VehicleProfile p)
         {
             if (p == null) return;
-            p.HasKey = true;
-            p.Locked = false;
-            p.AccessBypassed = false;
-            p.Hotwired = false;
-            p.Stolen = false;
-            p.TrackerDisabled = false;
+            p.HasKey = true; p.Locked = false; p.AccessBypassed = false; p.Hotwired = false; p.Stolen = false; p.TrackerDisabled = false;
         }
 
         private static void ApplyDoorState(Vehicle vehicle, VehicleProfile profile)
@@ -306,27 +364,23 @@ namespace VOX.VehicleRuntimeVI
                 if (handle != 0)
                 {
                     Entity e = Entity.FromHandle(handle);
-                    return e as Vehicle;
+                    Vehicle v = e as Vehicle;
+                    if (v != null && v.Exists()) return v;
                 }
             }
             catch { }
-
-            // Enhanced can expose the intended vehicle one frame late. A fallback is
-            // intentionally tiny and camera-biased so a nearby unrelated car is not
-            // silently selected.
             Vehicle[] vehicles;
-            try { vehicles = World.GetNearbyVehicles(player, 2.6f); } catch { return null; }
+            try { vehicles = World.GetNearbyVehicles(player, 2.4f); } catch { return null; }
             Vector3 cam = GameplayCamera.Direction;
-            Vehicle best = null;
-            float bestScore = float.MinValue;
+            Vehicle best = null; float bestScore = float.MinValue;
             foreach (Vehicle v in vehicles)
             {
                 if (v == null || !v.Exists()) continue;
                 Vector3 d = v.Position - player.Position;
                 float len = Length(d);
-                if (len < 0.1f || len > 2.6f) continue;
+                if (len < 0.1f || len > 2.4f) continue;
                 float dot = Dot(cam, d) / len;
-                if (dot < 0.45f) continue;
+                if (dot < 0.50f) continue;
                 float score = dot * 10f - len;
                 if (score > bestScore) { bestScore = score; best = v; }
             }
@@ -345,32 +399,12 @@ namespace VOX.VehicleRuntimeVI
         private static bool IsLikelyPersonalVehicle(Vehicle v)
         {
             string[] models = { "tailgater", "buffalo2", "bodhi2" };
-            foreach (string name in models)
-            { try { if (v.Model.Hash == Function.Call<int>(Hash.GET_HASH_KEY, name)) return true; } catch { } }
+            foreach (string name in models) { try { if (v.Model.Hash == Function.Call<int>(Hash.GET_HASH_KEY, name)) return true; } catch { } }
             return false;
         }
-
-        private static bool IsEngineRunning(Vehicle v)
-        {
-            try { return v != null && v.Exists() && Function.Call<bool>(Hash.GET_IS_VEHICLE_ENGINE_RUNNING, v.Handle); }
-            catch { return false; }
-        }
-
-        private static bool IsPremium(Vehicle v)
-        {
-            try
-            {
-                int cls = Function.Call<int>(Hash.GET_VEHICLE_CLASS, v.Handle);
-                return cls == 3 || cls == 5 || cls == 6 || cls == 7 || cls == 22;
-            }
-            catch { return false; }
-        }
-
-        private static bool IsMissionEntity(Entity e)
-        {
-            try { return Function.Call<bool>(Hash.IS_ENTITY_A_MISSION_ENTITY, e.Handle); }
-            catch { return true; }
-        }
+        private static bool IsEngineRunning(Vehicle v) { try { return v != null && v.Exists() && Function.Call<bool>(Hash.GET_IS_VEHICLE_ENGINE_RUNNING, v.Handle); } catch { return false; } }
+        private static bool IsPremium(Vehicle v) { try { int cls = Function.Call<int>(Hash.GET_VEHICLE_CLASS, v.Handle); return cls == 3 || cls == 5 || cls == 6 || cls == 7 || cls == 22; } catch { return false; } }
+        private static bool IsMissionEntity(Entity e) { try { return Function.Call<bool>(Hash.IS_ENTITY_A_MISSION_ENTITY, e.Handle); } catch { return true; } }
 
         private static bool RockstarOwnsScene()
         {
@@ -378,22 +412,24 @@ namespace VOX.VehicleRuntimeVI
             try { if (Function.Call<bool>(Hash.IS_PLAYER_SWITCH_IN_PROGRESS)) return true; } catch { }
             try { if (Function.Call<bool>(Hash.GET_MISSION_FLAG)) return true; } catch { }
             try { if (!Function.Call<bool>(Hash.IS_PLAYER_CONTROL_ON, Game.Player.Handle)) return true; } catch { }
-            try
-            {
-                if (Function.Call<bool>(Hash.IS_SCREEN_FADED_OUT) || Function.Call<bool>(Hash.IS_SCREEN_FADING_OUT) ||
-                    Function.Call<bool>(Hash.IS_SCREEN_FADING_IN)) return true;
-            }
-            catch { }
+            try { if (Function.Call<bool>(Hash.IS_SCREEN_FADED_OUT) || Function.Call<bool>(Hash.IS_SCREEN_FADING_OUT) || Function.Call<bool>(Hash.IS_SCREEN_FADING_IN)) return true; } catch { }
             return false;
         }
 
-        private static void DisableControl(int control)
-        { try { Function.Call(Hash.DISABLE_CONTROL_ACTION, 0, control, true); } catch { } }
+        private static void DisableControl(int control) { try { Function.Call(Hash.DISABLE_CONTROL_ACTION, 0, control, true); } catch { } }
+        private static bool Pressed(int control) { try { return Function.Call<bool>(Hash.IS_CONTROL_PRESSED, 0, control) || Function.Call<bool>(Hash.IS_DISABLED_CONTROL_PRESSED, 0, control); } catch { return false; } }
 
-        private static bool ReadControlPressed(int control)
+        private void ShowHelp(string text)
         {
-            try { return Function.Call<bool>(Hash.IS_CONTROL_PRESSED, 0, control) || Function.Call<bool>(Hash.IS_DISABLED_CONTROL_PRESSED, 0, control); }
-            catch { return false; }
+            if (Game.GameTime - _lastHelp < 100) return;
+            _lastHelp = Game.GameTime;
+            try
+            {
+                Function.Call(Hash.BEGIN_TEXT_COMMAND_DISPLAY_HELP, "STRING");
+                Function.Call(Hash.ADD_TEXT_COMPONENT_SUBSTRING_PLAYER_NAME, text);
+                Function.Call(Hash.END_TEXT_COMMAND_DISPLAY_HELP, 0, false, true, -1);
+            }
+            catch { }
         }
 
         private void WriteActiveState(Ped player)
@@ -418,18 +454,13 @@ namespace VOX.VehicleRuntimeVI
             {
                 foreach (string line in File.ReadAllLines(ProfilesPath))
                 {
-                    string[] p = line.Split('|');
-                    if (p.Length < 10) continue;
+                    string[] p = line.Split('|'); if (p.Length < 10) continue;
                     var v = new VehicleProfile
                     {
-                        Key = p[0], ModelHash = ParseInt(p[1]), Plate = p[2], HasKey = ParseBool(p[3]), Locked = ParseBool(p[4]),
-                        LockTier = ParseInt(p[5]), AccessBypassed = ParseBool(p[6]), Hotwired = ParseBool(p[7]), Stolen = ParseBool(p[8]),
-                        TrackerPresent = ParseBool(p[9]), TrackerDisabled = p.Length > 10 && ParseBool(p[10]),
-                        EngineCommandedOff = p.Length > 11 && ParseBool(p[11]), UserLocked = p.Length > 12 && ParseBool(p[12]),
-                        InteriorLightOn = p.Length > 13 && ParseBool(p[13]), HeadlightsOn = p.Length > 14 && ParseBool(p[14]),
-                        DriverWindowDown = p.Length > 15 && ParseBool(p[15])
+                        Key=p[0], ModelHash=ParseInt(p[1]), Plate=p[2], HasKey=ParseBool(p[3]), Locked=ParseBool(p[4]), LockTier=ParseInt(p[5]),
+                        AccessBypassed=ParseBool(p[6]), Hotwired=ParseBool(p[7]), Stolen=ParseBool(p[8]), TrackerPresent=ParseBool(p[9]), TrackerDisabled=p.Length>10 && ParseBool(p[10])
                     };
-                    if (!string.IsNullOrWhiteSpace(v.Key)) _profiles[v.Key] = v;
+                    if (!string.IsNullOrWhiteSpace(v.Key)) _profiles[v.Key]=v;
                 }
             }
             catch (Exception ex) { Log("Profile load failed safely: " + ex.Message); }
@@ -441,56 +472,38 @@ namespace VOX.VehicleRuntimeVI
             {
                 var lines = new List<string>();
                 foreach (VehicleProfile p in _profiles.Values)
-                    lines.Add(string.Join("|", p.Key, p.ModelHash, p.Plate, p.HasKey, p.Locked, p.LockTier, p.AccessBypassed, p.Hotwired, p.Stolen,
-                        p.TrackerPresent, p.TrackerDisabled, p.EngineCommandedOff, p.UserLocked, p.InteriorLightOn, p.HeadlightsOn, p.DriverWindowDown));
+                    lines.Add(string.Join("|", p.Key,p.ModelHash,p.Plate,p.HasKey,p.Locked,p.LockTier,p.AccessBypassed,p.Hotwired,p.Stolen,p.TrackerPresent,p.TrackerDisabled));
                 File.WriteAllLines(ProfilesPath, lines.ToArray());
             }
             catch (Exception ex) { Log("Profile save failed safely: " + ex.Message); }
         }
 
-        private static string Plate(Vehicle v)
-        {
-            try { return (Function.Call<string>(Hash.GET_VEHICLE_NUMBER_PLATE_TEXT, v.Handle) ?? string.Empty).Trim().ToUpperInvariant(); }
-            catch { return string.Empty; }
-        }
-
+        private static string Plate(Vehicle v) { try { return (Function.Call<string>(Hash.GET_VEHICLE_NUMBER_PLATE_TEXT, v.Handle) ?? string.Empty).Trim().ToUpperInvariant(); } catch { return string.Empty; } }
         private static int StableRoll(string text)
         {
-            unchecked
-            {
-                int h = 17;
-                foreach (char c in text ?? string.Empty) h = h * 31 + c;
-                if (h == int.MinValue) h = 0;
-                return Math.Abs(h) % 100;
-            }
+            unchecked { int h=17; foreach(char c in text ?? string.Empty) h=h*31+c; if(h==int.MinValue)h=0; return Math.Abs(h)%100; }
         }
+        private static float HeadingTo(Vector3 from, Vector3 to) { try { return Function.Call<float>(Hash.GET_HEADING_FROM_VECTOR_2D, to.X-from.X, to.Y-from.Y); } catch { return 0f; } }
+        private static float Dot(Vector3 a, Vector3 b) { return a.X*b.X+a.Y*b.Y+a.Z*b.Z; }
+        private static float Length(Vector3 v) { return (float)Math.Sqrt(v.X*v.X+v.Y*v.Y+v.Z*v.Z); }
+        private static float Distance(Vector3 a, Vector3 b) { return Length(a-b); }
 
-        private static float Dot(Vector3 a, Vector3 b) { return a.X * b.X + a.Y * b.Y + a.Z * b.Z; }
-        private static float Length(Vector3 v) { return (float)Math.Sqrt(v.X * v.X + v.Y * v.Y + v.Z * v.Z); }
-        private static float Distance(Vector3 a, Vector3 b) { return Length(a - b); }
-
-        private void ResetLockAction(Ped player)
+        private void ResetBreakAction(Ped player)
         {
-            StopLockAnimation(player);
-            _lockVehicle = 0;
-            _lockStarted = 0;
+            StopBreakAnimation(player);
+            _breakVehicle=0; _breakStarted=0; _breakAnimStarted=0; _breakMode=BreakInMode.Undecided;
         }
-
         private void ResetTransient()
         {
-            ResetLockAction(Game.LocalPlayerPed);
-            _hotwireVehicle = 0;
-            _hotwireStarted = 0;
-            _enterControlDown = false;
+            ResetBreakAction(Game.LocalPlayerPed);
+            _hotwireVehicle=0; _hotwireStarted=0; _enterWasDown=Pressed(InputEnter); _attackWasDown=Pressed(InputAttack);
         }
-
-        private static int ParseInt(string s) { int v; return int.TryParse(s, out v) ? v : 0; }
-        private static bool ParseBool(string s) { bool v; return bool.TryParse(s, out v) && v; }
+        private static int ParseInt(string s) { int v; return int.TryParse(s,out v)?v:0; }
+        private static bool ParseBool(string s) { bool v; return bool.TryParse(s,out v)&&v; }
         private void OnAborted(object sender, EventArgs e) { SaveProfiles(); ResetTransient(); }
         private static void Log(string text)
         {
-            try { Directory.CreateDirectory(DataDir); File.AppendAllText(LogPath, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + " | " + text + Environment.NewLine); }
-            catch { }
+            try { Directory.CreateDirectory(DataDir); File.AppendAllText(LogPath, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff")+" | "+text+Environment.NewLine); } catch { }
         }
     }
 }
