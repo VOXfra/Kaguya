@@ -11,8 +11,7 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
       - name: Fetch SHVDNE reference
         shell: pwsh
         run: |
@@ -33,10 +32,10 @@ jobs:
           Copy-Item modules/PedOverhaulVI/bin/Release/net48/PedOverhaulVI.dll dist/scripts/PedOverhaulVI.dll
           Copy-Item modules/PedOverhaulVI/config/PedOverhaulVI.ini dist/scripts/PedOverhaulVI.ini
           Copy-Item modules/PedOverhaulVI/INSTALL.txt dist/INSTALL.txt
-          Compress-Archive -Path dist/* -DestinationPath PedOverhaulVI-v0.6.0.zip -Force
+          Compress-Archive -Path dist/* -DestinationPath PedOverhaulVI-v0.6.1.zip -Force
       - name: Upload test build
         uses: actions/upload-artifact@v4
         with:
-          name: PedOverhaulVI-v0.6.0
-          path: PedOverhaulVI-v0.6.0.zip
+          name: PedOverhaulVI-v0.6.1
+          path: PedOverhaulVI-v0.6.1.zip
           if-no-files-found: error
