@@ -13,6 +13,7 @@ namespace VOX.CharacterRuntimeVI
         private const string DataDir = "scripts\\CharacterRuntimeVI";
         private const string LogPath = DataDir + "\\CharacterRuntimeVI.log";
         private const string StatsPath = DataDir + "\\FitnessStats.txt";
+        private const string BodyStatePath = DataDir + "\\BodyMorphState.txt";
 
         private sealed class FitnessProfile
         {
@@ -29,9 +30,8 @@ namespace VOX.CharacterRuntimeVI
         private FitnessProfile _current;
         private int _lastTick;
         private int _lastSave;
+        private int _lastBodyState;
         private int _lastProgressLog;
-        private bool _bodyApplied;
-        private int _bodyPedHandle;
 
         public CharacterRuntimeVIScript()
         {
@@ -40,7 +40,7 @@ namespace VOX.CharacterRuntimeVI
             Interval = 50;
             Tick += OnTick;
             Aborted += OnAborted;
-            Log("Character Runtime VI 0.1.0 loaded: persistent fitness, gameplay stats and conservative visible body progression.");
+            Log("Character Runtime VI 0.1.0 loaded: persistent fitness, gameplay stats and native body-morph bridge state.");
         }
 
         private void OnTick(object sender, EventArgs e)
@@ -51,7 +51,7 @@ namespace VOX.CharacterRuntimeVI
                 if (player == null || !player.Exists() || player.IsDead)
                 {
                     _lastTick = 0;
-                    _bodyApplied = false;
+                    WriteBodyState(null, 1f, false, true);
                     return;
                 }
 
@@ -65,14 +65,15 @@ namespace VOX.CharacterRuntimeVI
                 {
                     UpdateTraining(player, dt);
                     ApplyPerformanceStats();
-                    ApplyVisibleBody(player);
                 }
-                else
+                else ApplyNeutralPerformanceStats();
+
+                float bodyWidth = BodyWidthScale();
+                bool bodySafe = !rockstarOwns && BodyMorphSafe(player);
+                if (now - _lastBodyState >= 150)
                 {
-                    // Do not fight mission scripts or scripted animations. The
-                    // entity matrix naturally returns to Rockstar-owned animation.
-                    _bodyApplied = false;
-                    ApplyNeutralPerformanceStats();
+                    _lastBodyState = now;
+                    WriteBodyState(player, bodyWidth, bodySafe, false);
                 }
 
                 if (now - _lastSave >= 10000)
@@ -84,7 +85,7 @@ namespace VOX.CharacterRuntimeVI
             catch (Exception ex)
             {
                 Log("Tick error: " + ex.Message);
-                _bodyApplied = false;
+                WriteBodyState(null, 1f, false, true);
             }
         }
 
@@ -106,8 +107,6 @@ namespace VOX.CharacterRuntimeVI
                 };
                 _profiles[model] = _current;
             }
-            _bodyApplied = false;
-            _bodyPedHandle = player.Handle;
             Log("Fitness profile selected model=" + model + " strength=" + _current.Strength.ToString("0.0", CultureInfo.InvariantCulture) +
                 " endurance=" + _current.Endurance.ToString("0.0", CultureInfo.InvariantCulture) +
                 " lean=" + _current.LeanMass.ToString("0.0", CultureInfo.InvariantCulture) + ".");
@@ -128,25 +127,17 @@ namespace VOX.CharacterRuntimeVI
             if (swimming) { enduranceWork += 0.72f; strengthWork += 0.18f; }
             if (melee) strengthWork += 1.00f;
 
-            // TrainingLoad gives exercise persistence instead of rewarding a
-            // single frame. Values are intentionally slow enough for long-term
-            // progression but fast enough to be observable in normal play.
             float work = enduranceWork + strengthWork;
             if (work > 0f)
             {
                 _current.TrainingLoad = Clamp(_current.TrainingLoad + work * dt * 0.55f, 0f, 100f);
                 _current.Endurance = Clamp(_current.Endurance + enduranceWork * dt * 0.012f, 0f, 100f);
                 _current.Strength = Clamp(_current.Strength + strengthWork * dt * 0.010f, 0f, 100f);
-
-                // Lean mass follows repeated training rather than every punch.
                 float leanGain = (strengthWork * 0.006f + enduranceWork * 0.0015f) * dt;
                 leanGain *= 0.45f + _current.TrainingLoad / 100f * 0.55f;
                 _current.LeanMass = Clamp(_current.LeanMass + leanGain, 0f, 100f);
             }
-            else
-            {
-                _current.TrainingLoad = Math.Max(0f, _current.TrainingLoad - dt * 0.020f);
-            }
+            else _current.TrainingLoad = Math.Max(0f, _current.TrainingLoad - dt * 0.020f);
 
             if (Game.GameTime - _lastProgressLog > 30000 && work > 0f)
             {
@@ -161,8 +152,8 @@ namespace VOX.CharacterRuntimeVI
         private void ApplyPerformanceStats()
         {
             if (_current == null) return;
-            float sprint = 1f + _current.Endurance * 0.00115f; // 1.00 .. 1.115
-            float melee = 1f + _current.Strength * 0.0018f;    // 1.00 .. 1.18
+            float sprint = 1f + _current.Endurance * 0.00115f;
+            float melee = 1f + _current.Strength * 0.0018f;
             try { Function.Call(Hash.SET_RUN_SPRINT_MULTIPLIER_FOR_PLAYER, Game.Player.Handle, Math.Min(1.15f, sprint)); } catch { }
             try { Function.Call(Hash.SET_PLAYER_MELEE_WEAPON_DAMAGE_MODIFIER, Game.Player.Handle, Math.Min(1.20f, melee), true); } catch { }
         }
@@ -173,58 +164,39 @@ namespace VOX.CharacterRuntimeVI
             try { Function.Call(Hash.SET_PLAYER_MELEE_WEAPON_DAMAGE_MODIFIER, Game.Player.Handle, 1f, true); } catch { }
         }
 
-        private void ApplyVisibleBody(Ped player)
+        private float BodyWidthScale()
         {
-            if (_current == null || player == null || !player.Exists()) return;
-            if (player.IsInVehicle() || SafeBool(Hash.IS_PED_RAGDOLL, player.Handle) || SafeBool(Hash.IS_PED_FALLING, player.Handle) ||
-                SafeBool(Hash.IS_PED_CLIMBING, player.Handle) || SafeBool(Hash.IS_PED_JUMPING, player.Handle) ||
-                SafeBool(Hash.IS_PED_SWIMMING, player.Handle) || SafeBool(Hash.IS_PED_SWIMMING_UNDER_WATER, player.Handle))
-            {
-                _bodyApplied = false;
-                return;
-            }
-
-            // Strength and lean mass influence width only. Height remains vanilla
-            // so feet, cover, doorways and weapon alignment stay as stable as possible.
+            if (_current == null) return 1f;
             float physique = Clamp((_current.Strength * 0.42f + _current.LeanMass * 0.58f) / 100f, 0f, 1f);
-            float widthScale = 1f + physique * 0.045f; // max +4.5%, intentionally conservative
-            if (widthScale <= 1.001f) return;
-
-            var forwardOut = new OutputArgument();
-            var rightOut = new OutputArgument();
-            var upOut = new OutputArgument();
-            var posOut = new OutputArgument();
-            try
-            {
-                Function.Call(Hash.GET_ENTITY_MATRIX, player.Handle, forwardOut, rightOut, upOut, posOut);
-                Vector3 forward = forwardOut.GetResult<Vector3>();
-                Vector3 right = rightOut.GetResult<Vector3>();
-                Vector3 up = upOut.GetResult<Vector3>();
-                Vector3 pos = posOut.GetResult<Vector3>();
-
-                forward = Normalize(forward) * widthScale;
-                right = Normalize(right) * widthScale;
-                up = Normalize(up);
-
-                Function.Call(Hash.SET_ENTITY_MATRIX, player.Handle,
-                    forward.X, forward.Y, forward.Z,
-                    right.X, right.Y, right.Z,
-                    up.X, up.Y, up.Z,
-                    pos.X, pos.Y, pos.Z);
-                _bodyApplied = true;
-                _bodyPedHandle = player.Handle;
-            }
-            catch
-            {
-                _bodyApplied = false;
-            }
+            return 1f + physique * 0.045f;
         }
 
-        private static Vector3 Normalize(Vector3 v)
+        private static bool BodyMorphSafe(Ped player)
         {
-            double len = Math.Sqrt(v.X * v.X + v.Y * v.Y + v.Z * v.Z);
-            if (len < 0.0001) return v;
-            return new Vector3((float)(v.X / len), (float)(v.Y / len), (float)(v.Z / len));
+            if (player == null || !player.Exists() || player.IsDead || player.IsInVehicle()) return false;
+            if (SafeBool(Hash.IS_PED_RAGDOLL, player.Handle) || SafeBool(Hash.IS_PED_FALLING, player.Handle) ||
+                SafeBool(Hash.IS_PED_CLIMBING, player.Handle) || SafeBool(Hash.IS_PED_JUMPING, player.Handle) ||
+                SafeBool(Hash.IS_PED_SWIMMING, player.Handle) || SafeBool(Hash.IS_PED_SWIMMING_UNDER_WATER, player.Handle)) return false;
+            return true;
+        }
+
+        private static void WriteBodyState(Ped player, float width, bool enabled, bool force)
+        {
+            try
+            {
+                if (!force && player == null) return;
+                int handle = player != null && player.Exists() ? player.Handle : 0;
+                Vector3 p = player != null && player.Exists() ? player.Position : Vector3.Zero;
+                string text =
+                    "enabled=" + enabled + Environment.NewLine +
+                    "ped=" + handle.ToString(CultureInfo.InvariantCulture) + Environment.NewLine +
+                    "x=" + p.X.ToString("R", CultureInfo.InvariantCulture) + Environment.NewLine +
+                    "y=" + p.Y.ToString("R", CultureInfo.InvariantCulture) + Environment.NewLine +
+                    "z=" + p.Z.ToString("R", CultureInfo.InvariantCulture) + Environment.NewLine +
+                    "width=" + Clamp(width, 1f, 1.05f).ToString("R", CultureInfo.InvariantCulture) + Environment.NewLine;
+                File.WriteAllText(BodyStatePath, text);
+            }
+            catch { }
         }
 
         private static float BaselineStrength(int model)
@@ -305,7 +277,7 @@ namespace VOX.CharacterRuntimeVI
         }
 
         private static float Clamp(float v, float min, float max) { return v < min ? min : (v > max ? max : v); }
-        private void OnAborted(object sender, EventArgs e) { Save(); ApplyNeutralPerformanceStats(); _bodyApplied = false; }
+        private void OnAborted(object sender, EventArgs e) { Save(); ApplyNeutralPerformanceStats(); WriteBodyState(null, 1f, false, true); }
         private static void Log(string text)
         {
             try { Directory.CreateDirectory(DataDir); File.AppendAllText(LogPath, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + " | " + text + Environment.NewLine); } catch { }
