@@ -19,6 +19,13 @@ namespace VOX.VehicleRuntimeVI
         private const string LockpickExitDict = "amb@prop_human_parking_meter@male@exit";
         private const int InputContext = 51;
         private const int InputEnter = 23;
+        private const int InputVehicleExit = 75;
+        private const int InputFrontendAccept = 201;
+        private const int InputFrontendCancel = 202;
+        private const int InputFrontendUp = 172;
+        private const int InputFrontendDown = 173;
+        private const int InputFrontendLeft = 174;
+        private const int InputFrontendRight = 175;
 
         private sealed class VehicleProfile
         {
@@ -33,6 +40,11 @@ namespace VOX.VehicleRuntimeVI
             public bool Stolen;
             public bool TrackerPresent;
             public bool TrackerDisabled;
+            public bool EngineCommandedOff;
+            public bool UserLocked;
+            public bool InteriorLightOn;
+            public bool HeadlightsOn;
+            public bool DriverWindowDown;
         }
 
         private readonly Dictionary<string, VehicleProfile> _profiles = new Dictionary<string, VehicleProfile>(StringComparer.OrdinalIgnoreCase);
@@ -45,7 +57,20 @@ namespace VOX.VehicleRuntimeVI
         private int _lastStateWrite;
         private int _lastHelp;
         private bool _enterControlDown;
+        private bool _contextControlDown;
         private int _storyYieldUntil;
+        private bool _theftWheelOpen;
+        private int _theftWheelVehicle;
+        private int _theftWheelSelection;
+        private int _theftWheelOpenedAt;
+        private bool _vehicleWheelOpen;
+        private int _vehicleWheelVehicle;
+        private int _vehicleWheelSelection;
+        private int _vehicleWheelOpenedAt;
+        private bool _seatbeltOn;
+        private int _seatbeltPed;
+        private int _actionWindow;
+        private int _actionSeat = -1;
 
         public VehicleRuntimeVIScript()
         {
@@ -54,7 +79,7 @@ namespace VOX.VehicleRuntimeVI
             Interval = 50;
             Tick += OnTick;
             Aborted += OnAborted;
-            Log("Vehicle Runtime VI 0.2.0 loaded: entry-triggered lockpicking + safe vehicle state.");
+            Log("Vehicle Runtime VI 0.3.0 loaded: physical theft choice + contextual in-vehicle wheel.");
         }
 
         private void OnTick(object sender, EventArgs e)
@@ -78,6 +103,8 @@ namespace VOX.VehicleRuntimeVI
                 }
                 else
                 {
+                    ReleaseSeatbelt(player);
+                    CloseVehicleWheel();
                     _hotwireVehicle = 0;
                     _hotwireStarted = 0;
                     UpdateNearbyVehicleInteraction(player);
@@ -92,10 +119,21 @@ namespace VOX.VehicleRuntimeVI
 
         private void UpdateNearbyVehicleInteraction(Ped player)
         {
-            // Lockpicking is an explicit response to an attempted entry, not an
-            // ambient proximity prompt. Once started it owns the short action until
-            // completion or until the player/vehicle invalidates it.
-            if (string.Equals(_actionKind, "lockpick", StringComparison.Ordinal) && _actionVehicle != 0)
+            bool enterPressed = ReadControlPressed(InputEnter);
+            bool enterJustPressed = enterPressed && !_enterControlDown;
+            bool enterJustReleased = !enterPressed && _enterControlDown;
+            _enterControlDown = enterPressed;
+
+            if (_theftWheelOpen)
+            {
+                UpdateTheftWheel(player, enterJustReleased);
+                return;
+            }
+
+            // A selected physical theft action owns the scene only for its short,
+            // bounded animation. Proximity alone never starts an action.
+            if ((string.Equals(_actionKind, "lockpick", StringComparison.Ordinal) ||
+                 string.Equals(_actionKind, "smash", StringComparison.Ordinal)) && _actionVehicle != 0)
             {
                 Vehicle activeVehicle = FindVehicleByHandle(player.Position, 7.0f, _actionVehicle);
                 if (activeVehicle == null || !activeVehicle.Exists() || IsMissionEntity(activeVehicle))
@@ -112,16 +150,21 @@ namespace VOX.VehicleRuntimeVI
 
                 VehicleProfile activeProfile = GetProfile(activeVehicle);
                 DisableControl(InputEnter);
-                ShowHelp("Crochetage de la serrure...");
-                MaintainLockpickAnimation(player, activeVehicle);
-                HandleTimedAction(activeVehicle, activeProfile, "lockpick", 1700 + activeProfile.LockTier * 1050, true);
+                if (string.Equals(_actionKind, "lockpick", StringComparison.Ordinal))
+                {
+                    ShowHelp("Crochetage de la serrure...");
+                    MaintainLockpickAnimation(player, activeVehicle);
+                    HandleTimedAction(activeVehicle, activeProfile, "lockpick", 1700 + activeProfile.LockTier * 1050, true);
+                }
+                else
+                {
+                    ShowHelp("Vitre en cours de bris...");
+                    HandleTimedAction(activeVehicle, activeProfile, "smash", 1450, true);
+                }
                 return;
             }
 
             Vehicle nearest = FindNearestVehicle(player.Position, 4.0f);
-            bool enterPressed = ReadControlPressed(InputEnter);
-            bool enterJustPressed = enterPressed && !_enterControlDown;
-            _enterControlDown = enterPressed;
             if (nearest == null || !nearest.Exists()) { ResetAction(); return; }
             if (IsMissionEntity(nearest)) { ResetAction(); return; }
 
@@ -142,23 +185,99 @@ namespace VOX.VehicleRuntimeVI
             float distance = Distance(player.Position, nearest.Position);
             if (profile.Locked && !profile.HasKey && !profile.AccessBypassed && distance <= 3.2f)
             {
-                // Do nothing merely because the player is near the car. GTA's normal
-                // enter control is the sole trigger, matching the proven theft flow
-                // studied in Enhanced Car Theft without reusing its minigame/UI.
                 if (enterJustPressed && IsIntendedEntryVehicle(player, nearest))
                 {
-                    _actionVehicle = nearest.Handle;
-                    _actionKind = "lockpick";
-                    _actionStarted = Game.GameTime;
                     DisableControl(InputEnter);
-                    ShowHelp("Crochetage de la serrure...");
-                    BeginLockpickAnimation(player, nearest);
-                    Log("Lockpick started from an actual entry attempt key=" + profile.Key + ".");
+                    OpenTheftWheel(nearest);
+                    try { Function.Call(Hash.CLEAR_PED_TASKS, player.Handle); } catch { }
                 }
                 return;
             }
 
             ResetAction();
+        }
+
+        private void OpenTheftWheel(Vehicle vehicle)
+        {
+            _theftWheelOpen = true;
+            _theftWheelVehicle = vehicle.Handle;
+            _theftWheelSelection = 0;
+            _theftWheelOpenedAt = Game.GameTime;
+            Log("Physical theft choice opened for vehicle=" + vehicle.Handle + ".");
+        }
+
+        private void UpdateTheftWheel(Ped player, bool enterJustReleased)
+        {
+            Vehicle vehicle = FindVehicleByHandle(player.Position, 6.0f, _theftWheelVehicle);
+            if (vehicle == null || !vehicle.Exists() || IsMissionEntity(vehicle) || Distance(player.Position, vehicle.Position) > 3.8f)
+            {
+                CloseTheftWheel();
+                return;
+            }
+
+            DisableWheelControls();
+            if (ReadControlJustPressed(InputFrontendLeft)) _theftWheelSelection = 0;
+            if (ReadControlJustPressed(InputFrontendRight)) _theftWheelSelection = 1;
+            DrawTheftWheel();
+
+            if (ReadControlJustPressed(InputFrontendCancel) || Game.GameTime - _theftWheelOpenedAt > 5000)
+            {
+                CloseTheftWheel();
+                return;
+            }
+
+            if (!enterJustReleased && !ReadControlJustPressed(InputFrontendAccept)) return;
+            int choice = _theftWheelSelection;
+            CloseTheftWheel();
+            if (choice == 0) BeginLockpickAction(player, vehicle);
+            else BeginSmashAction(player, vehicle);
+        }
+
+        private void BeginLockpickAction(Ped player, Vehicle vehicle)
+        {
+            _actionVehicle = vehicle.Handle;
+            _actionKind = "lockpick";
+            _actionStarted = Game.GameTime;
+            BeginLockpickAnimation(player, vehicle);
+            Log("Lockpick selected for vehicle=" + vehicle.Handle + "; no minigame.");
+        }
+
+        private void BeginSmashAction(Ped player, Vehicle vehicle)
+        {
+            Vector3 local = Vector3.Zero;
+            try
+            {
+                Vector3 world = player.Position;
+                local = Function.Call<Vector3>(Hash.GET_OFFSET_FROM_ENTITY_GIVEN_WORLD_COORDS, vehicle.Handle, world.X, world.Y, world.Z);
+            }
+            catch { }
+
+            bool leftSide = local.X <= 0f;
+            _actionWindow = leftSide ? 0 : 1;
+            _actionSeat = leftSide ? -1 : 0;
+            _actionVehicle = vehicle.Handle;
+            _actionKind = "smash";
+            _actionStarted = Game.GameTime;
+            try { Function.Call(Hash.TASK_SMASH_VEHICLE_WINDOW, player.Handle, vehicle.Handle, _actionSeat); } catch { }
+            Log("Window smash selected for vehicle=" + vehicle.Handle + " window=" + _actionWindow + ".");
+        }
+
+        private void DrawTheftWheel()
+        {
+            DrawTextCentered(0.50f, 0.735f, "VOL DU VEHICULE", 0.31f, 220, 220, 220, 230);
+            DrawTextCentered(0.405f, 0.805f, _theftWheelSelection == 0 ? "[ CROCHETER ]" : "CROCHETER", 0.32f,
+                _theftWheelSelection == 0 ? 255 : 185, _theftWheelSelection == 0 ? 255 : 185, _theftWheelSelection == 0 ? 255 : 185, 240);
+            DrawTextCentered(0.595f, 0.805f, _theftWheelSelection == 1 ? "[ BRISER ]" : "BRISER", 0.32f,
+                _theftWheelSelection == 1 ? 255 : 185, _theftWheelSelection == 1 ? 95 : 185, _theftWheelSelection == 1 ? 75 : 185, 240);
+            DrawTextCentered(0.50f, 0.805f, "+", 0.28f, 235, 235, 235, 220);
+        }
+
+        private void CloseTheftWheel()
+        {
+            _theftWheelOpen = false;
+            _theftWheelVehicle = 0;
+            _theftWheelSelection = 0;
+            _theftWheelOpenedAt = 0;
         }
 
         private void HandleTimedAction(Vehicle vehicle, VehicleProfile profile, string kind, int duration, bool pressed)
@@ -199,6 +318,26 @@ namespace VOX.VehicleRuntimeVI
                     try { Function.Call(Hash.TASK_ENTER_VEHICLE, player.Handle, vehicle.Handle, 7000, -1, 1.0f, 1, 0); } catch { }
                 }
                 Log("Vehicle access bypassed after entry-triggered lockpick key=" + profile.Key + " tier=" + profile.LockTier + ".");
+            }
+            else if (kind == "smash")
+            {
+                profile.AccessBypassed = true;
+                profile.Locked = false;
+                profile.Stolen = true;
+                try
+                {
+                    Function.Call(Hash.SMASH_VEHICLE_WINDOW, vehicle.Handle, _actionWindow);
+                    Function.Call(Hash.SET_VEHICLE_DOORS_LOCKED, vehicle.Handle, 1);
+                    Function.Call(Hash.SET_VEHICLE_ALARM, vehicle.Handle, true);
+                    Function.Call(Hash.START_VEHICLE_ALARM, vehicle.Handle);
+                }
+                catch { }
+                Ped player = Game.LocalPlayerPed;
+                if (player != null && player.Exists())
+                {
+                    try { Function.Call(Hash.TASK_ENTER_VEHICLE, player.Handle, vehicle.Handle, 7000, -1, 1.0f, 1, 0); } catch { }
+                }
+                Log("Window broken; loud forced entry completed key=" + profile.Key + " window=" + _actionWindow + ".");
             }
             else if (kind == "tracker")
             {
@@ -273,11 +412,17 @@ namespace VOX.VehicleRuntimeVI
         {
             VehicleProfile profile = GetProfile(vehicle);
             bool personal = IsLikelyPersonalVehicle(vehicle);
+            UpdateSeatbelt(player);
+            UpdateInVehicleWheel(player, vehicle, profile, personal);
 
             if (profile.HasKey || personal)
             {
                 NormalizePersonalProfile(profile);
-                try { Function.Call(Hash.SET_VEHICLE_DOORS_LOCKED, vehicle.Handle, 1); } catch { }
+                ApplyDoorState(vehicle, profile);
+                if (profile.EngineCommandedOff)
+                {
+                    try { Function.Call(Hash.SET_VEHICLE_ENGINE_ON, vehicle.Handle, false, true, true); } catch { }
+                }
                 return;
             }
 
@@ -303,7 +448,10 @@ namespace VOX.VehicleRuntimeVI
 
             if (profile.Hotwired)
             {
-                try { Function.Call(Hash.SET_VEHICLE_ENGINE_ON, vehicle.Handle, true, true, false); } catch { }
+                if (!profile.EngineCommandedOff)
+                {
+                    try { Function.Call(Hash.SET_VEHICLE_ENGINE_ON, vehicle.Handle, true, true, false); } catch { }
+                }
                 return;
             }
 
@@ -320,9 +468,189 @@ namespace VOX.VehicleRuntimeVI
             if (Game.GameTime - _hotwireStarted < duration) return;
 
             profile.Hotwired = true;
+            profile.EngineCommandedOff = false;
             try { Function.Call(Hash.SET_VEHICLE_ENGINE_ON, vehicle.Handle, true, true, false); } catch { }
             SaveProfiles();
             Log("Vehicle hotwired key=" + profile.Key + " tracker=" + profile.TrackerPresent + ".");
+        }
+
+        private void UpdateInVehicleWheel(Ped player, Vehicle vehicle, VehicleProfile profile, bool personal)
+        {
+            bool contextPressed = ReadControlPressed(InputContext);
+            bool contextJustPressed = contextPressed && !_contextControlDown;
+            bool contextJustReleased = !contextPressed && _contextControlDown;
+            _contextControlDown = contextPressed;
+
+            if (!_vehicleWheelOpen)
+            {
+                if (!contextJustPressed) return;
+                _vehicleWheelOpen = true;
+                _vehicleWheelVehicle = vehicle.Handle;
+                _vehicleWheelSelection = 0;
+                _vehicleWheelOpenedAt = Game.GameTime;
+            }
+
+            if (_vehicleWheelVehicle != vehicle.Handle)
+            {
+                CloseVehicleWheel();
+                return;
+            }
+
+            DisableWheelControls();
+            UpdateVehicleWheelSelection();
+            DrawVehicleWheel(player, vehicle, profile, personal);
+
+            if (ReadControlJustPressed(InputFrontendCancel))
+            {
+                CloseVehicleWheel();
+                return;
+            }
+
+            bool accept = ReadControlJustPressed(InputFrontendAccept);
+            if (!contextJustReleased && !accept) return;
+            int held = Game.GameTime - _vehicleWheelOpenedAt;
+            int selected = _vehicleWheelSelection;
+            CloseVehicleWheel();
+            if (held < 250 && !accept) return;
+            ExecuteVehicleWheelAction(player, vehicle, profile, personal, selected);
+        }
+
+        private void UpdateVehicleWheelSelection()
+        {
+            float x = ReadControlNormal(30);
+            float y = ReadControlNormal(31);
+            float magnitude = (float)Math.Sqrt(x * x + y * y);
+            if (magnitude >= 0.32f)
+            {
+                double angle = Math.Atan2(x, -y);
+                if (angle < 0) angle += Math.PI * 2.0;
+                _vehicleWheelSelection = ((int)Math.Round(angle / (Math.PI * 2.0 / 6.0))) % 6;
+                return;
+            }
+
+            if (ReadControlJustPressed(InputFrontendUp)) _vehicleWheelSelection = 0;
+            else if (ReadControlJustPressed(InputFrontendRight)) _vehicleWheelSelection = 2;
+            else if (ReadControlJustPressed(InputFrontendDown)) _vehicleWheelSelection = 3;
+            else if (ReadControlJustPressed(InputFrontendLeft)) _vehicleWheelSelection = 5;
+        }
+
+        private void ExecuteVehicleWheelAction(Ped player, Vehicle vehicle, VehicleProfile profile, bool personal, int selected)
+        {
+            bool driver = IsDriver(player, vehicle);
+            switch (selected)
+            {
+                case 0:
+                    if (!driver) { ShowHelp("Seul le conducteur peut commander le moteur."); return; }
+                    bool running = IsEngineRunning(vehicle);
+                    if (running)
+                    {
+                        profile.EngineCommandedOff = true;
+                        try { Function.Call(Hash.SET_VEHICLE_ENGINE_ON, vehicle.Handle, false, true, true); } catch { }
+                        Log("Engine deliberately switched off key=" + profile.Key + ".");
+                    }
+                    else if (profile.HasKey || profile.Hotwired || personal)
+                    {
+                        profile.EngineCommandedOff = false;
+                        try { Function.Call(Hash.SET_VEHICLE_ENGINE_ON, vehicle.Handle, true, true, false); } catch { }
+                        Log("Engine deliberately switched on key=" + profile.Key + ".");
+                    }
+                    else ShowHelp("Le vehicule doit d'abord etre branche.");
+                    break;
+                case 1:
+                    if (_seatbeltOn) ReleaseSeatbelt(player);
+                    else FastenSeatbelt(player);
+                    break;
+                case 2:
+                    profile.DriverWindowDown = !profile.DriverWindowDown;
+                    try
+                    {
+                        if (profile.DriverWindowDown) Function.Call(Hash.ROLL_DOWN_WINDOW, vehicle.Handle, 0);
+                        else Function.Call(Hash.ROLL_UP_WINDOW, vehicle.Handle, 0);
+                    }
+                    catch { }
+                    break;
+                case 3:
+                    profile.UserLocked = !profile.UserLocked;
+                    ApplyDoorState(vehicle, profile);
+                    break;
+                case 4:
+                    profile.InteriorLightOn = !profile.InteriorLightOn;
+                    try { Function.Call(Hash.SET_VEHICLE_INTERIORLIGHT, vehicle.Handle, profile.InteriorLightOn); } catch { }
+                    break;
+                case 5:
+                    profile.HeadlightsOn = !profile.HeadlightsOn;
+                    try { Function.Call(Hash.SET_VEHICLE_LIGHTS, vehicle.Handle, profile.HeadlightsOn ? 2 : 3); } catch { }
+                    break;
+            }
+            SaveProfiles();
+        }
+
+        private void DrawVehicleWheel(Ped player, Vehicle vehicle, VehicleProfile profile, bool personal)
+        {
+            bool running = IsEngineRunning(vehicle);
+            string[] labels =
+            {
+                running ? "COUPER MOTEUR" : "DEMARRER",
+                _seatbeltOn ? "DETACHER CEINTURE" : "METTRE CEINTURE",
+                profile.DriverWindowDown ? "MONTER VITRE" : "BAISSER VITRE",
+                profile.UserLocked ? "DEVERROUILLER" : "VERROUILLER",
+                profile.InteriorLightOn ? "PLAFONNIER OFF" : "PLAFONNIER ON",
+                profile.HeadlightsOn ? "PHARES OFF" : "PHARES ON"
+            };
+            float[] xs = { 0.50f, 0.615f, 0.615f, 0.50f, 0.385f, 0.385f };
+            float[] ys = { 0.655f, 0.715f, 0.825f, 0.885f, 0.825f, 0.715f };
+            for (int i = 0; i < labels.Length; i++)
+            {
+                bool selected = i == _vehicleWheelSelection;
+                DrawTextCentered(xs[i], ys[i], selected ? "[ " + labels[i] + " ]" : labels[i], selected ? 0.30f : 0.25f,
+                    selected ? 255 : 175, selected ? 255 : 175, selected ? 255 : 175, selected ? 245 : 210);
+            }
+            DrawTextCentered(0.50f, 0.775f, "+", 0.28f, 235, 235, 235, 220);
+        }
+
+        private void UpdateSeatbelt(Ped player)
+        {
+            if (!_seatbeltOn || _seatbeltPed != player.Handle) return;
+            try { Function.Call(Hash.SET_PED_CONFIG_FLAG, player.Handle, 32, false); } catch { }
+            DisableControl(InputVehicleExit);
+            try
+            {
+                if (Function.Call<bool>(Hash.IS_DISABLED_CONTROL_JUST_PRESSED, 0, InputVehicleExit))
+                    ShowHelp("Detachez la ceinture avec la roue du vehicule.");
+            }
+            catch { }
+        }
+
+        private void FastenSeatbelt(Ped player)
+        {
+            _seatbeltOn = true;
+            _seatbeltPed = player.Handle;
+            try { Function.Call(Hash.SET_PED_CONFIG_FLAG, player.Handle, 32, false); } catch { }
+            Log("Seatbelt fastened ped=" + player.Handle + ".");
+        }
+
+        private void ReleaseSeatbelt(Ped player)
+        {
+            if (!_seatbeltOn) return;
+            Ped target = player ?? Game.LocalPlayerPed;
+            try { if (target != null && target.Exists()) Function.Call(Hash.SET_PED_CONFIG_FLAG, target.Handle, 32, true); } catch { }
+            Log("Seatbelt released ped=" + _seatbeltPed + ".");
+            _seatbeltOn = false;
+            _seatbeltPed = 0;
+        }
+
+        private static bool IsDriver(Ped player, Vehicle vehicle)
+        {
+            try { return Function.Call<int>(Hash.GET_PED_IN_VEHICLE_SEAT, vehicle.Handle, -1, false) == player.Handle; }
+            catch { return false; }
+        }
+
+        private void CloseVehicleWheel()
+        {
+            _vehicleWheelOpen = false;
+            _vehicleWheelVehicle = 0;
+            _vehicleWheelSelection = 0;
+            _vehicleWheelOpenedAt = 0;
         }
 
         private VehicleProfile GetProfile(Vehicle vehicle)
@@ -370,7 +698,8 @@ namespace VOX.VehicleRuntimeVI
 
         private static void ApplyDoorState(Vehicle vehicle, VehicleProfile profile)
         {
-            try { Function.Call(Hash.SET_VEHICLE_DOORS_LOCKED, vehicle.Handle, profile.Locked && !profile.AccessBypassed && !profile.HasKey ? 2 : 1); }
+            bool shouldLock = profile.UserLocked || (profile.Locked && !profile.AccessBypassed && !profile.HasKey);
+            try { Function.Call(Hash.SET_VEHICLE_DOORS_LOCKED, vehicle.Handle, shouldLock ? 2 : 1); }
             catch { }
         }
 
@@ -490,6 +819,49 @@ namespace VOX.VehicleRuntimeVI
             catch { return false; }
         }
 
+        private static bool ReadControlJustPressed(int control)
+        {
+            try
+            {
+                return Function.Call<bool>(Hash.IS_CONTROL_JUST_PRESSED, 0, control) ||
+                       Function.Call<bool>(Hash.IS_DISABLED_CONTROL_JUST_PRESSED, 0, control);
+            }
+            catch { return false; }
+        }
+
+        private static float ReadControlNormal(int control)
+        {
+            try
+            {
+                float disabled = Function.Call<float>(Hash.GET_DISABLED_CONTROL_NORMAL, 0, control);
+                if (Math.Abs(disabled) > 0.001f) return disabled;
+                return Function.Call<float>(Hash.GET_CONTROL_NORMAL, 0, control);
+            }
+            catch { return 0f; }
+        }
+
+        private static void DisableWheelControls()
+        {
+            int[] controls = { InputContext, InputEnter, 24, 25, 30, 31, 37, 44, 140, 141, 142 };
+            foreach (int control in controls) DisableControl(control);
+        }
+
+        private static void DrawTextCentered(float x, float y, string text, float scale, int red, int green, int blue, int alpha)
+        {
+            try
+            {
+                Function.Call(Hash.SET_TEXT_FONT, 0);
+                Function.Call(Hash.SET_TEXT_SCALE, 0f, scale);
+                Function.Call(Hash.SET_TEXT_COLOUR, red, green, blue, alpha);
+                Function.Call(Hash.SET_TEXT_CENTRE, true);
+                Function.Call(Hash.SET_TEXT_OUTLINE);
+                Function.Call(Hash.BEGIN_TEXT_COMMAND_DISPLAY_TEXT, "STRING");
+                Function.Call(Hash.ADD_TEXT_COMPONENT_SUBSTRING_PLAYER_NAME, text);
+                Function.Call(Hash.END_TEXT_COMMAND_DISPLAY_TEXT, x, y, 0);
+            }
+            catch { }
+        }
+
         private void ShowHelp(string text)
         {
             if (Game.GameTime - _lastHelp < 80) return;
@@ -513,7 +885,9 @@ namespace VOX.VehicleRuntimeVI
                 VehicleProfile p = GetProfile(v);
                 File.WriteAllText(ActiveStatePath,
                     "model=" + p.ModelHash + "\nplate=" + p.Plate + "\nstolen=" + p.Stolen + "\nhotwired=" + p.Hotwired +
-                    "\ntrackerPresent=" + p.TrackerPresent + "\ntrackerDisabled=" + p.TrackerDisabled + "\n");
+                    "\ntrackerPresent=" + p.TrackerPresent + "\ntrackerDisabled=" + p.TrackerDisabled +
+                    "\nengineCommandedOff=" + p.EngineCommandedOff + "\nuserLocked=" + p.UserLocked +
+                    "\nseatbeltOn=" + _seatbeltOn + "\n");
             }
             catch { }
         }
@@ -531,7 +905,10 @@ namespace VOX.VehicleRuntimeVI
                     {
                         Key = p[0], ModelHash = ParseInt(p[1]), Plate = p[2], HasKey = ParseBool(p[3]), Locked = ParseBool(p[4]),
                         LockTier = ParseInt(p[5]), AccessBypassed = ParseBool(p[6]), Hotwired = ParseBool(p[7]), Stolen = ParseBool(p[8]),
-                        TrackerPresent = ParseBool(p[9]), TrackerDisabled = p.Length > 10 && ParseBool(p[10])
+                        TrackerPresent = ParseBool(p[9]), TrackerDisabled = p.Length > 10 && ParseBool(p[10]),
+                        EngineCommandedOff = p.Length > 11 && ParseBool(p[11]), UserLocked = p.Length > 12 && ParseBool(p[12]),
+                        InteriorLightOn = p.Length > 13 && ParseBool(p[13]), HeadlightsOn = p.Length > 14 && ParseBool(p[14]),
+                        DriverWindowDown = p.Length > 15 && ParseBool(p[15])
                     };
                     if (!string.IsNullOrWhiteSpace(v.Key)) _profiles[v.Key] = v;
                 }
@@ -545,7 +922,8 @@ namespace VOX.VehicleRuntimeVI
             {
                 var lines = new List<string>();
                 foreach (VehicleProfile p in _profiles.Values)
-                    lines.Add(string.Join("|", p.Key, p.ModelHash, p.Plate, p.HasKey, p.Locked, p.LockTier, p.AccessBypassed, p.Hotwired, p.Stolen, p.TrackerPresent, p.TrackerDisabled));
+                    lines.Add(string.Join("|", p.Key, p.ModelHash, p.Plate, p.HasKey, p.Locked, p.LockTier, p.AccessBypassed, p.Hotwired, p.Stolen,
+                        p.TrackerPresent, p.TrackerDisabled, p.EngineCommandedOff, p.UserLocked, p.InteriorLightOn, p.HeadlightsOn, p.DriverWindowDown));
                 File.WriteAllLines(ProfilesPath, lines.ToArray());
             }
             catch (Exception ex) { Log("Profile save failed safely: " + ex.Message); }
@@ -580,8 +958,20 @@ namespace VOX.VehicleRuntimeVI
             _actionVehicle = 0;
             _actionStarted = 0;
             _actionKind = string.Empty;
+            _actionWindow = 0;
+            _actionSeat = -1;
         }
-        private void ResetActions() { ResetAction(); _hotwireVehicle = 0; _hotwireStarted = 0; _enterControlDown = false; }
+        private void ResetActions()
+        {
+            ResetAction();
+            CloseTheftWheel();
+            CloseVehicleWheel();
+            ReleaseSeatbelt(Game.LocalPlayerPed);
+            _hotwireVehicle = 0;
+            _hotwireStarted = 0;
+            _enterControlDown = false;
+            _contextControlDown = false;
+        }
         private static int ParseInt(string s) { int v; return int.TryParse(s, out v) ? v : 0; }
         private static bool ParseBool(string s) { bool v; return bool.TryParse(s, out v) && v; }
         private void OnAborted(object sender, EventArgs e) { SaveProfiles(); ResetActions(); }

@@ -1,4 +1,4 @@
-VEHICLE RUNTIME VI — 0.2.0
+VEHICLE RUNTIME VI — 0.3.0
 
 Target: GTA V Enhanced Story Mode / free roam.
 Requires Script Hook V and Script Hook V .NET Enhanced v1.1.0.6 or compatible newer build.
@@ -6,6 +6,18 @@ Requires Script Hook V and Script Hook V .NET Enhanced v1.1.0.6 or compatible ne
 Install:
 - copy scripts/VehicleRuntimeVI.dll to GTA V\scripts\
 - keep BattlEye disabled for script-modded Story Mode as usual
+
+0.3.0 PHYSICAL VEHICLE INTERACTIONS
+- attempting to enter a locked vehicle opens a two-direction theft wheel
+- left chooses a quiet lock-working animation; right chooses GTA's physical
+  smash-window task
+- neither path contains a minigame, progress puzzle, text list or third-party asset
+- hold Context while seated to open a six-direction vehicle wheel
+- the wheel controls engine, seatbelt, driver window, locks, interior light and
+  headlights; releasing Context executes the selected physical state change
+- a fastened seatbelt blocks accidental exit/ejection behavior until deliberately
+  released through the vehicle wheel
+- vehicle control states persist per physical model/plate identity
 
 0.2.0 CORRECTIONS
 - merely standing beside a locked car never displays or loops a lockpick action
