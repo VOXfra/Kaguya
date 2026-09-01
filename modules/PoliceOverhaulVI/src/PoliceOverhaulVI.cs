@@ -57,7 +57,7 @@ namespace VOX.PoliceOverhaulVI
             Tick += OnTick;
             Aborted += OnAborted;
             Interval = Math.Max(0, _cfg.ScriptTickIntervalMs);
-            Log("Police Overhaul VI 0.3.1 search/re-identification + tracker + persistent-mail stabilization loaded.");
+            Log("Police Overhaul VI 0.6.0 loaded: story-first ownership + incident-bound sixth-star escalation.");
         }
 
         private void OnTick(object sender, EventArgs e)
@@ -176,32 +176,24 @@ namespace VOX.PoliceOverhaulVI
             try { missionFlag = Function.Call<bool>(Hash.GET_MISSION_FLAG); } catch { }
             try { controlOn = Function.Call<bool>(Hash.IS_PLAYER_CONTROL_ON, Game.Player.Handle); } catch { }
 
-            // These are unambiguous Rockstar ownership signals.
-            if (cutscene || switching) return true;
+            bool faded = false;
+            try { faded = Function.Call<bool>(Hash.IS_SCREEN_FADED_OUT) || Function.Call<bool>(Hash.IS_SCREEN_FADING_OUT) || Function.Call<bool>(Hash.IS_SCREEN_FADING_IN); } catch { }
 
-            if (!missionFlag)
+            // Story Mode is authoritative. A VOX pursuit never overrides a
+            // mission, cutscene, character switch, fade or loss of player control.
+            if (cutscene || switching || missionFlag || !controlOn || faded)
             {
-                _missionFlagSince = 0;
-                if (_missionPassthrough && now - _missionFlagLastSeen < Math.Max(0, _cfg.MissionFlagExitHoldMs)) return true;
-                return false;
+                if (missionFlag)
+                {
+                    _missionFlagLastSeen = now;
+                    if (_missionFlagSince == 0) _missionFlagSince = now;
+                }
+                return true;
             }
 
-            _missionFlagLastSeen = now;
-            if (_missionFlagSince == 0) _missionFlagSince = now;
-
-            bool ourFreeRoamPursuitActive = _pending || nativeWanted > 0 || _lastWanted > 0 || _internalWanted > 0;
-            if (ourFreeRoamPursuitActive && controlOn)
-            {
-                _freeRoamOwnershipUntil = Math.Max(_freeRoamOwnershipUntil, now + 15000);
-                return false;
-            }
-
-            // Several free-roam Rockstar scripts briefly raise GET_MISSION_FLAG.
-            // The test log showed these false positives repeatedly tearing down a
-            // six-star pursuit. Preserve our ownership for a sliding grace window.
-            if (controlOn && now < _freeRoamOwnershipUntil) return false;
-
-            return !controlOn || now - _missionFlagSince >= Math.Max(250, _cfg.MissionFlagConfirmMs);
+            _missionFlagSince = 0;
+            if (_missionPassthrough && now - _missionFlagLastSeen < Math.Max(0, _cfg.MissionFlagExitHoldMs)) return true;
+            return false;
         }
 
         private void SelectCurrentCase(Ped player)
