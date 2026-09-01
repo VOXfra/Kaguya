@@ -17,6 +17,8 @@ namespace VOX.VehicleRuntimeVI
         private const string LockpickEnterDict = "amb@prop_human_parking_meter@male@enter";
         private const string LockpickBaseDict = "amb@prop_human_parking_meter@male@base";
         private const string LockpickExitDict = "amb@prop_human_parking_meter@male@exit";
+        private const string BreakInDict = "veh@break_in@0h@p_m_one@";
+        private const string BreakInAnim = "std_force_entry_ps";
         private const int InputContext = 51;
         private const int InputEnter = 23;
         private const int InputVehicleExit = 75;
@@ -71,6 +73,7 @@ namespace VOX.VehicleRuntimeVI
         private int _seatbeltPed;
         private int _actionWindow;
         private int _actionSeat = -1;
+        private bool _smashAnimationStarted;
 
         public VehicleRuntimeVIScript()
         {
@@ -159,6 +162,7 @@ namespace VOX.VehicleRuntimeVI
                 else
                 {
                     ShowHelp("Vitre en cours de bris...");
+                    MaintainSmashAnimation(player, activeVehicle);
                     HandleTimedAction(activeVehicle, activeProfile, "smash", 1450, true);
                 }
                 return;
@@ -258,8 +262,27 @@ namespace VOX.VehicleRuntimeVI
             _actionVehicle = vehicle.Handle;
             _actionKind = "smash";
             _actionStarted = Game.GameTime;
-            try { Function.Call(Hash.TASK_SMASH_VEHICLE_WINDOW, player.Handle, vehicle.Handle, _actionSeat); } catch { }
+            _smashAnimationStarted = false;
+            try
+            {
+                Function.Call(Hash.REQUEST_ANIM_DICT, BreakInDict);
+                Function.Call(Hash.TASK_TURN_PED_TO_FACE_ENTITY, player.Handle, vehicle.Handle, 300);
+            }
+            catch { }
             Log("Window smash selected for vehicle=" + vehicle.Handle + " window=" + _actionWindow + ".");
+        }
+
+        private void MaintainSmashAnimation(Ped player, Vehicle vehicle)
+        {
+            if (_smashAnimationStarted || player == null || !player.Exists() || vehicle == null || !vehicle.Exists()) return;
+            try
+            {
+                Function.Call(Hash.REQUEST_ANIM_DICT, BreakInDict);
+                if (Game.GameTime - _actionStarted < 250 || !Function.Call<bool>(Hash.HAS_ANIM_DICT_LOADED, BreakInDict)) return;
+                Function.Call(Hash.TASK_PLAY_ANIM, player.Handle, BreakInDict, BreakInAnim, 6.0f, -6.0f, 1300, 0, 0f, false, false, false);
+                _smashAnimationStarted = true;
+            }
+            catch { }
         }
 
         private void DrawTheftWheel()
@@ -955,11 +978,20 @@ namespace VOX.VehicleRuntimeVI
         private void ResetAction()
         {
             if (string.Equals(_actionKind, "lockpick", StringComparison.Ordinal)) StopLockpickAnimation();
+            if (string.Equals(_actionKind, "smash", StringComparison.Ordinal))
+            {
+                Ped player = Game.LocalPlayerPed;
+                if (player != null && player.Exists())
+                {
+                    try { Function.Call(Hash.STOP_ANIM_TASK, player.Handle, BreakInDict, BreakInAnim, 1.0f); } catch { }
+                }
+            }
             _actionVehicle = 0;
             _actionStarted = 0;
             _actionKind = string.Empty;
             _actionWindow = 0;
             _actionSeat = -1;
+            _smashAnimationStarted = false;
         }
         private void ResetActions()
         {
