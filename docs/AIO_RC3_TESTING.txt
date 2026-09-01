@@ -1,0 +1,219 @@
+VOX GTA V ENHANCED -> VI-STYLE SYSTEMIC OVERHAUL — AIO RC3 TEST MATRIX
+
+GENERAL RULE
+When something fails, note exactly what you were doing, keyboard/controller, character, location/mission, and send the relevant log. Do not judge a module only from GitHub build success.
+
+0. INSTALL / STARTUP
+- Remove scripts\VehicleCameraVI.dll and scripts\VehicleCameraVI.ini if they still exist.
+- Replace old VOX DLL/INI files with RC3 versions.
+- Start Story Mode with Michael, Franklin and Trevor at least once.
+EXPECTED:
+- no ScriptHookVDotNet load exception;
+- no random trainer/menu;
+- no permanent blocked vanilla input;
+- no VehicleCameraVI loaded.
+
+1. STORY OWNERSHIP — HIGHEST PRIORITY
+Run at least:
+- one on-foot mission;
+- one mission with driving;
+- one mission gunfight;
+- one cutscene;
+- one protagonist switch.
+EXPECTED:
+- PhysicalCharacterVI does not force a stumble/IK task over scripted movement;
+- InteriorRuntimeVI does not take a mission door;
+- AcousticRuntimeVI does not redirect mission actors;
+- AnimationRuntimeVI clears VOX claims;
+- normal VOX free-roam behavior resumes after the safety grace.
+
+2. PHYSICALCHARACTERVI 0.1.0
+A. Flat-ground turns
+- Sprint in a straight line, then make repeated hard 90-degree and 180-degree changes.
+EXPECTED: slight continuation/body-weight feeling, never skating or throwing the character sideways.
+
+B. Slopes
+- Run uphill/downhill on a moderate and a steep natural slope.
+EXPECTED: steep terrain feels slightly less frictionless; ordinary streets should feel essentially vanilla-speed.
+
+C. Obstacles
+- Sprint into a wall/fence/large prop at several speeds.
+EXPECTED: small impacts do not constantly ragdoll; genuinely hard deceleration can create a short stumble.
+
+D. Special states
+- aim, melee, jump, climb, swim, enter a vehicle.
+EXPECTED: no force fighting the native state.
+
+E. Melee feet
+- fight on uneven ground/slope.
+EXPECTED: no obvious loss of leg IK; feet should remain at least as stable as vanilla.
+
+LOG: scripts\PhysicalCharacterVI\PhysicalCharacterVI.log
+
+3. INTERIORRUNTIMEVI 0.1.0
+Find several vanilla building doors, including at least one known locked door and one unlocked/free door.
+
+A. Locked DoorSystem door
+- stand about one metre from it;
+- look toward it;
+- press E / D-pad Right once.
+EXPECTED:
+- the character approaches/faces the door and performs one short handle-test gesture;
+- no text-only "locked" replacement is required;
+- the door stays locked;
+- holding the button does not loop indefinitely.
+
+B. Unlocked door
+- use/walk through it normally.
+EXPECTED: InteriorRuntimeVI does not intercept or lock it.
+
+C. Wrong objects
+- press Context around furniture, walls and non-door props.
+EXPECTED: no fake door interaction.
+
+D. Mission door
+- test during a mission using a scripted door.
+EXPECTED: Rockstar owns it; no VOX handle test.
+
+E. NPC nearby
+- stand near a locked door while a civilian is also nearby.
+EXPECTED: report any case where the NPC interaction and door interaction both fire from one Context press.
+
+LOG: scripts\InteriorRuntimeVI\InteriorRuntimeVI.log
+
+4. ACOUSTICRUNTIMEVI 0.1.0
+A. Exterior unsuppressed shot
+- fire one pistol/rifle shot outdoors near civilians.
+EXPECTED: nearby civilians can orient/flee based on the source direction; reactions should fall off with distance.
+
+B. Wall occlusion
+- put a solid wall/building between you and civilians and fire again.
+EXPECTED: weaker/fewer reactions than equally close unobstructed listeners.
+
+C. Interior same room
+- fire indoors with civilians in the same room.
+EXPECTED: strong local response.
+
+D. Adjacent room / doorway
+- if possible, repeat with civilians in a different room of the same interior and compare closed/open path situations.
+EXPECTED: weaker than same-room listeners. RC3 models room membership/obstruction but does not yet replace actual reverb audio.
+
+E. Suppressor
+- use a gun with a suppressor actually installed, then remove it and repeat.
+EXPECTED: suppressed shot has a substantially smaller reaction radius/energy.
+
+F. Mission
+- fire scripted mission shots near mission actors.
+EXPECTED: VOX acoustic AI does not task mission actors.
+
+LOG: scripts\AcousticRuntimeVI\AcousticRuntimeVI.log
+NOTE: RC3 acoustic logging is intentionally light; if NPC reaction is clearly wrong, describe geometry (same room, wall, outdoors, distance).
+
+5. MELEERUNTIMEVI 0.2.0
+A. Fight duration
+- start a normal fist fight with a civilian.
+EXPECTED: ordinary fight should not end in the vanilla-feeling 2-3 trivial punches.
+
+B. Block stamina
+- hold native Block for an extended exchange.
+EXPECTED: early block is stronger; repeatedly turtling should become less protective as stamina drains.
+
+C. Recovery
+- disengage/stop attacking for several seconds, then block again.
+EXPECTED: protection recovers.
+
+D. Counter
+- actively block a hit, then immediately press a native melee attack.
+EXPECTED: within a short timing window, a close valid opponent can receive a small physical counter stagger. It should not trigger from metres away or on mission actors.
+
+E. Multiple opponents
+- fight 2-3 civilians.
+EXPECTED: no repeated ragdoll spam every frame and no permanent invulnerability.
+
+LOG: scripts\MeleeRuntimeVI\MeleeRuntimeVI.log
+
+6. ANIMATIONRUNTIMEVI 0.1.0
+This RC is primarily infrastructure.
+- confirm the DLL loads without exception;
+- run missions/cutscenes/switches and confirm no lingering VOX animation survives Rockstar ownership;
+- if a future/other VOX module uses the bridge, report task-stomping or alignment loops.
+LOG: scripts\AnimationRuntimeVI\AnimationRuntimeVI.log
+
+7. CONTROL OWNERSHIP / CONTROLLER REGRESSION
+Test the pack once with keyboard/mouse and once with controller.
+Important collisions:
+- E / D-pad Right near civilian focus;
+- E / D-pad Right near locked door;
+- weapon wheel TAB / LB and RC2 inventory pages;
+- F / Y vehicle entry and locked-car theft;
+- melee native attack/block controls.
+EXPECTED:
+- one contextual owner at a time;
+- no need to rebind GTA;
+- release the context and vanilla input returns immediately.
+
+8. RC2 REGRESSION — INVENTORY
+- store a gun with suppressor/optic/light/tint in a trunk;
+- retrieve it;
+EXPECTED: components/tint/ammo preserved and Context does not loop.
+- test carried-weapon cap / satchel pages;
+- test vehicle outfit save/restore;
+- test Molotov craft with supplies.
+LOG: scripts\InventoryRuntimeVI\InventoryRuntimeVI.log
+
+9. RC2 REGRESSION — VEHICLES
+- sample 15-20 parked vehicles;
+EXPECTED: most empty street cars are locked, not nearly all unlocked.
+- try quiet lock work and Attack/RT forced window route;
+EXPECTED: driver-door alignment remains reasonable across different vehicle sizes.
+LOG: scripts\VehicleRuntimeVI\VehicleRuntimeVI.log
+
+10. RC2 REGRESSION — WORLD / OCCUPANTS
+- observe Online civilian traffic for driverless moving vehicles;
+- steal a bus/taxi/car with passengers.
+EXPECTED: moving replacement traffic should have drivers; passengers should not remain inert through a carjacking.
+LOGS:
+- scripts\WorldLifeVI\WorldLifeVI.log
+- scripts\VehicleOccupantVI\VehicleOccupantVI.log
+
+11. RC2 REGRESSION — POLICE
+- trigger a witnessed crime and do not drive toward the police yourself;
+EXPECTED: response should reach the incident/player instead of remaining parked across the city.
+- lose LOS and hide;
+EXPECTED: search should persist meaningfully rather than forgetting you after one corner.
+- sustain a real five-star escalation and meet sixth-tier conditions;
+EXPECTED: sixth star row should be visible when internal tier 6 activates.
+LOG: scripts\PoliceOverhaulVI\PoliceOverhaulVI.log
+
+12. RC2 REGRESSION — FIRE
+- ignite vegetation, wood-like material and a nonflammable surface;
+- compare dry/windy/rainy weather.
+EXPECTED: fuel/material-based persistence and propagation; no universal arbitrary timeout.
+LOG: scripts\FireRuntimeVI\FireRuntimeVI.log
+
+13. RC2 REGRESSION — WILDLIFE
+- rural day/night;
+- gunshot near deer;
+- vehicle fast near animals;
+- fire near animals;
+- observe coyotes/pumas around potential prey.
+EXPECTED: basic ecosystem reactions remain active and Story-safe.
+LOG: scripts\WildlifeRuntimeVI\WildlifeRuntimeVI.log
+
+14. TOOLS — OPTIONAL, OUTSIDE THE GAME
+Sound Pack manifest:
+- open PowerShell in the Sound Pack directory or pass its path to TOOLS\Scan-SoundPack.ps1.
+- send the generated manifest instead of the 1.5 GB archive when we need to compare bank families.
+
+RDR2 manifest:
+- run TOOLS\Scan-RDR2-Install.ps1, optionally with -Root pointing at your RDR2 installation.
+EXPECTED: CSV manifest + summary only; no game file modification/copy.
+
+15. PERFORMANCE
+Do at least ten minutes each:
+- dense Los Santos traffic;
+- rural wildlife;
+- active fire;
+- police pursuit;
+- indoor gunfight.
+Record obvious FPS drops/stutters and which systems are active. PhysicalCharacterVI, AcousticRuntimeVI and InteriorRuntimeVI are intentionally bounded/scanned at intervals rather than doing unrestricted world sweeps every frame.
