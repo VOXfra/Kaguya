@@ -7,9 +7,9 @@
     <LangVersion>9.0</LangVersion>
     <Nullable>disable</Nullable>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
-    <AssemblyVersion>0.1.0.0</AssemblyVersion>
-    <FileVersion>0.1.0.0</FileVersion>
-    <Version>0.1.0</Version>
+    <AssemblyVersion>0.1.1.0</AssemblyVersion>
+    <FileVersion>0.1.1.0</FileVersion>
+    <Version>0.1.1</Version>
     <Optimize>true</Optimize>
     <Deterministic>true</Deterministic>
     <ScriptHookVDotNet3Path Condition="'$(ScriptHookVDotNet3Path)' == ''">refs/ScriptHookVDotNet3.dll</ScriptHookVDotNet3Path>
@@ -19,5 +19,6 @@
     <Reference Include="ScriptHookVDotNet3"><HintPath>$(ScriptHookVDotNet3Path)</HintPath><Private>False</Private></Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
+    <Reference Include="System.Windows.Forms" />
   </ItemGroup>
 </Project>
