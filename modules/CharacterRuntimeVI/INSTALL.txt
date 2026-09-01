@@ -1,7 +1,10 @@
 CHARACTER RUNTIME VI — 0.1.0
 
 Requires Script Hook V + Script Hook V .NET Enhanced.
-Copy scripts/CharacterRuntimeVI.dll into GTA V\scripts\.
+
+INSTALL
+- copy VOXBodyMorphVI.asi into the GTA V root directory (beside ScriptHookV.dll / the ASI loader)
+- copy scripts/CharacterRuntimeVI.dll into GTA V\scripts\
 
 EFFECTIVE 0.1 SYSTEMS
 - separate persistent fitness profile per protagonist/model
@@ -9,10 +12,12 @@ EFFECTIVE 0.1 SYSTEMS
 - melee and swimming train strength/lean mass
 - endurance gives a bounded sprint-speed multiplier
 - strength gives a bounded melee-damage multiplier
-- repeated training gradually increases visible body width/physique in free roam
+- repeated training targets a progressively wider/more muscular visible physique
 - progression persists in scripts\CharacterRuntimeVI\FitnessStats.txt
 
 VISIBLE BODY CHANGE
-The runtime uses a conservative entity-matrix width scale (maximum +4.5%) driven by strength + lean mass. Height stays vanilla. The body modification is disabled in vehicles, swimming, jumping/falling/ragdoll states, cutscenes, character switches and Rockstar missions to avoid fighting scripted animation/mission ownership.
+FiveM examples use SetEntityMatrix, but that call is a Cfx extra native and does not exist in normal GTA V Story Mode. Character Runtime therefore uses its own small native bridge instead of pretending the Cfx native works in ScriptHookVDotNet.
 
-This is an actual runtime body-proportion change, not only a numerical stat. It is deliberately conservative; later physique tiers can use dedicated model/torso assets if we want larger/high-fidelity changes without matrix-scaling limitations.
+CharacterRuntimeVI.dll writes a narrowly bounded body target to scripts\CharacterRuntimeVI\BodyMorphState.txt. VOXBodyMorphVI.asi asks Script Hook V for the current ped's base address, scans only a small part of that entity for a writable 4x4 transform matching the ped's actual position and an orthonormal basis, and only then changes the two horizontal basis lengths. If that validation fails, it performs no write and records the failure in BodyMorphBridge.log.
+
+Width is capped at +4.5%; height is never changed. Morphing is disabled in vehicles, swimming, jumping/falling/ragdoll states, cutscenes, switches and Rockstar missions. This remains an experimental Enhanced runtime technique: compile success cannot prove the entity layout at runtime, so the bridge is deliberately fail-closed and should be validated from its log during the first test.
