@@ -8,9 +8,11 @@ namespace VOX.PoliceOverhaulVI
 {
     public sealed class TrackedVehicleSearchBridge : Script
     {
+        private const string ConfigPath = "scripts\\PoliceOverhaulVI.ini";
         private const string DataDirectory = "scripts\\PoliceOverhaulVI";
         private const string LogPath = DataDirectory + "\\PoliceOverhaulVI.log";
 
+        private readonly Config _cfg;
         private int _trackedVehicleHandle;
         private int _boundModel;
         private int _lastPingLog;
@@ -18,6 +20,7 @@ namespace VOX.PoliceOverhaulVI
         public TrackedVehicleSearchBridge()
         {
             Directory.CreateDirectory(DataDirectory);
+            _cfg = Config.Load(ConfigPath);
             Interval = 200;
             Tick += OnTick;
             Aborted += OnAborted;
@@ -61,7 +64,7 @@ namespace VOX.PoliceOverhaulVI
                 PoliceSearchRuntimeState.LastTrackerPingAt = Game.GameTime;
                 memory.LastKnownPosition = p;
                 memory.LastSource = ObservationSource.Tracker;
-                memory.Touch(Config.Load("scripts\\PoliceOverhaulVI.ini"));
+                memory.Touch(_cfg);
 
                 if (Game.GameTime - _lastPingLog > 5000)
                 {
@@ -98,8 +101,6 @@ namespace VOX.PoliceOverhaulVI
                 _trackedVehicleHandle = 0;
             }
 
-            // Reacquire only the flagged plate/signature around the last tracker
-            // position. This never scans for the player or their replacement car.
             Vector3 centre = PoliceSearchRuntimeState.LastKnownPosition;
             if (centre == Vector3.Zero) return null;
             Vehicle[] nearby;
