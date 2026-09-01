@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>VehicleRuntimeVI</AssemblyName>
+    <RootNamespace>VOX.VehicleRuntimeVI</RootNamespace>
+    <TargetFramework>net48</TargetFramework>
+    <PlatformTarget>x64</PlatformTarget>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <AssemblyVersion>0.1.0.0</AssemblyVersion>
+    <FileVersion>0.1.0.0</FileVersion>
+    <Version>0.1.0</Version>
+    <Optimize>true</Optimize>
+    <Deterministic>true</Deterministic>
+    <ScriptHookVDotNet3Path Condition="'$(ScriptHookVDotNet3Path)' == ''">refs/ScriptHookVDotNet3.dll</ScriptHookVDotNet3Path>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <Reference Include="ScriptHookVDotNet3"><HintPath>$(ScriptHookVDotNet3Path)</HintPath><Private>False</Private></Reference>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+  </ItemGroup>
+</Project>
