@@ -1,0 +1,49 @@
+VOX GTA V ENHANCED -> VI-STYLE STORY-FIRST OVERHAUL — RC1
+
+PURPOSE
+This build improves GTA V Enhanced Story Mode/free roam without turning the game into a trainer or sandbox interaction framework.
+Rockstar-authored missions, cutscenes, protagonist switches and scripted scenes always take priority.
+
+ACTIVE MODULES
+- VOXCoreVI 0.1.0
+- CameraRuntimeVI 0.2.0
+- CharacterRuntimeVI 0.2.0
+- InteractionRuntimeVI 0.2.1
+- InventoryRuntimeVI 0.3.0
+- PedOverhaulVI 0.6.1
+- PoliceOverhaulVI 0.6.0
+- VehicleRuntimeVI 0.4.0
+- WorldLifeVI 0.3.0
+
+REMOVE BEFORE INSTALLING
+- scripts\VehicleCameraVI.dll
+- scripts\VehicleCameraVI.ini
+VehicleCameraVI is deprecated and CameraRuntimeVI is the only camera owner in this pack.
+
+INSTALL
+1. Back up the existing VOX module DLL/INI files if you want to compare logs.
+2. Copy the package contents into the GTA V Enhanced root directory.
+3. Allow the new scripts\*.dll and scripts\*.ini files to replace older VOX versions.
+4. Keep Script Hook V, ASI loader/RageOpenV and ScriptHookVDotNet Enhanced installed as required by your current Story Mode mod setup.
+5. Do not load this in GTA Online.
+
+DESIGN RULES
+- no mod-menu/trainer UI in normal play
+- no lockpick/hotwire/workout minigames
+- physical/contextual actions instead of lists wherever possible
+- no arbitrary teleport-marker interior system
+- no replacement of vanilla RPF archives in this runtime pack
+- mission entities fail closed and are not repurposed by free-roam systems
+- compile success only proves API/build compatibility; in-game Enhanced logs remain authoritative
+
+FIRST VALIDATION PASS
+- launch all three protagonists in free roam
+- enter a personal vehicle and an ambient vehicle
+- attempt one locked ambient vehicle
+- store/retrieve one weapon from a non-mission trunk
+- focus one civilian and verify a tap of E still works for nearby vanilla affordances when no civilian is selected
+- gain/lose a wanted level and test search reacquisition
+- start a representative Rockstar mission and verify custom interactions/population/camera/fitness yield immediately
+- complete a protagonist switch and verify no custom action fires during the transition or five seconds after handoff
+- drive through dense city traffic and verify population remains stable
+- check scripts\*/ logs after the test
