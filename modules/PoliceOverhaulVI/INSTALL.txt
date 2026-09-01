@@ -1,4 +1,4 @@
-POLICE OVERHAUL VI — V0.5.0 TEST BUILD
+POLICE OVERHAUL VI — V0.5.2 TEST BUILD
 
 TARGET
 - GTA V Enhanced Story Mode
@@ -7,78 +7,62 @@ REQUIRES
 - Script Hook V compatible with the installed GTA V Enhanced build
 - Script Hook V .NET Enhanced (SHVDNE) v1.1.0.6 or compatible newer build
 
-RECOMMENDED
-- VOX Core VI 0.1.0. Police remains functional without it, but shared world events are then not persisted in the common VOX memory.
-
 INSTALL
 1. Copy the contents of this package into the GTA V root directory.
 2. PoliceOverhaulVI.dll and PoliceOverhaulVI.ini must end up in GTA V\scripts\.
-3. The package now also installs scripts\PoliceOverhaulVI\UI\ with original VOX HUD assets.
-4. When updating, overwrite DLL and INI. Do NOT delete Cases.xml or CrimeScenes.xml unless you intentionally want a clean police-memory reset.
-5. Launch Story Mode with BattlEye disabled as required for script mods.
+3. Copy/overwrite scripts\PoliceOverhaulVI\UI\ too: V0.5.2 restores the original high-resolution VOX face/clothes/vehicle/red-star HUD assets.
+4. Do NOT delete Cases.xml or CrimeScenes.xml unless you intentionally want to erase persistent police memory.
+5. Launch modded Story Mode with BattlEye disabled as required by Script Hook V.
 
 NO VANILLA ARCHIVE IS REPLACED.
 
+V0.5.2 HUD / IDENTIFICATION FIXES
+- low-resolution placeholder-looking HUD icons are replaced/restored with the original high-resolution VOX assets
+- a historical vehicle in a case file no longer creates a phantom current vehicle badge while the suspect is on foot
+- a genuinely tracked flagged vehicle can remain an active vehicle signal after the suspect abandons it, because the tracker follows the vehicle rather than the player
+- uncovered face recognition now accumulates during sustained direct observation instead of getting stuck forever below the FaceKnown threshold at medium distance
+- active pursuit wanted stars are drawn as one stable 1-to-6 row using GTA's internal commonmenu star texture; GTA itself only stores five native wanted slots, so VOX owns the visual row when the internal sixth tier is active
+- after the active wanted phase, the search HUD can switch back to the original red VOX star/evidence treatment
+- death/respawn explicitly clears the active HUD phase without erasing persistent case memory
+
 V0.5 SEARCH OWNERSHIP / ACTIVE SIGNALMENT
-- A free-roam chase can now enter a Police Overhaul owned CustomSearch after sustained loss of direct police/CCTV contact.
+- A free-roam chase can enter a Police Overhaul owned CustomSearch after sustained loss of direct police/CCTV contact.
 - During CustomSearch, vanilla police are temporarily told to ignore the Player entity so a one-frame glimpse cannot magically reacquire the suspect.
-- The wanted/search state remains visible while police search the retained last-known area.
-- Reacquisition requires a continuous physical observation and a concrete current match. Losing LOS resets the confirmation timer.
-- A one-frame glimpse between buildings can create a candidate but cannot confirm identity.
+- Reacquisition requires continuous physical observation and a concrete current match; losing LOS resets the confirmation timer.
 - Historical evidence and CURRENT signalment are separate.
-- The current vehicle badge/search criterion becomes invalid if the suspect abandons or changes the flagged vehicle out of sight.
-- The current outfit badge/search criterion becomes invalid if the suspect changes clothes out of sight.
-- A changed mask descriptor becomes invalid rather than following the player magically.
-- A genuinely identified face remains historical identity evidence; removing a mask does not erase a face the police already truly identified.
-- Trackers locate the flagged VEHICLE. They update its last-known search position but no longer restore the driver's wanted level by themselves.
-- Search duration scales strongly by threat: about 75 s at level 1, 90 s at 2, 120 s at 3, 160 s at 4, 220 s at 5 and at least 300 s at internal level 6.
-- High-level search areas are district scale; level 6 is substantially larger than level 5.
-- A safety-net runtime opens/binds a police case when Enhanced/vanilla raises a free-roam wanted state that the previous incident interception path missed.
+- Current vehicle/outfit/mask descriptors can become invalid after an unseen change.
+- A genuinely identified face remains historical identity evidence.
+- Trackers locate the flagged VEHICLE and update its search position; they do not magically locate a replacement vehicle or driver body.
+- Search duration scales by threat and high-level searches expand to district scale.
 
-HUD
-- Original VOX face/clothes/vehicle/red-star PNG assets are now packaged with every clean install.
-- Face is historical only after genuine identification.
-- Clothes and vehicle represent current actionable signalment and disappear after an unseen change.
+HUD SEMANTICS
+- face = police genuinely learned the exposed face
+- clothes = currently actionable outfit signalment
+- vehicle = currently actionable vehicle signalment, or a still-active tracked flagged vehicle
+- no badge is created merely because old evidence exists in the persistent file
 
-WORLD CONTINUITY RETAINED
-- Serious incidents can create persistent crime-scene records in scripts\PoliceOverhaulVI\CrimeScenes.xml.
-- Returning later can reveal a bounded investigation zone plus evidence markers.
-- Crime scenes decay over configurable real-time hours according to severity.
-- With VOX Core installed, crime scenes are also published to shared world memory.
-- Merchant BOLO recognition requires a serious prior case, genuinely known face, exposed face, line of sight and delayed confirmation/reporting.
+WORLD / INVESTIGATION
+- persistent case, warrant, traffic and crime-scene data remain retained
+- abstract long-lived crime-scene zone markers are disabled in the current config while physical scene lifecycle work continues
+- serious evidence can persist internally without leaving a flashing/yellow zone around a normal-looking home for hours
 
 OTHER SYSTEMS RETAINED
 - physical witnesses and delayed reporting
 - CCTV reporting/re-identification
 - ANPR-style plate matching and deterministic trackers
-- persistent cases, warrants and home stakeouts
 - proportional force / PIT separation and civilian-risk checks
 - sixth-star military escalation
 - traffic camera enforcement and vehicle-ownership-aware citations
 - GTA Online police-vehicle support when models exist
-- mission-safe passthrough: cutscenes/player switches always yield; sustained real mission ownership remains vanilla-first
-- iFruit-style fine notification + persistent TrafficMail.log archive
-
-KNOWN LIMITATION: VANILLA MAIL APP
-- Arbitrary persistent text cannot safely be inserted into Story Mode appEmail through SHVDNE alone.
-- FiveM/Cfx ADD_TEXT_ENTRY is not a GTA V native and is intentionally not used.
-- Until an Enhanced-specific GXT2 text-bank/hook is packaged, traffic fines use the iFruit notification plus TrafficMail.log history.
-
-KNOWN TEST-BUILD LIMITATIONS
-- Compile success does not prove SET_POLICE_IGNORE_PLAYER completely suppresses every Rockstar/custom chase task in every situation. Runtime testing is required.
-- Custom tactical units may need a dedicated last-known-position search task if Enhanced ignores the police-ignore flag for an already assigned explicit chase task.
-- Crime-scene forensic officers, tape/barriers, coroners, EMS, tow trucks and staged cleanup are future lifecycle layers.
+- mission-safe passthrough
 
 PRIORITY TESTS
-- create a free-roam wanted chase and verify PoliceOverhaulVI.log contains the 0.5 search-ownership startup
-- break LOS for several seconds: CustomSearch should appear instead of instant omniscient reacquisition
-- while unseen, swap to a different vehicle: vehicle badge must disappear and the new car must not identify you by itself
-- while unseen, change outfit: clothes badge must disappear
-- expose/hide the face and verify only a genuinely learned face remains actionable
-- briefly cross a cop's LOS then hide again: pursuit must NOT restart from a micro-glimpse
-- remain continuously visible long enough while matching known evidence: pursuit should resume after an identification delay
-- test a tracked car, then abandon it: tracker search should remain attached to the old car, not the player
-- test five-to-six-star escalation, search radius and search duration
-- test a real Rockstar mission: vanilla mission ownership must remain priority
+- stand openly unmasked in sustained police view and verify face evidence eventually becomes known
+- test wanted levels 1 through 6 and verify the active star row is stable, including the sixth position
+- lose the pursuit and verify the red search treatment appears without stale evidence after death
+- stay on foot after an unrelated historical vehicle existed in the case: no phantom car badge
+- abandon an actually tracked flagged vehicle: its tracker/search location must remain on that vehicle, not teleport to the player
+- change outfit/vehicle out of sight and verify current signalment invalidation
+- test a real Rockstar mission and verify vanilla mission ownership remains priority
 
-Runtime logs remain the source of truth. Please keep PoliceOverhaulVI.log after testing.
+Compile success is API compatibility only. Runtime logs are authoritative; keep PoliceOverhaulVI.log after testing.
