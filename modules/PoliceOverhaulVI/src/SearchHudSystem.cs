@@ -18,7 +18,7 @@ namespace VOX.PoliceOverhaulVI
         private int _searchLatchedUntil, _visualContactSince;
         private Vector3 _lastCenter;
         private float _lastInnerRadius, _lastOuterRadius;
-        private CustomSprite _face, _clothes, _vehicle, _star;
+        private CustomSprite _face, _clothes, _vehicle;
         private bool _spritesAttempted, _suppressCurrentPhase;
 
         public SearchHudSystem() { _current = this; }
@@ -27,6 +27,7 @@ namespace VOX.PoliceOverhaulVI
         {
             SearchHudSystem current = _current;
             PoliceSearchRuntimeState.ResetSearch(true);
+            PoliceWantedHudState.Clear();
             if (current == null) return;
             current._suppressCurrentPhase = true;
             current._lastNativeWanted = 0;
@@ -55,6 +56,7 @@ namespace VOX.PoliceOverhaulVI
                 _searchLatchedUntil = 0;
                 _visualContactSince = 0;
                 ClearSearchCircles();
+                if (nativeWanted <= 0 && !runtimeSearch) PoliceWantedHudState.Clear();
                 return;
             }
 
@@ -62,6 +64,9 @@ namespace VOX.PoliceOverhaulVI
                 ? Math.Max(1, Math.Min(6, PoliceSearchRuntimeState.ThreatLevel))
                 : Math.Max(1, Math.Min(6, effective.ThreatLevel));
             int lifetime = SearchLifetimeForThreat(threat, cfg);
+
+            if (nativeWanted > 0 || runtimeSearch)
+                PoliceWantedHudState.Set(threat, true);
 
             if (runtimeSearch)
             {
@@ -101,9 +106,11 @@ namespace VOX.PoliceOverhaulVI
             {
                 ClearSearchCircles();
                 if (cfg.ShowEvidenceIcons && nativeWanted > 0) DrawEvidence(effective, cfg, false);
+                if (nativeWanted <= 0) PoliceWantedHudState.Clear();
                 return;
             }
 
+            PoliceWantedHudState.Set(threat, true);
             int age = effective.LastObservedGameTime > 0 ? Math.Max(0, now - effective.LastObservedGameTime) : 0;
             DrawSearch(effective.LastKnownPosition, threat, age, cfg);
             if (cfg.ShowEvidenceIcons) DrawEvidence(effective, cfg, false);
@@ -117,6 +124,7 @@ namespace VOX.PoliceOverhaulVI
             _searchLatchedUntil = 0;
             _visualContactSince = 0;
             _suppressCurrentPhase = false;
+            PoliceWantedHudState.Clear();
         }
 
         private void DrawSearch(Vector3 center, int threat, int ageMs, Config cfg)
@@ -125,8 +133,6 @@ namespace VOX.PoliceOverhaulVI
             float inner = cfg.SearchInnerBaseRadius + Math.Max(0, threat - 1) * cfg.SearchRadiusPerStar + growth * 0.55f;
             float outer = inner + cfg.SearchOuterExtraRadius + growth;
 
-            // High wanted levels represent district-scale searches. Six stars is
-            // intentionally much larger and longer than vanilla five-star search.
             if (threat >= 5)
             {
                 inner = Math.Max(inner, threat >= 6 ? 760f : 520f);
@@ -196,31 +202,43 @@ namespace VOX.PoliceOverhaulVI
         {
             if (memory == null) return;
             EnsureSprites();
-            float x = 1134f, y = 61f, size = cfg.EvidenceIconSize;
-            int stars = Math.Max(1, Math.Min(6, runtimeSearch ? PoliceSearchRuntimeState.ThreatLevel : memory.ThreatLevel));
-            if (_star != null)
-            {
-                for (int i = 0; i < stars; i++)
-                {
-                    _star.Position = new PointF(x - i * 25f, y);
-                    _star.Size = new SizeF(22f, 22f);
-                    _star.ScaledDraw();
-                }
-            }
 
-            float iconX = x - (stars - 1) * 25f, iconY = y + 31f;
+            // Wanted stars are owned by PoliceOverhaulVIWantedHudScript. Evidence
+            // icons begin underneath that stable row and represent CURRENT active
+            // signalment, not every historical fact stored in the case file.
+            float iconX = 1012f;
+            float iconY = 82f;
+            float size = cfg.EvidenceIconSize;
 
-            // Face knowledge is historical identity evidence and remains valid once
-            // police genuinely know the face. Outfit/vehicle are current signalment:
-            // changing either out of sight immediately removes that red badge.
             if (memory.FaceKnown && _face != null) DrawIcon(_face, ref iconX, iconY, size);
 
             bool outfit = PoliceSearchRuntimeState.ActiveOutfit != null
                 ? PoliceSearchRuntimeState.ActiveOutfitValid
                 : memory.OutfitKnown;
-            bool vehicle = PoliceSearchRuntimeState.ActiveVehicle != null
-                ? PoliceSearchRuntimeState.ActiveVehicleValid
-                : memory.Vehicle != null;
+
+            bool vehicle = false;
+            if (PoliceSearchRuntimeState.ActiveVehicle != null)
+            {
+                vehicle = PoliceSearchRuntimeState.ActiveVehicleValid;
+            }
+            else
+            {
+                Ped player = Game.LocalPlayerPed;
+                bool playerInMatchingVehicle = false;
+                try
+                {
+                    if (player != null && player.Exists() && player.IsInVehicle() && player.CurrentVehicle != null && player.CurrentVehicle.Exists() && memory.Vehicle != null)
+                        playerInMatchingVehicle = memory.Vehicle.Matches(player.CurrentVehicle, false);
+                }
+                catch { }
+
+                // If the suspect has abandoned a genuinely tracked flagged car,
+                // the car may remain an active police signal even while the player
+                // is on foot. A merely historical case vehicle does NOT get a badge.
+                bool recentTrackerSignal = runtimeSearch && memory.Vehicle != null && memory.Vehicle.TrackerKnownByPolice &&
+                    PoliceSearchRuntimeState.LastTrackerPingAt > 0 && Game.GameTime - PoliceSearchRuntimeState.LastTrackerPingAt < 12000;
+                vehicle = playerInMatchingVehicle || recentTrackerSignal;
+            }
 
             if (outfit && _clothes != null) DrawIcon(_clothes, ref iconX, iconY, size);
             if (vehicle && _vehicle != null) DrawIcon(_vehicle, ref iconX, iconY, size);
@@ -240,10 +258,10 @@ namespace VOX.PoliceOverhaulVI
             _spritesAttempted = true;
             try
             {
+                HudAssetInstaller.EnsureHighResolutionAssets();
                 _face = TrySprite(Path.Combine(UiDirectory, "face.png"));
                 _clothes = TrySprite(Path.Combine(UiDirectory, "clothes.png"));
                 _vehicle = TrySprite(Path.Combine(UiDirectory, "vehicle.png"));
-                _star = TrySprite(Path.Combine(UiDirectory, "starRED.png"));
             }
             catch { }
         }
