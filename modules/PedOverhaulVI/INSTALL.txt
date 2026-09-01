@@ -1,4 +1,4 @@
-PED OVERHAUL VI — V0.4.1
+PED OVERHAUL VI — 0.6.1
 
 TARGET
 - GTA V Enhanced Story Mode
@@ -8,50 +8,22 @@ REQUIRES
 - ScriptHookVDotNet Enhanced
 
 INSTALL
-1. Copy the contents of this package into the GTA V root directory.
-2. PedOverhaulVI.dll and PedOverhaulVI.ini must end up in GTA V\scripts\.
-3. When updating from an older version, overwrite BOTH the DLL and INI.
+- PedOverhaulVI.dll and PedOverhaulVI.ini go in GTA V\scripts\.
+- Police Overhaul VI is optional; when loaded, it owns law-enforcement peds.
 
-MODULARITY
-- Police Overhaul VI is NOT required.
-- If Police Overhaul VI is loaded, it owns law-enforcement peds while Ped Overhaul VI handles civilians/gangs/ambient NPCs.
-- Vehicle occupants remain under Rockstar driving AI until the dedicated vehicle/world-life layer owns those behaviours.
+COGNITION / SOCIAL MEMORY
+- bounded civilian/gang cognition based on actual sensory triggers, not magic player knowledge
+- attention, suspicion, certainty, fear and morale
+- direct observation is separated from social warning/crowd inference
+- masks alone can attract attention but do not manufacture panic
+- bodies, weapons, gunfire, fire, fights and vehicle hazards have different confidence/severity paths
+- distraction, social memory, causal threat memory and commitment windows reduce reaction thrashing
+- vehicle occupants remain under Rockstar driving AI until a dedicated driver/occupant layer is implemented safely
 
-V0.4.1 COGNITION HARDENING
-- keeps the 0.4 anti-thrashing and Distraction Runtime architecture
-- repeated shared-scene observations are pulsed instead of being treated as a fresh shock every processing pass
-- mask-only observation can cause a glance/attention trace but can no longer accumulate into Concerned or ThreatConfirmed by itself
-- pure line-of-sight to an otherwise ordinary player no longer forces every passer-by into a Glance task
-- a static body can make a ped strongly concerned but cannot by itself prove an active killer is still present or force Panic
-- a visible armed threat may reach ThreatConfirmed, but without gunfire/direct violence it is prevented from self-amplifying into automatic Panic
-- panicking peds keep an already committed survival action when a lower-priority body cue becomes dominant
-- survival commitment is lengthened so Cover/Flee/Cower/Freeze actions have time to visibly play instead of cycling every few seconds
-- emergency replanning is further rate-limited
+0.6.1 STORY-FIRST CORRECTION
+- removed the old exception that let Ped Overhaul keep running inside a Rockstar mission merely because the player was wanted or shooting
+- mission flag, cutscene, protagonist switch, loss of player control and fades now always suspend Ped Overhaul
+- the runtime waits five seconds after Rockstar returns control before resuming free-roam cognition
+- mission entities remain ineligible even outside the global story guard
 
-V0.4 COGNITION STABILITY + DISTRACTION RUNTIME
-- fixes panic task thrashing: Freeze/Cover/Cower/Flee no longer replace one another every tick
-- survival decisions use a configurable commitment window
-- cognition integrates the real elapsed time between player observations
-- mask detection uses the actual mask component; ordinary head props are not automatically treated as face coverings
-- stage downgrades use hysteresis so awareness does not flicker around thresholds
-- phone/mobile scenarios are detected as genuine visual/social distraction
-- filming, conversation, eating/drinking and smoking are modeled as different distraction strengths
-- distracted peds can take longer to notice a low-key weapon, mask, body or crowd cue
-- direct aiming, visible shooting and imminent danger can break through distraction
-- distraction also degrades confidence in shared-scene events
-
-V0.3.1 SAFETY BASE
-- vehicle occupants are never assigned pedestrian flee/cower/navmesh tasks
-- vehicle-hazard thresholds are tightened for normal traffic
-- social panic propagation is damped
-
-V0.3 SHARED-SCENE-AWARENESS BASE
-- attention / suspicion / certainty / fear cognitive model
-- shared scene scanner for NPCs, vehicles, bodies, fire and explosions
-- NPC-vs-NPC fights, external gunfire and visible hostile weapons
-- social information propagation with imperfect confidence
-- vehicle trajectory / closest-approach / time-to-impact awareness
-- discreet withdrawal, watch, film, phone, cover, flee, surrender and morale behaviours
-- personality-driven reactions and bounded processing
-
-No vanilla archive is replaced.
+There is no personality menu, awareness bar, debug overlay or sandbox event spawner in normal play. No vanilla archive is replaced.
