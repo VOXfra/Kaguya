@@ -16,10 +16,14 @@ namespace VOX.CameraRuntimeVI
         private bool _shakeActive;
         private string _shakeName = string.Empty;
         private float _lastAmplitude;
+        private float _smoothedAmplitude;
         private float _previousSpeed;
         private int _lastTime;
         private int _collisionBoostUntil;
+        private int _lastCollisionBoostAt;
+        private bool _wasColliding;
         private bool _wasYielding;
+        private int _storyYieldUntil;
 
         public CameraRuntimeVIScript()
         {
@@ -28,25 +32,16 @@ namespace VOX.CameraRuntimeVI
             Interval = 0;
             Tick += OnTick;
             Aborted += OnAborted;
-            Log("Camera Runtime VI 0.1.0 safe global motion runtime loaded; no gameplay-camera heading writes.");
+            Log("Camera Runtime VI 0.2.0 story-safe secondary motion runtime loaded; player always owns camera direction.");
         }
 
         private void OnTick(object sender, EventArgs e)
         {
-            if (!_cfg.Enabled)
-            {
-                ResetEffects();
-                return;
-            }
-
+            if (!_cfg.Enabled) { ResetEffects(); return; }
             try
             {
                 Ped player = Game.LocalPlayerPed;
-                if (player == null || !player.Exists() || player.IsDead)
-                {
-                    ResetEffects();
-                    return;
-                }
+                if (player == null || !player.Exists() || player.IsDead) { ResetEffects(); return; }
 
                 if (ShouldYield(player))
                 {
@@ -60,17 +55,18 @@ namespace VOX.CameraRuntimeVI
                 float dt = _lastTime > 0 ? Clamp((now - _lastTime) / 1000f, 0.001f, 0.10f) : 0.016f;
                 _lastTime = now;
 
-                float amplitude;
+                float targetAmplitude;
                 string shake;
-                if (player.IsInVehicle())
-                    ComputeVehicleMotion(player, dt, now, out shake, out amplitude);
-                else
-                    ComputeOnFootMotion(player, out shake, out amplitude);
+                if (player.IsInVehicle()) ComputeVehicleMotion(player, dt, now, out shake, out targetAmplitude);
+                else ComputeOnFootMotion(player, out shake, out targetAmplitude);
 
-                float firstPersonMultiplier = IsFirstPerson(player) ? _cfg.FirstPersonMultiplier : 1f;
-                amplitude *= firstPersonMultiplier;
-                amplitude = Clamp(amplitude, 0f, _cfg.MaximumAmplitude);
-                ApplyShake(shake, amplitude);
+                targetAmplitude *= IsFirstPerson(player) ? _cfg.FirstPersonMultiplier : 1f;
+                targetAmplitude = Clamp(targetAmplitude, 0f, _cfg.MaximumAmplitude);
+
+                // Smooth only the secondary amplitude. Direction is never written.
+                float smoothing = 1f - (float)Math.Exp(-dt * 10f);
+                _smoothedAmplitude = Lerp(_smoothedAmplitude, targetAmplitude, smoothing);
+                ApplyShake(shake, _smoothedAmplitude);
             }
             catch (Exception ex)
             {
@@ -106,8 +102,12 @@ namespace VOX.CameraRuntimeVI
 
             bool collided = false;
             try { collided = Function.Call<bool>(Hash.HAS_ENTITY_COLLIDED_WITH_ANYTHING, vehicle.Handle); } catch { }
-            if (collided && acceleration < -Math.Max(1f, _cfg.CollisionDecelerationMps2))
+            if (collided && !_wasColliding && acceleration < -Math.Max(1f, _cfg.CollisionDecelerationMps2) && now - _lastCollisionBoostAt > 650)
+            {
+                _lastCollisionBoostAt = now;
                 _collisionBoostUntil = now + Math.Max(50, _cfg.CollisionBoostMs);
+            }
+            _wasColliding = collided;
             if (now < _collisionBoostUntil) amplitude += _cfg.CollisionBoostAmplitude;
         }
 
@@ -116,6 +116,7 @@ namespace VOX.CameraRuntimeVI
             shake = "HAND_SHAKE";
             amplitude = 0f;
             _previousSpeed = 0f;
+            _wasColliding = false;
 
             float speed = Math.Max(0f, player.Speed);
             if (speed < 0.35f) return;
@@ -136,9 +137,24 @@ namespace VOX.CameraRuntimeVI
 
         private bool ShouldYield(Ped player)
         {
-            try { if (Function.Call<bool>(Hash.IS_CUTSCENE_ACTIVE)) return true; } catch { }
-            try { if (Function.Call<bool>(Hash.IS_PLAYER_SWITCH_IN_PROGRESS)) return true; } catch { }
-            try { if (Function.Call<bool>(Hash.GET_MISSION_FLAG)) return true; } catch { }
+            bool storyOwns = false;
+            try { storyOwns |= Function.Call<bool>(Hash.IS_CUTSCENE_ACTIVE); } catch { }
+            try { storyOwns |= Function.Call<bool>(Hash.IS_PLAYER_SWITCH_IN_PROGRESS); } catch { }
+            try { storyOwns |= Function.Call<bool>(Hash.GET_MISSION_FLAG); } catch { }
+            try { storyOwns |= !Function.Call<bool>(Hash.IS_PLAYER_CONTROL_ON, Game.Player.Handle); } catch { }
+            try
+            {
+                storyOwns |= Function.Call<bool>(Hash.IS_SCREEN_FADED_OUT) || Function.Call<bool>(Hash.IS_SCREEN_FADING_OUT) ||
+                             Function.Call<bool>(Hash.IS_SCREEN_FADING_IN);
+            }
+            catch { }
+            if (storyOwns)
+            {
+                _storyYieldUntil = Game.GameTime + 5000;
+                return true;
+            }
+            if (Game.GameTime < _storyYieldUntil) return true;
+
             try { if (Function.Call<bool>(Hash.IS_CINEMATIC_CAM_RENDERING)) return true; } catch { }
             try { if (!Function.Call<bool>(Hash.IS_GAMEPLAY_CAM_RENDERING)) return true; } catch { }
 
@@ -154,7 +170,6 @@ namespace VOX.CameraRuntimeVI
                 if (Math.Abs(ControlValue(2)) > _cfg.ManualLookDeadzone) return true;
                 if (ControlPressed(26)) return true;
             }
-
             return false;
         }
 
@@ -162,9 +177,7 @@ namespace VOX.CameraRuntimeVI
         {
             try
             {
-                int mode = player.IsInVehicle()
-                    ? Function.Call<int>(Hash.GET_FOLLOW_VEHICLE_CAM_VIEW_MODE)
-                    : Function.Call<int>(Hash.GET_FOLLOW_PED_CAM_VIEW_MODE);
+                int mode = player.IsInVehicle() ? Function.Call<int>(Hash.GET_FOLLOW_VEHICLE_CAM_VIEW_MODE) : Function.Call<int>(Hash.GET_FOLLOW_PED_CAM_VIEW_MODE);
                 return mode == 4;
             }
             catch { return false; }
@@ -172,12 +185,7 @@ namespace VOX.CameraRuntimeVI
 
         private void ApplyShake(string name, float amplitude)
         {
-            if (amplitude <= 0.0005f || string.IsNullOrEmpty(name))
-            {
-                StopShake();
-                return;
-            }
-
+            if (amplitude <= 0.0005f || string.IsNullOrEmpty(name)) { StopShake(); return; }
             if (!_shakeActive || !string.Equals(_shakeName, name, StringComparison.Ordinal))
             {
                 StopShake();
@@ -191,7 +199,6 @@ namespace VOX.CameraRuntimeVI
                 catch { }
                 return;
             }
-
             if (Math.Abs(amplitude - _lastAmplitude) > 0.001f)
             {
                 try { Function.Call(Hash.SET_GAMEPLAY_CAM_SHAKE_AMPLITUDE, amplitude); } catch { }
@@ -201,10 +208,7 @@ namespace VOX.CameraRuntimeVI
 
         private void StopShake()
         {
-            if (_shakeActive)
-            {
-                try { Function.Call(Hash.STOP_GAMEPLAY_CAM_SHAKING, true); } catch { }
-            }
+            if (_shakeActive) { try { Function.Call(Hash.STOP_GAMEPLAY_CAM_SHAKING, true); } catch { } }
             _shakeActive = false;
             _shakeName = string.Empty;
             _lastAmplitude = 0f;
@@ -213,23 +217,15 @@ namespace VOX.CameraRuntimeVI
         private void ResetEffects()
         {
             StopShake();
+            _smoothedAmplitude = 0f;
             _previousSpeed = 0f;
             _lastTime = 0;
             _collisionBoostUntil = 0;
+            _wasColliding = false;
         }
 
-        private static float ControlValue(int control)
-        {
-            try { return Function.Call<float>(Hash.GET_CONTROL_NORMAL, 0, control); }
-            catch { return 0f; }
-        }
-
-        private static bool ControlPressed(int control)
-        {
-            try { return Function.Call<bool>(Hash.IS_CONTROL_PRESSED, 0, control); }
-            catch { return false; }
-        }
-
+        private static float ControlValue(int control) { try { return Function.Call<float>(Hash.GET_CONTROL_NORMAL, 0, control); } catch { return 0f; } }
+        private static bool ControlPressed(int control) { try { return Function.Call<bool>(Hash.IS_CONTROL_PRESSED, 0, control); } catch { return false; } }
         private void OnAborted(object sender, EventArgs e) { ResetEffects(); }
         private static float Clamp(float v, float min, float max) { return v < min ? min : (v > max ? max : v); }
         private static float Lerp(float a, float b, float t) { return a + (b - a) * Clamp(t, 0f, 1f); }
@@ -253,12 +249,10 @@ namespace VOX.CameraRuntimeVI
         public float ManualLookDeadzone = 0.035f;
         public float FirstPersonMultiplier = 0.45f;
         public float MaximumAmplitude = 0.12f;
-
         public float WalkAmplitude = 0.006f;
         public float RunAmplitude = 0.012f;
         public float SprintAmplitude = 0.020f;
         public float FallAmplitude = 0.035f;
-
         public float VehicleMinimumSpeedKph = 18f;
         public float VehicleFullEffectSpeedKph = 190f;
         public float VehicleMinAmplitude = 0.004f;
@@ -311,10 +305,6 @@ namespace VOX.CameraRuntimeVI
             catch { }
             return c;
         }
-
-        private static bool TryFloat(string value, out float result)
-        {
-            return float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out result);
-        }
+        private static bool TryFloat(string value, out float result) { return float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out result); }
     }
 }
