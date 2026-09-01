@@ -28,29 +28,21 @@ namespace VOX.FireRuntimeVI
 
         private static readonly HashSet<uint> VegetationMaterials = new HashSet<uint>
         {
-            0xE47A3E41u, // grass long
-            0x4F747B87u, // grass
-            0xB34E900Du, // grass short
-            0x92B69883u, // hay
-            0x22AD7B72u, // bushes
-            0xC98F5B61u, // twigs
-            0x8653C6CDu, // leaves
-            0xED932E53u, // woodchips
-            0x8DD4EBB9u  // tree bark
+            0xE47A3E41u, 0x4F747B87u, 0xB34E900Du, 0x92B69883u,
+            0x22AD7B72u, 0xC98F5B61u, 0x8653C6CDu, 0xED932E53u, 0x8DD4EBB9u
         };
 
         private static readonly HashSet<uint> WoodMaterials = new HashSet<uint>
         {
             0xE82A6F1Cu,0x2114B37Du,0x309F8BB7u,0x0789C7ABu,0xD35443DEu,
             0x76D9AC2Fu,0xEA3746BDu,0xC8D738E7u,0x461D0E9Bu,0x2B13503Du,
-            0x981E5200u,0x77E08A22u,0xE18DFF05u,0xAC038918u,0x1C42F3BCu,
+            0x981E5200u,0x77E08A22u,0x0E18DFF5u,0xAC038918u,0x1C42F3BCu,
             0x07519E5Du,0xD9B1CDE0u
         };
 
         private static readonly HashSet<uint> LiquidFuelMaterials = new HashSet<uint>
         {
-            0xDA2E9567u, // oil
-            0x9E98536Cu  // petrol
+            0xDA2E9567u, 0x9E98536Cu
         };
 
         private readonly Dictionary<string, FireCluster> _clusters = new Dictionary<string, FireCluster>();
@@ -171,16 +163,12 @@ namespace VOX.FireRuntimeVI
             catch { }
             if (nearbyFire) return;
 
-            // There is no arbitrary lifetime timer: if fuel is still present and the
-            // engine fire effect disappeared, rebuild only the visible effect.
             RemoveClusterFires(c);
             int intensity = c.Fuel > c.MaxFuel*0.66f ? 3 : (c.Fuel > c.MaxFuel*0.33f ? 2 : 1);
             int children = VegetationMaterials.Contains(c.Material) ? 12 + intensity*5 : (WoodMaterials.Contains(c.Material) ? 8 + intensity*4 : 5 + intensity*3);
             SpawnFire(c,c.Position,children,LiquidFuelMaterials.Contains(c.Material));
             if (VegetationMaterials.Contains(c.Material) && intensity >= 2)
             {
-                // Multiple close engine fires create the larger flame volume expected
-                // from a vegetation/forest front instead of one tiny camp-fire sprite.
                 for(int i=0;i<intensity;i++)
                 {
                     double a=(i*2.37)+(c.Position.X+c.Position.Y)*0.01;
