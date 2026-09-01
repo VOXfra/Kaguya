@@ -1,0 +1,62 @@
+VOX GTA V ENHANCED -> VI-STYLE SYSTEMIC OVERHAUL — AIO RC2
+
+TARGET
+GTA V Enhanced Story Mode / free roam. Never use this pack in GTA Online.
+
+REQUIRES
+- Script Hook V compatible with the installed Enhanced build
+- ScriptHookVDotNet Enhanced
+- ASI loader / current working Enhanced mod stack
+
+IMPORTANT CLEAN UPDATE
+Before copying RC2, remove these old VOX files if present:
+- scripts\VehicleCameraVI.dll
+- scripts\VehicleCameraVI.ini
+VehicleCameraVI is deprecated. CameraRuntimeVI is the only VOX camera owner.
+
+Also replace older versions of all VOX DLL/INI files in scripts. Do not leave duplicate renamed DLL copies in scripts because ScriptHookVDotNet can load both.
+
+INSTALL
+1. Close GTA V Enhanced.
+2. Back up existing VOX log/state files if desired.
+3. Copy the CONTENTS of this ZIP into the GTA V Enhanced root directory.
+4. Allow the supplied VOX DLL/INI files to replace older versions.
+5. Launch Story Mode.
+
+ACTIVE RC2 MODULES
+- VOXCoreVI
+- CameraRuntimeVI 0.2.0
+- CharacterRuntimeVI 0.2.1
+- InteractionRuntimeVI 0.3.0
+- InventoryRuntimeVI 0.4.0
+- PedOverhaulVI 0.6.1
+- PoliceOverhaulVI 0.7.0
+- VehicleRuntimeVI 0.5.0
+- WorldLifeVI 0.3.1
+- MeleeRuntimeVI 0.1.0
+- VehicleOccupantVI 0.1.0
+- FireRuntimeVI 0.1.0
+- WildlifeRuntimeVI 0.1.0
+- VOXBodyMorphVI.asi native Character bridge
+
+CONTROLS — NO REBIND REQUIRED
+The pack uses GTA's existing native actions rather than arbitrary mod hotkeys.
+- Context: E / D-pad Right
+- Enter vehicle: F / Y
+- Attack: mouse attack / RT
+- Weapon wheel: TAB / LB
+- While weapon wheel is held: Q / RB cycles VOX wheel pages
+- Custom wheel selection: right stick / weapon-wheel axes or D-pad
+- On Craft page: SPACE / X crafts the maximum possible amount
+- Melee remains GTA's native melee controls; no extra combat hotkeys are introduced
+
+STORY-FIRST OWNERSHIP
+Mission flags, cutscenes, protagonist switches, loss of player control, fades and mission entities are protected. VOX free-roam systems generally hold off for about five seconds after Rockstar returns control.
+
+SOUND PACK / RGS
+This AIO deliberately does NOT bundle or overwrite the 1.5 GB Sound Pack RPF archives and does not replace RGS weapon audio. The listed Sound Pack banks are being treated as reference categories only. NoNVEPopUp.asi and OpenRPF.asi are not redistributed by this pack.
+
+KNOWN SCOPE BOUNDARIES
+This is not presented as completion of every long-term roadmap item. Full arbitrary-interior interaction, NVE/GTA-VI-level art replacement, true cloth simulation, destructible static building geometry, full acoustic DSP/room filtering and a complete RDR2 grappling animation set require deeper native/asset work and are intentionally not faked in RC2.
+
+Compilation validates code/API compatibility only. Runtime behavior must still be tested in GTA V Enhanced; TEST-AIO.txt contains the concrete validation matrix.
