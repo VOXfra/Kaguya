@@ -11,8 +11,7 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
       - name: Fetch SHVDNE reference
         shell: pwsh
         run: |
@@ -33,10 +32,10 @@ jobs:
           Copy-Item modules/WorldLifeVI/bin/Release/net48/WorldLifeVI.dll dist/scripts/WorldLifeVI.dll
           Copy-Item modules/WorldLifeVI/config/WorldLifeVI.ini dist/scripts/WorldLifeVI.ini
           Copy-Item modules/WorldLifeVI/INSTALL.txt dist/INSTALL.txt
-          Compress-Archive -Path dist/* -DestinationPath WorldLifeVI-v0.2.1.zip -Force
+          Compress-Archive -Path dist/* -DestinationPath WorldLifeVI-v0.3.0.zip -Force
       - name: Upload test build
         uses: actions/upload-artifact@v4
         with:
-          name: WorldLifeVI-v0.2.1
-          path: WorldLifeVI-v0.2.1.zip
+          name: WorldLifeVI-v0.3.0
+          path: WorldLifeVI-v0.3.0.zip
           if-no-files-found: error
