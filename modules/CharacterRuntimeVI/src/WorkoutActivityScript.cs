@@ -38,6 +38,7 @@ namespace VOX.CharacterRuntimeVI
 
         private bool _training;
         private int _trainingStarted;
+        private int _cancelAllowedAt;
         private int _lastHelp;
         private int _lastProbe;
         private bool _nearEquipment;
@@ -49,7 +50,7 @@ namespace VOX.CharacterRuntimeVI
             Interval = 50;
             Tick += OnTick;
             Aborted += OnAborted;
-            Log("Workout activity loaded: physical free-weight sessions enabled at gym equipment.");
+            Log("Workout activity 0.1.2 loaded: persistent free-weight scenario + isolated Context input.");
         }
 
         private void OnTick(object sender, EventArgs e)
@@ -83,8 +84,11 @@ namespace VOX.CharacterRuntimeVI
                 }
                 if (!_nearEquipment) return;
 
+                // E is consumed only while the workout affordance is active so the
+                // same press cannot repeatedly trigger unrelated world interactions.
+                DisableContext();
                 ShowHelp("Appuyez sur ~INPUT_CONTEXT~ pour faire une seance de musculation.");
-                if (!JustPressed(ContextControl)) return;
+                if (!ContextJustPressed()) return;
                 BeginSession(player);
             }
             catch (Exception ex)
@@ -98,9 +102,12 @@ namespace VOX.CharacterRuntimeVI
             if (player == null || !player.Exists()) return;
             try
             {
-                Function.Call(Hash.TASK_START_SCENARIO_IN_PLACE, player.Handle, "WORLD_HUMAN_MUSCLE_FREE_WEIGHTS", 0, true);
+                // 0 made Enhanced immediately finish/cancel this scenario on some
+                // builds. -1 keeps it alive until this runtime explicitly clears it.
+                Function.Call(Hash.TASK_START_SCENARIO_IN_PLACE, player.Handle, "WORLD_HUMAN_MUSCLE_FREE_WEIGHTS", -1, true);
                 _training = true;
                 _trainingStarted = Game.GameTime;
+                _cancelAllowedAt = _trainingStarted + 1400;
                 Log("Weightlifting session started near " + F(_equipmentPosition) + ".");
             }
             catch (Exception ex)
@@ -112,8 +119,10 @@ namespace VOX.CharacterRuntimeVI
 
         private void UpdateSession(Ped player)
         {
-            int elapsed = Game.GameTime - _trainingStarted;
-            if (elapsed > 700 && JustPressed(ContextControl))
+            DisableContext();
+            int now = Game.GameTime;
+            int elapsed = now - _trainingStarted;
+            if (now >= _cancelAllowedAt && ContextJustPressed())
             {
                 Cancel(player, true);
                 return;
@@ -129,12 +138,13 @@ namespace VOX.CharacterRuntimeVI
             try { Function.Call(Hash.CLEAR_PED_TASKS, player.Handle); } catch { }
             _training = false;
             _trainingStarted = 0;
+            _cancelAllowedAt = 0;
 
-            // One completed set gives a visible, persistent training impulse.
-            // Long-term progression still requires repeated sessions.
-            FitnessRuntimeBridge.Train(0.34f, 0.06f, 0.16f);
+            // Strong enough to make repeated physical sessions visibly matter,
+            // while the main runtime still caps final gameplay/body effects.
+            FitnessRuntimeBridge.Train(0.85f, 0.12f, 0.50f);
             Notify("Seance terminee : force et masse musculaire en progression.");
-            Log("Weightlifting session completed; strength +0.34, endurance +0.06, lean mass +0.16.");
+            Log("Weightlifting session completed; strength +0.85, endurance +0.12, lean mass +0.50.");
         }
 
         private void Cancel(Ped player, bool manual)
@@ -143,6 +153,7 @@ namespace VOX.CharacterRuntimeVI
             try { if (player != null && player.Exists()) Function.Call(Hash.CLEAR_PED_TASKS, player.Handle); } catch { }
             _training = false;
             _trainingStarted = 0;
+            _cancelAllowedAt = 0;
             if (manual) Log("Weightlifting session cancelled; no fitness reward granted.");
         }
 
@@ -184,6 +195,17 @@ namespace VOX.CharacterRuntimeVI
             return false;
         }
 
+        private static void DisableContext()
+        {
+            try { Function.Call(Hash.DISABLE_CONTROL_ACTION, 0, ContextControl, true); } catch { }
+        }
+
+        private static bool ContextJustPressed()
+        {
+            try { return Function.Call<bool>(Hash.IS_DISABLED_CONTROL_JUST_PRESSED, 0, ContextControl); }
+            catch { return false; }
+        }
+
         private void ShowHelp(string text)
         {
             if (Game.GameTime - _lastHelp < 80) return;
@@ -206,12 +228,6 @@ namespace VOX.CharacterRuntimeVI
                 Function.Call(Hash.END_TEXT_COMMAND_THEFEED_POST_TICKER, false, false);
             }
             catch { }
-        }
-
-        private static bool JustPressed(int control)
-        {
-            try { return Function.Call<bool>(Hash.IS_CONTROL_JUST_PRESSED, 0, control); }
-            catch { return false; }
         }
 
         private static bool RockstarOwnsScene()
