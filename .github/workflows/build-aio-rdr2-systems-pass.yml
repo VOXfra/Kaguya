@@ -1,0 +1,86 @@
+name: Build GTA V to VI AIO Systems Pass
+
+on:
+  push:
+    paths:
+      - 'modules/**'
+      - '.github/workflows/build-aio-rdr2-systems-pass.yml'
+      - 'docs/AIO_RC2_TESTING.txt'
+      - 'docs/AIO_RC2_INSTALL.txt'
+  workflow_dispatch:
+
+jobs:
+  build-aio:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch shared SHVDNE reference
+        shell: pwsh
+        run: |
+          $url = 'https://github.com/Chiheb-Bacha/ScriptHookVDotNetEnhanced/releases/download/v1.1.0.6/ScriptHookVDotNetEnhanced-v1.1.0.6.zip'
+          Invoke-WebRequest -Uri $url -OutFile shvdne.zip
+          Expand-Archive shvdne.zip -DestinationPath shvdne
+          $ref = Get-ChildItem shvdne -Recurse -Filter ScriptHookVDotNet3.dll | Select-Object -First 1
+          if (-not $ref) { throw 'ScriptHookVDotNet3.dll not found.' }
+          $mods = @('VOXCoreVI','CameraRuntimeVI','CharacterRuntimeVI','InteractionRuntimeVI','InventoryRuntimeVI','PedOverhaulVI','PoliceOverhaulVI','VehicleRuntimeVI','WorldLifeVI','MeleeRuntimeVI','VehicleOccupantVI')
+          foreach ($m in $mods) {
+            New-Item -ItemType Directory -Force "modules/$m/refs" | Out-Null
+            Copy-Item $ref.FullName "modules/$m/refs/ScriptHookVDotNet3.dll" -Force
+          }
+
+      - name: Build all managed modules
+        shell: pwsh
+        run: |
+          $projects = @(
+            'modules/VOXCoreVI/VOXCoreVI.csproj',
+            'modules/CameraRuntimeVI/CameraRuntimeVI.csproj',
+            'modules/CharacterRuntimeVI/CharacterRuntimeVI.csproj',
+            'modules/InteractionRuntimeVI/InteractionRuntimeVI.csproj',
+            'modules/InventoryRuntimeVI/InventoryRuntimeVI.csproj',
+            'modules/PedOverhaulVI/PedOverhaulVI.csproj',
+            'modules/PoliceOverhaulVI/PoliceOverhaulVI.csproj',
+            'modules/VehicleRuntimeVI/VehicleRuntimeVI.csproj',
+            'modules/WorldLifeVI/WorldLifeVI.csproj',
+            'modules/MeleeRuntimeVI/MeleeRuntimeVI.csproj',
+            'modules/VehicleOccupantVI/VehicleOccupantVI.csproj'
+          )
+          foreach ($p in $projects) {
+            Write-Host "=== BUILD $p ==="
+            dotnet build $p -c Release
+            if ($LASTEXITCODE -ne 0) { throw "Build failed: $p" }
+          }
+
+      - name: Build Character native body bridge
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat" 2>nul || call "%ProgramFiles%\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" 2>nul || call "%ProgramFiles%\Microsoft Visual Studio\18\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          cl /nologo /LD /EHsc /O2 /std:c++17 /W4 /WX modules\CharacterRuntimeVI\native\VOXBodyMorphVI.cpp /link /OUT:VOXBodyMorphVI.asi
+
+      - name: Assemble validation package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist/scripts/PoliceOverhaulVI/UI | Out-Null
+          $managed = @('VOXCoreVI','CameraRuntimeVI','CharacterRuntimeVI','InteractionRuntimeVI','InventoryRuntimeVI','PedOverhaulVI','PoliceOverhaulVI','VehicleRuntimeVI','WorldLifeVI','MeleeRuntimeVI','VehicleOccupantVI')
+          foreach ($m in $managed) { Copy-Item "modules/$m/bin/Release/net48/$m.dll" "dist/scripts/$m.dll" }
+          $configs = @(
+            'CameraRuntimeVI/config/CameraRuntimeVI.ini',
+            'InteractionRuntimeVI/config/InteractionRuntimeVI.ini',
+            'PedOverhaulVI/config/PedOverhaulVI.ini',
+            'PoliceOverhaulVI/config/PoliceOverhaulVI.ini',
+            'WorldLifeVI/config/WorldLifeVI.ini'
+          )
+          foreach ($c in $configs) { Copy-Item "modules/$c" dist/scripts/ }
+          Copy-Item modules/PoliceOverhaulVI/UI/*.png dist/scripts/PoliceOverhaulVI/UI/
+          Copy-Item VOXBodyMorphVI.asi dist/VOXBodyMorphVI.asi
+          if (Test-Path docs/AIO_RC2_INSTALL.txt) { Copy-Item docs/AIO_RC2_INSTALL.txt dist/INSTALL-AIO.txt }
+          if (Test-Path docs/AIO_RC2_TESTING.txt) { Copy-Item docs/AIO_RC2_TESTING.txt dist/TEST-AIO.txt }
+          if (Test-Path dist/scripts/VehicleCameraVI.dll) { throw 'Deprecated VehicleCameraVI must not be packaged.' }
+          Compress-Archive -Path dist/* -DestinationPath VOX-GTA-V-Enhanced-to-VI-AIO-RC2.zip -Force
+
+      - name: Upload AIO validation build
+        uses: actions/upload-artifact@v4
+        with:
+          name: VOX-GTA-V-Enhanced-to-VI-AIO-RC2
+          path: VOX-GTA-V-Enhanced-to-VI-AIO-RC2.zip
+          if-no-files-found: error
