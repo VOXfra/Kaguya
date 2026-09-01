@@ -1,0 +1,88 @@
+VOX GTA V ENHANCED -> VI-STYLE SYSTEMIC OVERHAUL — AIO RC3 CHANGELOG
+
+BASE
+RC3 is based on the previous AIO RC2 systems pass. Existing RC2 modules remain unless explicitly listed below.
+
+1. VOXCoreVI 0.2.0
+- Added ControlOwnershipBridge.
+- VOX systems can claim a GTA control for a short TTL with owner, context and priority.
+- Same-owner claims renew cleanly; lower/equal-priority competing owners cannot steal an active claim; higher-priority physical contexts can.
+- Added a story-safe arbitration script that clears all VOX claims when Rockstar owns the scene.
+- World memory remains backward compatible.
+
+2. PhysicalCharacterVI 0.1.0 — NEW
+- Enables full leg IK for normal free-roam locomotion and melee-aware leg IK while fighting.
+- Samples actual ground normal under the player.
+- Meaningful slopes apply a small bounded movement-rate reduction instead of treating every surface as flat.
+- Measures velocity, heading and turn rate; very sharp running/sprinting direction changes receive a tiny continuation force to reduce frictionless 180-degree snapping.
+- Measures sudden on-foot deceleration plus real collision state; sufficiently hard impacts can produce a short physical stumble/ragdoll.
+- Aiming, climbing, jumping, falling, swimming, ragdoll, vehicles and Story-owned scenes are excluded.
+
+3. AnimationRuntimeVI 0.1.0 — NEW
+- Added central animation request bridge with owner, priority, TTL and per-ped arbitration.
+- Supports optional align-to-target / face-target before playing the requested clip.
+- Higher-priority request can replace a lower-priority one; competing equal/lower requests cannot task-stomp it.
+- Story/cutscene/switch ownership cancels VOX requests.
+- Intended as the shared base for future doors, object carrying, wardrobe, deeper melee and context transitions.
+
+4. InteriorRuntimeVI 0.1.0 — NEW
+- Scans nearby GTA props and asks GTA's own DoorSystem whether each prop is a registered door.
+- Reads actual DoorSystem lock state rather than maintaining a fake global door database.
+- Free-roam locked doors support a short Context-button handle test.
+- Player aligns toward the physical door before the hand/upper-body interaction.
+- The handle test never unlocks or rewrites the door state.
+- Unlocked doors are left to GTA.
+- Mission-owned props are ignored.
+- Added persistent room/circuit state bridge keyed by GTA interior + room IDs for later light switches, breakers, powered doors, alarms and CCTV.
+- RC3 intentionally does not simulate room-local light switches until a safe physical switch/fixture mapping exists.
+
+5. AcousticRuntimeVI 0.1.0 — NEW
+- Detects player gunshots with a short cadence suitable for automatic weapons.
+- Classifies approximate source energy by firearm family.
+- Checks fitted suppressor components and reduces emitted energy when one is actually installed.
+- Captures GTA interior ID and room key at source.
+- Propagation includes distance falloff, a physical obstruction ray, same-room/same-interior/different-room/interior-exterior attenuation.
+- Nearby non-mission civilians receive a directional response to the inferred sound source; strong close reports can trigger fleeing.
+- Does not give a listener the player entity as magical knowledge just because a sound occurred.
+- Publishes short-lived acoustic events to VOXCoreVI world memory for later police/witness integration.
+- Real audio DSP, room reverb and replacement sound banks remain future native/audio work and are not claimed here.
+
+6. MeleeRuntimeVI 0.2.0
+- Retains RC2 opponent durability and lower player fist damage.
+- Added stamina for the defensive side of free-roam melee.
+- Native block becomes more protective while stamina is high.
+- Blocking and attacking consume stamina; pauses regenerate it.
+- Taking a hit while actively blocking and with enough stamina opens a short counter window.
+- A native melee attack inside that window can physically stagger the nearest valid close opponent.
+- No new combat hotkey and no trainer/minigame UI.
+
+7. RDR2 CLEAN-ROOM PREPARATION
+- Added TOOLS/Scan-RDR2-Install.ps1.
+- It only inventories relevant file families from the user's own installed RDR2 copy.
+- This prepares targeted future study instead of asking for the entire game or blindly copying RDR2 assets.
+
+8. SOUND PACK HANDLING
+- Existing read-only Scan-SoundPack.ps1 is included in RC3 tooling.
+- Third-party PAIN/RESIDENT/SCRIPT/STREAMS/vehicle RPFs are not redistributed inside VOX AIO.
+- NoNVEPopUp.asi and OpenRPF.asi are not redistributed.
+
+9. GRAPHICS / DLSS
+- DLSS 5 is not integrated or required.
+- No attempt is made to hide GTA V's age solely through an upscaler/frame-generation layer.
+- Lighting/material/weather/vegetation/effects work remains a separate future presentation pass.
+
+UNCHANGED RC2 ACTIVE MODULES
+- CameraRuntimeVI 0.2.0
+- CharacterRuntimeVI 0.2.1
+- InteractionRuntimeVI 0.3.0
+- InventoryRuntimeVI 0.4.0
+- PedOverhaulVI 0.6.1
+- PoliceOverhaulVI 0.7.0
+- VehicleRuntimeVI 0.5.0
+- VehicleOccupantVI 0.1.0
+- WorldLifeVI 0.3.1
+- FireRuntimeVI 0.1.0
+- WildlifeRuntimeVI 0.1.0
+
+DEPRECATED / EXCLUDED
+- VehicleCameraVI remains excluded from the AIO.
