@@ -44,13 +44,28 @@ namespace VOX.PoliceOverhaulVI
         {
             if (!PoliceWantedHudState.Owned || PoliceWantedHudState.Level <= 0) return;
 
-            try { Function.Call(Hash.HIDE_HUD_COMPONENT_THIS_FRAME, 1); } catch { }
-
             int nativeWanted = 0;
             try { nativeWanted = Function.Call<int>(Hash.GET_PLAYER_WANTED_LEVEL, Game.Player.Handle); } catch { }
 
-            if (nativeWanted > 0) DrawVanillaStyleRow();
-            else DrawRedSearchRow();
+            // For ordinary 1-5 star pursuit, do not imitate Rockstar's HUD at all:
+            // let GTA render its genuine wanted stars. Previous custom replacements
+            // could resolve to translucent white squares on Enhanced.
+            if (nativeWanted > 0 && PoliceWantedHudState.Level <= 5)
+                return;
+
+            if (nativeWanted > 0)
+            {
+                // GTA only owns five native wanted slots. At the internal sixth tier
+                // we replace the row only for the otherwise impossible sixth star.
+                try { Function.Call(Hash.HIDE_HUD_COMPONENT_THIS_FRAME, 1); } catch { }
+                DrawVanillaStyleRow();
+            }
+            else
+            {
+                // During VOX-owned search the native wanted display may be absent;
+                // keep the dedicated red search treatment instead.
+                DrawRedSearchRow();
+            }
         }
 
         private void DrawVanillaStyleRow()
