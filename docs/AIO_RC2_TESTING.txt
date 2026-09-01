@@ -1,0 +1,167 @@
+VOX GTA V ENHANCED -> VI-STYLE SYSTEMIC OVERHAUL — AIO RC2 TEST MATRIX
+
+GENERAL RULE
+When something goes wrong, record: protagonist, exact place, free roam or mission, current wanted level, keyboard/controller, what you pressed, and keep the module logs from GTA V\scripts\<ModuleName>\.
+
+1. BOOT / STORY INTEGRITY
+- Start Story Mode with Michael, Franklin and Trevor at least once.
+- Confirm no trainer/menu/debug window appears on its own.
+- Start a normal mission, a mission with driving, a mission with combat, a cutscene and a protagonist switch.
+- During Rockstar-owned scenes, no VOX civilian Focus, custom trunk action, theft action, wildlife spawn, fire propagation, fitness modifier or custom police search should take ownership.
+- After mission/switch completion, verify no custom action fires during the short post-scene grace period.
+
+2. CONTROLS / CONTROLLER PARITY
+Keyboard and controller should require no rebinding.
+- E / D-pad Right: vanilla Context must still work when no valid VOX contextual target exists.
+- F / Y: normal vehicle entry must still work on personal/unlocked cars.
+- TAB / LB: GTA weapon wheel must still work normally when no VOX custom page is selected.
+- Hold TAB/LB and press Q/RB: cycle ACCESSORIES -> SATCHEL -> CRAFT/SUPPLIES -> TRUNK/OUTFIT -> back to vanilla page.
+- Use right stick / normal weapon-wheel axes or D-pad to select a custom-wheel entry.
+- Confirm no key remains logically held after releasing it.
+
+3. INVENTORY / PHYSICAL TRUNK 0.4.0
+ATTACHMENT PRESERVATION
+- Equip a firearm with a known scope/flashlight/suppressor and a non-default tint if available.
+- Stand at the rear of a non-mission vehicle.
+- Press Context once. The trunk should open, a physical pickup action should play and the gun should leave the carried inventory.
+- Keep Context held: the action must NOT loop.
+- Release and press again while unarmed to retrieve it.
+- Verify ammo, tint and installed weapon components are restored.
+- Exit/reload the game and repeat to validate persistence.
+
+CARRY LIMIT
+- Obtain more than two sidearms and more than two long guns in free roam.
+- Wait a couple of seconds out of missions.
+- The excess weapons should be moved to the protagonist satchel, never silently deleted.
+- Open SATCHEL from the weapon wheel extension and equip an overflow weapon.
+- If that category is already full, another carried weapon should be moved back to the satchel rather than vanish.
+
+ACCESSORY PAGE
+- Wear a mask, glasses and a hat, then test each slot.
+- The item should be removed and remembered; selecting again restores the item actually worn, not an arbitrary catalog item.
+- Equip a weapon with a suppressor previously observed as owned. Remove it through the Accessory page, then put it back. The suppressor must not be recreated on a weapon that never owned one.
+
+VEHICLE OUTFIT
+- Stand behind a non-mission car and open TRUNK/OUTFIT page.
+- Select Save Outfit.
+- Change clothes by normal GTA means.
+- Return to the same physical model/plate vehicle and select Wear Outfit.
+- Test components and props: clothing, hat, glasses etc.
+
+CRAFT
+- Go to a vanilla convenience/general-store cashier position.
+- Open the SUPPLIES page: buy a rag, alcohol and a bottle; money must be deducted.
+- Leave the store, open CRAFT and make one Molotov.
+- Verify exactly one unit of each ingredient is consumed.
+- Stock several ingredient sets and use SPACE/X on the craft page: it should craft the maximum possible amount.
+
+4. VEHICLE THEFT 0.5.0
+LOCK RATIO
+- Test 15-20 empty parked ambient vehicles. Roughly nine out of ten newly profiled empty street vehicles should be locked; occupied traffic remains normally carjackable.
+
+QUIET BREAK-IN
+- Press F/Y on a locked parked vehicle.
+- The character should align to the actual driver-door bone/handle area, not stand through or meters away from the door.
+- Do not press Attack. After the short choice/alignment phase the Rockstar low-force driver-side break-in animation should play.
+- At completion the vehicle unlocks and GTA's normal entry task resumes.
+
+SMASH ENTRY
+- Press F/Y on another locked vehicle and press Attack/RT during the opening phase.
+- It should use the force-entry path, break the driver window, unlock, then enter.
+- Compare alarm frequency: forced entry should be riskier.
+- Personal vehicles and mission vehicles must never be hijacked by this runtime.
+
+5. WORLD LIFE 0.3.1 / ONLINE TRAFFIC
+- Drive through dense city traffic for several minutes and look for GTA Online civilian models.
+- A moving Online replacement must have a living driver.
+- If a driver transfer fails off-screen, TrafficIntegrity should repair it at distance and resume wandering traffic.
+- No sudden repair/spawn should occur within roughly 28 m of the player.
+- During a wanted pursuit, Online replacement logic should remain suspended.
+- Check WorldLifeVI.log for 'Repaired driverless moving Online traffic' if the safeguard was needed.
+
+6. POLICE OVERHAUL 0.7.0
+DISPATCH / DRIVING
+- Cause a witnessed crime and wait rather than driving toward police yourself.
+- Police units must actually approach the incident/player.
+- During a vehicle pursuit, deliberately lead police through a junction or obstruction.
+- If a law vehicle remains nearly stationary for several seconds while far from you, the recovery layer should retask its driver instead of leaving the unit parked forever.
+- It must NOT teleport police cars.
+- Check log for 'Retasked stalled police pursuit vehicle'.
+
+SEARCH
+- Break visual contact after a real chase.
+- Search should not begin after a one-second corner break; lost-contact delay is now about eight seconds.
+- A base one-star custom search can persist around three minutes; higher threat scales longer.
+- Change vehicle/clothing after genuinely escaping visual contact and observe whether recognition differs instead of police magically tracking the Player entity.
+
+SIXTH STAR
+- Sustain five stars for at least ~35 seconds and continue meaningful violent heat (for example continued shooting, with heat events rate-limited).
+- Sixth tier should become authorized after the sustained incident plus required heat events.
+- At tier six, GTA's five-star row is hidden and a six-star row should be drawn using Rockstar commonmenu star texture; generated PNG is fallback only.
+- Heavy/military response must still respect civilian-risk logic.
+
+7. INTERACTION RUNTIME 0.3.0
+TARGETING
+- Tap/press Context near a normal vanilla interaction while no civilian is targeted: vanilla Context must remain available.
+- Look directly at a nearby non-mission civilian and hold E/D-pad Right. Focus should lock only after stable camera/LOS targeting.
+- With two people close together, target should not switch every frame.
+
+MULTI-EXCHANGE
+- On an unarmed civilian, use Positive several times: first greet, then a follow-up exchange, then a closing/thanks-type exchange when disposition permits.
+- Try another civilian; personality/disposition should produce a different willingness to continue.
+- Use Neutral after an exchange; it should act as contextual response/defuse rather than simply repeat hello forever.
+- Use Negative repeatedly: first insult, then stronger escalation; brave NPCs can eventually confront/fight while others withdraw.
+- Draw a gun and use Negative: threat path should increase fear and can cause hands-up/flee behavior.
+- Nearby group members can occasionally look/react to the escalation.
+- Start a mission: all of this must yield immediately.
+
+8. MELEE RUNTIME 0.1.0
+- Fight an ordinary non-mission civilian while unarmed.
+- Normal opponents should survive a meaningful exchange rather than consistently dropping after 2-3 ordinary punches.
+- Player damage is reduced but still scales slightly with CharacterRuntime strength.
+- Use GTA's normal light/heavy/alternate/block controls; no new combat key should be required.
+- Land a heavy/alternate strike near a wall/car or on an already weakened opponent: contextual force/ragdoll should sometimes make the impact feel heavier.
+- Hold GTA's native block; opponent combat movement should become somewhat more measured.
+- End/leave fight: the runtime should release its critical-hit/combat ownership.
+- Mission peds and cops are deliberately excluded from this first melee layer.
+
+9. VEHICLE OCCUPANT VI 0.1.0
+- Steal a civilian vehicle containing one passenger: the passenger should react and leave rather than remain calmly seated indefinitely.
+- Steal a bus/large multi-passenger vehicle in free roam if available.
+- Reactions should be staggered so passengers do not all attempt one door on the same frame.
+- Most flee, some hesitate/shout before fleeing, rare brave occupants can confront the thief.
+- Mission occupants are never touched.
+
+10. FIRE RUNTIME VI 0.1.0
+- Start a small fire on/next to vegetation using normal GTA fire/explosives.
+- If the detected ground/material is flammable, the runtime should adopt it as a fuel cluster.
+- Grass/bush/wood fire should persist based on remaining fuel rather than die merely because one engine fire effect timed out.
+- If the GTA visual fire effect disappears while fuel still exists, it should be recreated.
+- Observe spread: new fire clusters should only establish on classified flammable material and should favor wind direction.
+- In strong rain, spread should slow and existing fuel should extinguish faster.
+- A high-fuel vegetation front can create multiple close flame emitters and look materially larger than one tiny campfire.
+- Performance guard: maximum owned cluster count is bounded; distant clusters are pruned.
+- Check FireRuntimeVI.log for adopted/spread material hashes if behavior is wrong.
+
+11. WILDLIFE RUNTIME VI 0.1.0
+- Test rural zones by day and at night; do not stand in city center expecting extra wildlife.
+- Additional wildlife should spawn at distance, preferably outside camera LOS and off roads.
+- Day should bias more toward deer/rabbit/boar; night can bias toward coyotes/cougar.
+- Farmland can produce occasional cow/hen activity.
+- Approach deer/rabbit closely, draw a weapon or fire: prey should flee; same-herd animals can propagate the threat.
+- Drive quickly near wildlife: animals should try to flee the vehicle.
+- Bring fire near an owned animal: it should flee the fire source.
+- Observe predator/prey opportunities: cougar/coyote can select nearby rabbit/deer targets; coyotes are more willing to commit as a pack.
+- No third-party animal models are bundled; this test uses GTA V's vanilla species only.
+
+12. CHARACTER / CAMERA / PED REGRESSION
+- Run/sprint/swim/work out: Character fitness must still persist.
+- MeleeRuntime now owns melee damage; CharacterRuntime must not fight it by resetting damage every tick.
+- Camera: walk/run/sprint, drive, brake, collide, aim, manually rotate, first person and look behind. No recenter fight.
+- PedOverhaul: weapon sight, shooting, body, explosion, distracted civilian and group reaction; no reaction-task thrashing.
+
+13. SOUND / GRAPHICS SCOPE CHECK
+- RGS weapon audio is intentionally untouched by this AIO.
+- The 1.5 GB Sound Pack RPF files are NOT included/repacked.
+- NoNVEPopUp.asi and OpenRPF.asi are NOT bundled.
+- RC2 does not claim full GTA VI-level graphics, true cloth simulation or room-acoustic DSP. These are separate asset/native workstreams rather than fake script toggles.
