@@ -56,6 +56,10 @@ Mission flags, cutscenes, protagonist switches, loss of player control, fades an
 SOUND PACK / RGS
 This AIO deliberately does NOT bundle or overwrite the 1.5 GB Sound Pack RPF archives and does not replace RGS weapon audio. The listed Sound Pack banks are being treated as reference categories only. NoNVEPopUp.asi and OpenRPF.asi are not redistributed by this pack.
 
+TOOLS\Scan-SoundPack.ps1 is included so the Sound Pack can be inventoried locally without uploading 1.5+ GB. Example from PowerShell in the AIO directory:
+  powershell -ExecutionPolicy Bypass -File .\TOOLS\Scan-SoundPack.ps1 -SoundPackSfxPath "C:\path\to\Sound Pack\Put in GTA 5 main folder\mods\x64\audio\sfx"
+It creates a small VOX-SoundPack-Manifest folder containing CSV/TXT filenames, sizes and SHA-256 hashes only. No audio or RPF content is extracted or copied.
+
 KNOWN SCOPE BOUNDARIES
 This is not presented as completion of every long-term roadmap item. Full arbitrary-interior interaction, NVE/GTA-VI-level art replacement, true cloth simulation, destructible static building geometry, full acoustic DSP/room filtering and a complete RDR2 grappling animation set require deeper native/asset work and are intentionally not faked in RC2.
 
