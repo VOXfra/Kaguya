@@ -1,4 +1,4 @@
-INTERACTION RUNTIME VI — V0.2.0
+INTERACTION RUNTIME VI — 0.2.1
 
 TARGET
 - GTA V Enhanced Story Mode
@@ -8,35 +8,22 @@ REQUIRES
 - ScriptHookVDotNet Enhanced v1.1.0.6 or compatible newer build
 
 INSTALL
-1. Copy package contents to the GTA V root.
-2. InteractionRuntimeVI.dll and InteractionRuntimeVI.ini must end up in GTA V\scripts\.
-3. Ped Overhaul VI 0.5.0 is recommended but not mandatory.
+- InteractionRuntimeVI.dll and InteractionRuntimeVI.ini go in GTA V\scripts\.
+- Ped Overhaul VI is recommended but not mandatory.
 
-DEFAULT CONTROLS
-- Hold E while looking at a nearby civilian to Focus.
-- LEFT ARROW = friendly/calm intent
-- UP ARROW = contextual/neutral intent
-- RIGHT ARROW = antagonize/threaten intent
-All controls are configurable in scripts\InteractionRuntimeVI.ini.
+CONTEXTUAL INTERACTION
+- look at a nearby free-roam civilian first; target acquisition happens passively from the camera
+- only when a stable eligible civilian is actually targeted can holding Context (E by default) become VOX Focus
+- LEFT = friendly/calm intent
+- UP = neutral/contextual intent
+- RIGHT = antagonize/threaten intent
+- the display is a tiny three-direction affordance, never a trainer-style action list
 
-V0.2.0
-- polls GTA native controls in addition to keyboard events, so held Focus and the
-  three directional actions work reliably on keyboard and controller.
-- replaces the vertical action list with a compact three-direction focus display.
-- yields during missions, cutscenes, character switches, disabled player control and
-  screen transitions, then waits five seconds before resuming; mission peds remain
-  ineligible as a final fail-closed safeguard.
+0.2.1 STORY/CONTROL CORRECTIONS
+- E is no longer captured merely because it was pressed; without an eligible target, vanilla Context remains untouched
+- entering a vehicle, aiming, missions and mission entities cannot be stolen by the interaction layer
+- weapon wheel/weapon-slot controls are no longer globally suppressed while looking at a pedestrian
+- target range/cone are tighter to avoid attaching to unrelated pedestrians
+- mission flag, cutscene, protagonist switch, loss of player control and fades suspend the runtime, followed by a five-second grace period
 
-V0.1.1
-- removes the 1/2/3 bindings that conflicted with GTA V weapon slots.
-- sticky focus target with acquire hysteresis and a lost-target grace period.
-- transient camera/LOS jitter no longer restarts the hold timer every scan.
-- vanilla context/weapon-selection controls are suppressed only while Focus is held.
-- RDR2-inspired hold-to-focus targeting without pausing the world.
-- camera-cone + physical LOS target selection.
-- target gradually looks back when focused.
-- three contextual intentions change depending on whether the player is visibly armed and whether the target remembers fear.
-- GTA V ambient speech banks are used; no RDR2 dialogue/audio is redistributed.
-- local opinion/fear/recognition memory and Ped Overhaul bridge remain active.
-
-This is still the first conversation layer. The immediate goal of 0.1.1 is stable targeting and controls before adding deeper dialogue trees.
+There are no dialogue trees, relationship meters, phone apps or interaction menus. Ped cognition and ambient Rockstar speech decide the reaction.
