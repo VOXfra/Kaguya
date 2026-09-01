@@ -31,7 +31,15 @@ namespace VOX.PoliceOverhaulVI
             {
                 float q = Math.Max(0.15f, 1f - distance / faceRange * 0.72f);
                 float gain = (camera ? 58f : police ? 56f : 34f) * q * quality;
-                memory.FaceConfidence = Math.Max(memory.FaceConfidence, Clamp100(32f + gain));
+                float sample = Clamp100(32f + gain);
+
+                // The old code used only Math.Max(sample). That meant a cop could
+                // stare at an uncovered suspect for minutes from medium range and
+                // never cross FaceKnownThreshold unless they came unusually close.
+                // Direct continuous observation now accumulates confidence, while
+                // still requiring time at distance and remaining blocked by masks.
+                float repeatGain = (camera ? 2.1f : police ? 3.4f : 1.2f) * q * quality;
+                memory.FaceConfidence = Clamp100(Math.Max(memory.FaceConfidence, sample) + repeatGain);
             }
             else if (masked)
             {
@@ -88,9 +96,6 @@ namespace VOX.PoliceOverhaulVI
                 score += Math.Min(40f, memory.OutfitConfidence * 0.46f);
             }
 
-            // A nearby officer seeing the same flagged clothes in the exact
-            // flagged car should be able to form a reasonable match even when
-            // the original crime never produced a clean face image.
             if (policeObserver && outfitMatch && vehicleMatch)
             {
                 score += distance <= 12f ? 18f : 10f;
