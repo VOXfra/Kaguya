@@ -14,8 +14,12 @@ namespace VOX.PoliceOverhaulVI
 
         public static void Set(int level, bool owned)
         {
-            Level = Math.Max(0, Math.Min(6, level));
-            Owned = owned && Level > 0;
+            // Zero from the vanilla dispatch tier must not erase the row after
+            // LOS is lost: SearchHud explicitly owns/clears the search-phase HUD.
+            // Actual teardown paths call Clear().
+            if (level <= 0 || !owned) return;
+            Level = Math.Max(1, Math.Min(6, level));
+            Owned = true;
         }
 
         public static void Clear()
@@ -44,10 +48,6 @@ namespace VOX.PoliceOverhaulVI
 
             try
             {
-                // GTA V has storage/display logic for only five vanilla wanted
-                // stars. When VOX owns free-roam wanted state, hide that row and
-                // render the entire 1..6 row ourselves so the sixth slot cannot
-                // flicker or disappear.
                 Function.Call(Hash.HIDE_HUD_COMPONENT_THIS_FRAME, 1);
             }
             catch { }
