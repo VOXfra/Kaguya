@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - 'modules/**'
+      - 'tools/Scan-SoundPack.ps1'
       - '.github/workflows/build-aio-rdr2-systems-pass.yml'
       - 'docs/AIO_RC2_TESTING.txt'
       - 'docs/AIO_RC2_INSTALL.txt'
@@ -63,6 +64,7 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist/scripts/PoliceOverhaulVI/UI | Out-Null
+          New-Item -ItemType Directory -Force dist/TOOLS | Out-Null
           $managed = @('VOXCoreVI','CameraRuntimeVI','CharacterRuntimeVI','InteractionRuntimeVI','InventoryRuntimeVI','PedOverhaulVI','PoliceOverhaulVI','VehicleRuntimeVI','WorldLifeVI','MeleeRuntimeVI','VehicleOccupantVI','FireRuntimeVI','WildlifeRuntimeVI')
           foreach ($m in $managed) { Copy-Item "modules/$m/bin/Release/net48/$m.dll" "dist/scripts/$m.dll" }
           $configs = @(
@@ -75,6 +77,7 @@ jobs:
           foreach ($c in $configs) { Copy-Item "modules/$c" dist/scripts/ }
           Copy-Item modules/PoliceOverhaulVI/UI/*.png dist/scripts/PoliceOverhaulVI/UI/
           Copy-Item VOXBodyMorphVI.asi dist/VOXBodyMorphVI.asi
+          Copy-Item tools/Scan-SoundPack.ps1 dist/TOOLS/Scan-SoundPack.ps1
           if (Test-Path docs/AIO_RC2_INSTALL.txt) { Copy-Item docs/AIO_RC2_INSTALL.txt dist/INSTALL-AIO.txt }
           if (Test-Path docs/AIO_RC2_TESTING.txt) { Copy-Item docs/AIO_RC2_TESTING.txt dist/TEST-AIO.txt }
           if (Test-Path dist/scripts/VehicleCameraVI.dll) { throw 'Deprecated VehicleCameraVI must not be packaged.' }
