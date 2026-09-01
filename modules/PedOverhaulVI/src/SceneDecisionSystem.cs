@@ -14,6 +14,15 @@ namespace VOX.PedOverhaulVI
             if (scene.Kind == SceneThreatKind.SocialWarning && s.Stage < AwarenessStage.Concerned) return false;
             if (scene.SourceHandle == player.Handle) return false;
 
+            // A real, directly perceived attack by the player must be handled by
+            // the player-facing DecisionSystem. Scene logic must never mask it.
+            if (PlayerImmediateThreat(player, ped, cfg)) return false;
+
+            if (scene.Kind == SceneThreatKind.Body && GangAwarenessRuntime.TryHandleBody(player, ped, s, scene, nearby, cfg, log))
+                return true;
+            if (scene.Kind == SceneThreatKind.SocialWarning && GangAwarenessRuntime.TryHandleWarning(player, ped, s, scene, cfg, log))
+                return true;
+
             int now = Game.GameTime;
             bool hardEmergency = scene.Immediate || scene.Kind == SceneThreatKind.Explosion;
 
@@ -62,6 +71,20 @@ namespace VOX.PedOverhaulVI
             return true;
         }
 
+        private static bool PlayerImmediateThreat(Ped player, Ped observer, Config cfg)
+        {
+            if (player == null || observer == null || !player.Exists() || !observer.Exists()) return false;
+            if (!SensorySystem.HasVisual(observer, player, cfg.ThreatVisualRadius, cfg.PeripheralVisualFovDegrees)) return false;
+            try { if (Function.Call<bool>(Hash.IS_PED_SHOOTING, player.Handle)) return true; } catch { }
+            try
+            {
+                if (!Function.Call<bool>(Hash.IS_PLAYER_FREE_AIMING, Game.Player.Handle)) return false;
+                var arg = new OutputArgument();
+                return Function.Call<bool>(Hash.GET_ENTITY_PLAYER_IS_FREE_AIMING_AT, Game.Player.Handle, arg) && arg.GetResult<int>() == observer.Handle;
+            }
+            catch { return false; }
+        }
+
         private static void ReactVehicleHazard(Ped ped, PedState s, ScenePerception scene, Config cfg)
         {
             if (ped.IsInVehicle()) return;
@@ -82,10 +105,7 @@ namespace VOX.PedOverhaulVI
             {
                 Function.Call(Hash.TASK_GO_STRAIGHT_TO_COORD, ped.Handle, target.X, target.Y, target.Z, scene.Immediate ? 3.0f : 1.7f, scene.Immediate ? 1400 : 2600, 0f, 0f);
             }
-            catch
-            {
-                FleeFromCoord(ped, scene.Position, cfg, true);
-            }
+            catch { FleeFromCoord(ped, scene.Position, cfg, true); }
             s.Mode = ReactionMode.Evade;
             Stamp(s, cfg, scene.Immediate ? 1200 : 2100);
         }
@@ -136,8 +156,7 @@ namespace VOX.PedOverhaulVI
             {
                 Vector3 away = SafeDirection(scene.Position, ped.Position);
                 Vector3 target = scene.Position + away * 4.5f;
-                try { Function.Call(Hash.TASK_FOLLOW_NAV_MESH_TO_COORD, ped.Handle, target.X, target.Y, target.Z, 1.2f, 3500, 1.5f, 0, 0f); }
-                catch { }
+                try { Function.Call(Hash.TASK_FOLLOW_NAV_MESH_TO_COORD, ped.Handle, target.X, target.Y, target.Z, 1.2f, 3500, 1.5f, 0, 0f); } catch { }
                 s.Mode = ReactionMode.Assist;
                 Stamp(s, cfg, 2600);
                 return;
@@ -150,7 +169,6 @@ namespace VOX.PedOverhaulVI
                 Stamp(s, cfg, 3500);
                 return;
             }
-
             DiscreetLeaveFromCoord(ped, s, scene.Position, cfg, s.Fear > 55f ? 1.25f : 0.95f);
         }
 
@@ -163,13 +181,11 @@ namespace VOX.PedOverhaulVI
                 Stamp(s, cfg, 900);
                 return;
             }
-
             if (s.Stage == AwarenessStage.Concerned && scene.Distance > 10f)
             {
                 DiscreetLeaveFromCoord(ped, s, scene.Position, cfg, 0.9f);
                 return;
             }
-
             if (cfg.SeekCoverWhenThreatened && scene.Distance > 12f && s.Roll(Game.GameTime / 800 + 223) < 40 + s.SelfPreservation / 3)
             {
                 SeekCoverFromCoord(ped, scene.Position, s, cfg);
@@ -189,7 +205,6 @@ namespace VOX.PedOverhaulVI
                 Stamp(s, cfg, 1700);
                 return;
             }
-
             if (cfg.PhoneWhenSafe && s.Empathy >= 45 && s.Fear < 62f && scene.Distance > 10f && s.Roll(Game.GameTime / 1900 + 233) < 45)
             {
                 StartScenario(ped, "WORLD_HUMAN_STAND_MOBILE");
@@ -233,7 +248,6 @@ namespace VOX.PedOverhaulVI
                 Stamp(s, cfg, 900);
                 return;
             }
-
             if (s.Stage < AwarenessStage.Panic)
             {
                 DiscreetLeaveFromCoord(ped, s, scene.Position, cfg, 0.9f + s.Conformity / 250f);
@@ -250,8 +264,7 @@ namespace VOX.PedOverhaulVI
             float distance = cfg.DiscreetLeaveMinDistance + s.Roll(261) / 99f * Math.Max(1f, cfg.DiscreetLeaveMaxDistance - cfg.DiscreetLeaveMinDistance);
             Vector3 target = ped.Position + away * distance;
             float speed = Math.Max(0.75f, Math.Min(1.55f, cfg.DiscreetWalkSpeed * urgency));
-            try { Function.Call(Hash.TASK_FOLLOW_NAV_MESH_TO_COORD, ped.Handle, target.X, target.Y, target.Z, speed, 10000, 1.2f, 0, 0f); }
-            catch { }
+            try { Function.Call(Hash.TASK_FOLLOW_NAV_MESH_TO_COORD, ped.Handle, target.X, target.Y, target.Z, speed, 10000, 1.2f, 0, 0f); } catch { }
             s.Mode = ReactionMode.DiscreetLeave;
             s.LastSafeDirection = away;
             Stamp(s, cfg, 2800);
@@ -264,8 +277,7 @@ namespace VOX.PedOverhaulVI
             {
                 Vector3 away = SafeDirection(threat, ped.Position);
                 Vector3 target = ped.Position + away * Math.Min(60f, cfg.FleeDistance);
-                try { Function.Call(Hash.TASK_FOLLOW_NAV_MESH_TO_COORD, ped.Handle, target.X, target.Y, target.Z, urgent ? 2.5f : 1.8f, cfg.FleeDurationMs, 2f, 0, 0f); }
-                catch { }
+                try { Function.Call(Hash.TASK_FOLLOW_NAV_MESH_TO_COORD, ped.Handle, target.X, target.Y, target.Z, urgent ? 2.5f : 1.8f, cfg.FleeDurationMs, 2f, 0, 0f); } catch { }
             }
         }
 
@@ -280,8 +292,7 @@ namespace VOX.PedOverhaulVI
         private static void Freeze(Ped ped, PedState s, Config cfg, int min, int max)
         {
             int duration = min + s.Roll(271) * Math.Max(1, max - min) / 100;
-            try { Function.Call(Hash.TASK_STAND_STILL, ped.Handle, duration); }
-            catch { }
+            try { Function.Call(Hash.TASK_STAND_STILL, ped.Handle, duration); } catch { }
             s.Mode = ReactionMode.Freeze;
             Stamp(s, cfg, duration);
         }
@@ -300,8 +311,7 @@ namespace VOX.PedOverhaulVI
 
         private static void StartScenario(Ped ped, string scenario)
         {
-            try { Function.Call(Hash.TASK_START_SCENARIO_IN_PLACE, ped.Handle, scenario, 0, true); }
-            catch { }
+            try { Function.Call(Hash.TASK_START_SCENARIO_IN_PLACE, ped.Handle, scenario, 0, true); } catch { }
         }
 
         private static Vector3 SafeDirection(Vector3 threat, Vector3 ped)
