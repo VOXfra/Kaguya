@@ -209,8 +209,7 @@ namespace VOX.PoliceOverhaulVI
 
             if (memory.FaceKnown && _face != null) DrawIcon(_face, ref iconX, iconY, size);
 
-            bool mask = PoliceSearchRuntimeState.ActiveMaskKnown &&
-                        PoliceSearchRuntimeState.MaskDescriptorValid &&
+            bool mask = PoliceSearchRuntimeState.MaskDescriptorValid &&
                         PoliceSearchRuntimeState.MaskedDescriptor;
 
             bool outfit = PoliceSearchRuntimeState.ActiveOutfit != null
