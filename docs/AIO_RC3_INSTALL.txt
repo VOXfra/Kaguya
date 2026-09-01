@@ -1,0 +1,110 @@
+VOX GTA V ENHANCED -> VI-STYLE SYSTEMIC OVERHAUL — AIO RC3
+SYSTEMIC FOUNDATIONS PASS
+
+TARGET
+GTA V Enhanced Story Mode / free roam only. Never use this pack in GTA Online.
+
+REQUIRES
+- Script Hook V compatible with the installed GTA V Enhanced build
+- ScriptHookVDotNet Enhanced
+- ASI loader / working Enhanced mod stack
+
+CLEAN UPDATE
+Before copying RC3, remove these deprecated files if they still exist:
+- scripts\VehicleCameraVI.dll
+- scripts\VehicleCameraVI.ini
+CameraRuntimeVI remains the only VOX camera owner.
+
+Replace older VOX DLL/INI files. Do not keep renamed duplicate DLL copies in scripts because ScriptHookVDotNet can load both copies.
+
+INSTALL
+1. Close GTA V Enhanced.
+2. Copy the CONTENTS of this ZIP into the GTA V Enhanced root directory.
+3. Allow supplied VOX files to replace older versions.
+4. Launch Story Mode.
+
+ACTIVE MANAGED MODULES (17)
+- VOXCoreVI 0.2.0
+- CameraRuntimeVI 0.2.0
+- CharacterRuntimeVI 0.2.1
+- PhysicalCharacterVI 0.1.0 NEW
+- AnimationRuntimeVI 0.1.0 NEW
+- InteractionRuntimeVI 0.3.0
+- InventoryRuntimeVI 0.4.0
+- PedOverhaulVI 0.6.1
+- MeleeRuntimeVI 0.2.0 UPDATED
+- PoliceOverhaulVI 0.7.0
+- VehicleRuntimeVI 0.5.0
+- VehicleOccupantVI 0.1.0
+- WorldLifeVI 0.3.1
+- FireRuntimeVI 0.1.0
+- WildlifeRuntimeVI 0.1.0
+- InteriorRuntimeVI 0.1.0 NEW
+- AcousticRuntimeVI 0.1.0 NEW
+
+NATIVE
+- VOXBodyMorphVI.asi
+
+RC3 CONTROL POLICY
+No arbitrary mod hotkey is required for the new RC3 systems.
+- Context remains GTA Context: E / D-pad Right.
+- Melee remains GTA native melee controls.
+- InteriorRuntimeVI only intercepts Context when it has positively identified a nearby locked DoorSystem door in free roam.
+- VOXCoreVI now exposes a central expiring control-ownership arbiter for VOX systems. Claims are cleared while Rockstar owns a mission/cutscene/switch/fade.
+
+NEW RC3 FOUNDATIONS
+PhysicalCharacterVI:
+- Full leg IK in normal locomotion and melee-aware leg IK during fights.
+- Slope-aware footing with a small movement-rate reduction only on meaningful inclines.
+- Subtle continuation inertia on sharp running/sprinting direction changes.
+- Collision/deceleration bracing with short stumbles only above bounded thresholds.
+
+AnimationRuntimeVI:
+- Central priority/expiry animation request bridge.
+- Optional target alignment and facing before an animation begins.
+- Story ownership cancels VOX animation claims instead of fighting Rockstar tasks.
+- Designed for future door, carry, melee, object and contextual transitions.
+
+InteriorRuntimeVI:
+- Discovers real GTA DoorSystem entries from nearby props instead of using a hard-coded door list.
+- Locked DoorSystem doors can receive a short physical handle-test using E / D-pad Right.
+- It never changes the lock state during a handle test.
+- Mission-owned props are excluded.
+- Persistent interior/room circuit-state bridge is included for the future light switch / breaker / CCTV / powered-door layer. RC3 does NOT fake room lighting where GTA exposes no safe room-local switch control yet.
+
+AcousticRuntimeVI:
+- Detects player gunshots and models an acoustic event with weapon energy, suppressor state, distance, obstruction, interior and room membership.
+- Same-interior/same-room, different-room and interior/exterior listeners receive different attenuation.
+- Nearby free-roam civilians can orient to an inferred sound position or flee strong nearby reports without being given magical player coordinates as an identity fact.
+- Acoustic events are published into VOXCoreVI world memory for future police/evidence integration.
+- This is NOT yet real DSP/reverb replacement; it is the shared propagation/hearing foundation.
+
+MeleeRuntimeVI 0.2.0:
+- Keeps RC2 longer-fight health/damage pacing.
+- Adds a stamina-driven melee defense layer.
+- Native block input becomes substantially more effective while stamina remains.
+- Repeated holding/attacking drains stamina; backing off regenerates it.
+- A successfully timed block can open a short counter window; pressing a native melee attack in that window can stagger the current close opponent.
+- No custom combat hotkey or minigame.
+
+TOOLS
+TOOLS\Scan-SoundPack.ps1
+- Read-only manifest/hash helper for the large third-party sound pack. It does not redistribute the RPF content.
+
+TOOLS\Scan-RDR2-Install.ps1
+- Read-only RDR2 installation manifest helper.
+- It lists relevant RPF/animation/audio/config file families for targeted future clean-room study.
+- It never modifies or copies RDR2 game files.
+
+SOUND / GRAPHICS
+- The 1.5 GB third-party Sound Pack is NOT bundled.
+- NoNVEPopUp.asi and OpenRPF.asi are NOT redistributed.
+- RGS weapon audio is not replaced by this package.
+- DLSS 5 is not a dependency and is not part of RC3.
+- VisualV/NVE or other graphics packages are not bundled; the future visual pass will be handled separately rather than treating an upscaler as the solution.
+
+STORY-FIRST OWNERSHIP
+Mission flags, cutscenes, protagonist switches, loss of player control, fades and mission-owned entities remain protected. New RC3 systems fail closed and leave a short grace period before returning to free-roam behavior.
+
+IMPORTANT VALIDATION NOTE
+A successful GitHub build proves that the C#/native projects compile and the package contains the expected files. It does NOT prove in-game behavior. Use TEST-AIO.txt and report the exact scene plus the relevant module log for anything that looks wrong.
