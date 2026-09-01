@@ -138,21 +138,10 @@ namespace
         return std::fabs(dotAB) < 0.20f && std::fabs(dotAC) < 0.20f && std::fabs(dotBC) < 0.20f;
     }
 
-    ptrdiff_t FindTransformOffset(BYTE* base, const BodyState& s)
+    bool SafeMatrixLooks(float* matrix, const BodyState* state)
     {
-        if (!base) return -1;
-        for (ptrdiff_t offset = 0x20; offset <= 0x240; offset += 4)
-        {
-            BYTE* address = base + offset;
-            if (!RangeReadableWritable(address, sizeof(float) * 16)) continue;
-            float* m = reinterpret_cast<float*>(address);
-            __try
-            {
-                if (MatrixLooksLikeEntityTransform(m, s)) return offset;
-            }
-            __except (EXCEPTION_EXECUTE_HANDLER) { }
-        }
-        return -1;
+        __try { return matrix && state && MatrixLooksLikeEntityTransform(matrix, *state); }
+        __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
     }
 
     void NormalizeAndScale(float* p, float scale)
@@ -163,6 +152,31 @@ namespace
         p[0] *= mul;
         p[1] *= mul;
         p[2] *= mul;
+    }
+
+    bool SafeScaleMatrix(float* matrix, const BodyState* state, float width)
+    {
+        __try
+        {
+            if (!matrix || !state || !MatrixLooksLikeEntityTransform(matrix, *state)) return false;
+            NormalizeAndScale(matrix + 0, width);
+            NormalizeAndScale(matrix + 4, width);
+            NormalizeAndScale(matrix + 8, 1.0f);
+            return true;
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+    }
+
+    ptrdiff_t FindTransformOffset(BYTE* base, const BodyState& s)
+    {
+        if (!base) return -1;
+        for (ptrdiff_t offset = 0x20; offset <= 0x240; offset += 4)
+        {
+            BYTE* address = base + offset;
+            if (!RangeReadableWritable(address, sizeof(float) * 16)) continue;
+            if (SafeMatrixLooks(reinterpret_cast<float*>(address), &s)) return offset;
+        }
+        return -1;
     }
 
     bool ApplyWidth(float targetWidth)
@@ -180,14 +194,9 @@ namespace
         if (g_cachedMatrixOffset >= 0)
         {
             BYTE* candidate = base + g_cachedMatrixOffset;
-            if (!RangeReadableWritable(candidate, sizeof(float) * 16)) g_cachedMatrixOffset = -1;
-            else
-            {
-                bool valid = false;
-                __try { valid = MatrixLooksLikeEntityTransform(reinterpret_cast<float*>(candidate), g_state); }
-                __except (EXCEPTION_EXECUTE_HANDLER) { valid = false; }
-                if (!valid) g_cachedMatrixOffset = -1;
-            }
+            if (!RangeReadableWritable(candidate, sizeof(float) * 16) ||
+                !SafeMatrixLooks(reinterpret_cast<float*>(candidate), &g_state))
+                g_cachedMatrixOffset = -1;
         }
 
         if (g_cachedMatrixOffset < 0)
@@ -202,20 +211,10 @@ namespace
             else return false;
         }
 
-        float* m = reinterpret_cast<float*>(base + g_cachedMatrixOffset);
-        __try
-        {
-            if (!MatrixLooksLikeEntityTransform(m, g_state)) return false;
-            NormalizeAndScale(m + 0, targetWidth);
-            NormalizeAndScale(m + 4, targetWidth);
-            NormalizeAndScale(m + 8, 1.0f);
-            return true;
-        }
-        __except (EXCEPTION_EXECUTE_HANDLER)
-        {
-            g_cachedMatrixOffset = -1;
-            return false;
-        }
+        float* matrix = reinterpret_cast<float*>(base + g_cachedMatrixOffset);
+        if (SafeScaleMatrix(matrix, &g_state, targetWidth)) return true;
+        g_cachedMatrixOffset = -1;
+        return false;
     }
 
     void RunFrame()
@@ -240,10 +239,7 @@ namespace
             return;
         }
 
-        if (ApplyWidth(g_state.width))
-        {
-            g_appliedLastFrame = true;
-        }
+        if (ApplyWidth(g_state.width)) g_appliedLastFrame = true;
         else if (now - g_lastMissingMatrixLog > 5000)
         {
             g_lastMissingMatrixLog = now;
