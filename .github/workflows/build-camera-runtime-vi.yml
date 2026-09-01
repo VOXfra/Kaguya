@@ -11,8 +11,7 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
       - name: Fetch SHVDNE reference
         shell: pwsh
         run: |
@@ -33,10 +32,10 @@ jobs:
           Copy-Item modules/CameraRuntimeVI/bin/Release/net48/CameraRuntimeVI.dll dist/scripts/CameraRuntimeVI.dll
           Copy-Item modules/CameraRuntimeVI/config/CameraRuntimeVI.ini dist/scripts/CameraRuntimeVI.ini
           Copy-Item modules/CameraRuntimeVI/INSTALL.txt dist/INSTALL.txt
-          Compress-Archive -Path dist/* -DestinationPath CameraRuntimeVI-v0.1.0.zip -Force
+          Compress-Archive -Path dist/* -DestinationPath CameraRuntimeVI-v0.2.0.zip -Force
       - name: Upload test build
         uses: actions/upload-artifact@v4
         with:
-          name: CameraRuntimeVI-v0.1.0
-          path: CameraRuntimeVI-v0.1.0.zip
+          name: CameraRuntimeVI-v0.2.0
+          path: CameraRuntimeVI-v0.2.0.zip
           if-no-files-found: error
