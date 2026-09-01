@@ -28,10 +28,11 @@ namespace VOX.PoliceOverhaulVI
 
     public sealed class PoliceOverhaulVIWantedHudScript : Script
     {
-        private const string RedStarPath = "scripts\\PoliceOverhaulVI\\UI\\starRED.png";
+        private const string RedStarPath = "scripts\\PoliceOverhaulVI\\UI\\wantedStarRed.png";
+        private const string WhiteStarPath = "scripts\\PoliceOverhaulVI\\UI\\wantedStarWhite.png";
         private CustomSprite _redStar;
-        private bool _redAttempted;
-        private int _lastVanillaTextureRequest;
+        private CustomSprite _whiteStar;
+        private bool _assetsAttempted;
 
         public PoliceOverhaulVIWantedHudScript()
         {
@@ -42,6 +43,11 @@ namespace VOX.PoliceOverhaulVI
 
         private void OnTick(object sender, EventArgs e)
         {
+            if (RockstarOwnsScene())
+            {
+                PoliceWantedHudState.Clear();
+                return;
+            }
             if (!PoliceWantedHudState.Owned || PoliceWantedHudState.Level <= 0) return;
 
             int nativeWanted = 0;
@@ -58,7 +64,7 @@ namespace VOX.PoliceOverhaulVI
                 // GTA only owns five native wanted slots. At the internal sixth tier
                 // we replace the row only for the otherwise impossible sixth star.
                 try { Function.Call(Hash.HIDE_HUD_COMPONENT_THIS_FRAME, 1); } catch { }
-                DrawVanillaStyleRow();
+                DrawOwnedSixStarRow();
             }
             else
             {
@@ -68,65 +74,53 @@ namespace VOX.PoliceOverhaulVI
             }
         }
 
-        private void DrawVanillaStyleRow()
+        private void DrawOwnedSixStarRow()
         {
-            try
-            {
-                if (!Function.Call<bool>(Hash.HAS_STREAMED_TEXTURE_DICT_LOADED, "commonmenu"))
-                {
-                    if (Game.GameTime - _lastVanillaTextureRequest > 250)
-                    {
-                        _lastVanillaTextureRequest = Game.GameTime;
-                        Function.Call(Hash.REQUEST_STREAMED_TEXTURE_DICT, "commonmenu", false);
-                    }
-                    return;
-                }
-
-                float safe = Function.Call<float>(Hash.GET_SAFE_ZONE_SIZE);
-                float safeRight = 1f - (1f - safe) * 0.5f;
-                float rightMostX = safeRight - 0.0130f;
-                const float y = 0.0438f;
-                const float width = 0.0158f;
-                const float height = 0.0285f;
-                const float spacing = 0.0160f;
-
-                for (int i = 0; i < PoliceWantedHudState.Level; i++)
-                {
-                    float x = rightMostX - i * spacing;
-                    Function.Call(Hash.DRAW_SPRITE, "commonmenu", "leaderboard_star_icon",
-                        x, y, width, height, 0f, 255, 255, 255, 245, false);
-                }
-            }
-            catch { }
+            EnsureWantedStars();
+            if (_whiteStar == null) return;
+            DrawSpriteRow(_whiteStar, PoliceWantedHudState.Level, 1152f, 48f, 25f);
         }
 
         private void DrawRedSearchRow()
         {
-            EnsureRedStar();
+            EnsureWantedStars();
             if (_redStar == null) return;
+            DrawSpriteRow(_redStar, PoliceWantedHudState.Level, 1152f, 48f, 25f);
+        }
 
-            float right = 1152f;
-            float y = 48f;
-            float size = 25f;
-            for (int i = 0; i < PoliceWantedHudState.Level; i++)
+        private static void DrawSpriteRow(CustomSprite sprite, int level, float right, float y, float size)
+        {
+            for (int i = 0; i < level; i++)
             {
-                _redStar.Position = new PointF(right - i * 28f, y);
-                _redStar.Size = new SizeF(size, size);
-                _redStar.ScaledDraw();
+                sprite.Position = new PointF(right - i * 28f, y);
+                sprite.Size = new SizeF(size, size);
+                sprite.ScaledDraw();
             }
         }
 
-        private void EnsureRedStar()
+        private void EnsureWantedStars()
         {
-            if (_redAttempted) return;
-            _redAttempted = true;
+            if (_assetsAttempted) return;
+            _assetsAttempted = true;
             try
             {
                 HudAssetInstaller.EnsureHighResolutionAssets();
                 if (File.Exists(RedStarPath))
                     _redStar = new CustomSprite(Path.GetFullPath(RedStarPath), new SizeF(25f, 25f), new PointF(0f, 0f), Color.White, 0f, true);
+                if (File.Exists(WhiteStarPath))
+                    _whiteStar = new CustomSprite(Path.GetFullPath(WhiteStarPath), new SizeF(25f, 25f), new PointF(0f, 0f), Color.White, 0f, true);
             }
-            catch { _redStar = null; }
+            catch { _redStar = null; _whiteStar = null; }
+        }
+
+        private static bool RockstarOwnsScene()
+        {
+            try { if (Function.Call<bool>(Hash.IS_CUTSCENE_ACTIVE)) return true; } catch { }
+            try { if (Function.Call<bool>(Hash.IS_PLAYER_SWITCH_IN_PROGRESS)) return true; } catch { }
+            try { if (Function.Call<bool>(Hash.GET_MISSION_FLAG)) return true; } catch { }
+            try { if (!Function.Call<bool>(Hash.IS_PLAYER_CONTROL_ON, Game.Player.Handle)) return true; } catch { }
+            try { return Function.Call<bool>(Hash.IS_SCREEN_FADED_OUT) || Function.Call<bool>(Hash.IS_SCREEN_FADING_OUT) || Function.Call<bool>(Hash.IS_SCREEN_FADING_IN); }
+            catch { return true; }
         }
 
         private void OnAborted(object sender, EventArgs e)
