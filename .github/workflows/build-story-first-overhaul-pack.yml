@@ -1,0 +1,103 @@
+name: Build Story-First GTA V to VI Overhaul Pack
+
+on:
+  push:
+    paths:
+      - 'modules/CameraRuntimeVI/**'
+      - 'modules/CharacterRuntimeVI/**'
+      - 'modules/InteractionRuntimeVI/**'
+      - 'modules/InventoryRuntimeVI/**'
+      - 'modules/PedOverhaulVI/**'
+      - 'modules/PoliceOverhaulVI/**'
+      - 'modules/VOXCoreVI/**'
+      - 'modules/VehicleRuntimeVI/**'
+      - 'modules/WorldLifeVI/**'
+      - 'docs/STORY_FIRST_INSTALL.txt'
+      - '.github/workflows/build-story-first-overhaul-pack.yml'
+  workflow_dispatch:
+
+jobs:
+  build-pack:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch shared SHVDNE reference
+        shell: pwsh
+        run: |
+          $url = 'https://github.com/Chiheb-Bacha/ScriptHookVDotNetEnhanced/releases/download/v1.1.0.6/ScriptHookVDotNetEnhanced-v1.1.0.6.zip'
+          Invoke-WebRequest -Uri $url -OutFile shvdne.zip
+          Expand-Archive shvdne.zip -DestinationPath shvdne
+          $ref = Get-ChildItem shvdne -Recurse -Filter ScriptHookVDotNet3.dll | Select-Object -First 1
+          if (-not $ref) { throw 'ScriptHookVDotNet3.dll not found.' }
+          $mods = @('CameraRuntimeVI','CharacterRuntimeVI','InteractionRuntimeVI','InventoryRuntimeVI','PedOverhaulVI','PoliceOverhaulVI','VOXCoreVI','VehicleRuntimeVI','WorldLifeVI')
+          foreach ($m in $mods) {
+            New-Item -ItemType Directory -Force "modules/$m/refs" | Out-Null
+            Copy-Item $ref.FullName "modules/$m/refs/ScriptHookVDotNet3.dll" -Force
+          }
+
+      - name: Build managed modules
+        shell: pwsh
+        run: |
+          $projects = @(
+            'modules/VOXCoreVI/VOXCoreVI.csproj',
+            'modules/CameraRuntimeVI/CameraRuntimeVI.csproj',
+            'modules/CharacterRuntimeVI/CharacterRuntimeVI.csproj',
+            'modules/InteractionRuntimeVI/InteractionRuntimeVI.csproj',
+            'modules/InventoryRuntimeVI/InventoryRuntimeVI.csproj',
+            'modules/PedOverhaulVI/PedOverhaulVI.csproj',
+            'modules/PoliceOverhaulVI/PoliceOverhaulVI.csproj',
+            'modules/VehicleRuntimeVI/VehicleRuntimeVI.csproj',
+            'modules/WorldLifeVI/WorldLifeVI.csproj'
+          )
+          foreach ($p in $projects) {
+            dotnet build $p -c Release
+            if ($LASTEXITCODE -ne 0) { throw "Build failed: $p" }
+          }
+
+      - name: Build Character native body bridge
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat" 2>nul || call "%ProgramFiles%\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" 2>nul || call "%ProgramFiles%\Microsoft Visual Studio\18\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          cl /nologo /LD /EHsc /O2 /std:c++17 /W4 /WX modules\CharacterRuntimeVI\native\VOXBodyMorphVI.cpp /link /OUT:VOXBodyMorphVI.asi
+
+      - name: Assemble install-ready package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist/scripts/PoliceOverhaulVI/UI | Out-Null
+
+          Copy-Item modules/VOXCoreVI/bin/Release/net48/VOXCoreVI.dll dist/scripts/VOXCoreVI.dll
+          Copy-Item modules/CameraRuntimeVI/bin/Release/net48/CameraRuntimeVI.dll dist/scripts/CameraRuntimeVI.dll
+          Copy-Item modules/CameraRuntimeVI/config/CameraRuntimeVI.ini dist/scripts/CameraRuntimeVI.ini
+          Copy-Item modules/CharacterRuntimeVI/bin/Release/net48/CharacterRuntimeVI.dll dist/scripts/CharacterRuntimeVI.dll
+          Copy-Item modules/InteractionRuntimeVI/bin/Release/net48/InteractionRuntimeVI.dll dist/scripts/InteractionRuntimeVI.dll
+          Copy-Item modules/InteractionRuntimeVI/config/InteractionRuntimeVI.ini dist/scripts/InteractionRuntimeVI.ini
+          Copy-Item modules/InventoryRuntimeVI/bin/Release/net48/InventoryRuntimeVI.dll dist/scripts/InventoryRuntimeVI.dll
+          Copy-Item modules/PedOverhaulVI/bin/Release/net48/PedOverhaulVI.dll dist/scripts/PedOverhaulVI.dll
+          Copy-Item modules/PedOverhaulVI/config/PedOverhaulVI.ini dist/scripts/PedOverhaulVI.ini
+          Copy-Item modules/PoliceOverhaulVI/bin/Release/net48/PoliceOverhaulVI.dll dist/scripts/PoliceOverhaulVI.dll
+          Copy-Item modules/PoliceOverhaulVI/config/PoliceOverhaulVI.ini dist/scripts/PoliceOverhaulVI.ini
+          Copy-Item modules/PoliceOverhaulVI/UI/*.png dist/scripts/PoliceOverhaulVI/UI/
+          Copy-Item modules/VehicleRuntimeVI/bin/Release/net48/VehicleRuntimeVI.dll dist/scripts/VehicleRuntimeVI.dll
+          Copy-Item modules/WorldLifeVI/bin/Release/net48/WorldLifeVI.dll dist/scripts/WorldLifeVI.dll
+          Copy-Item modules/WorldLifeVI/config/WorldLifeVI.ini dist/scripts/WorldLifeVI.ini
+
+          Copy-Item VOXBodyMorphVI.asi dist/VOXBodyMorphVI.asi
+          Copy-Item docs/STORY_FIRST_INSTALL.txt dist/INSTALL-STORY-FIRST.txt
+
+          if (Test-Path dist/scripts/VehicleCameraVI.dll) { throw 'Deprecated VehicleCameraVI.dll must not be packaged.' }
+          if (Test-Path dist/scripts/VehicleCameraVI.ini) { throw 'Deprecated VehicleCameraVI.ini must not be packaged.' }
+
+          $expected = @('VOXCoreVI.dll','CameraRuntimeVI.dll','CharacterRuntimeVI.dll','InteractionRuntimeVI.dll','InventoryRuntimeVI.dll','PedOverhaulVI.dll','PoliceOverhaulVI.dll','VehicleRuntimeVI.dll','WorldLifeVI.dll')
+          foreach ($dll in $expected) {
+            if (-not (Test-Path "dist/scripts/$dll")) { throw "Missing expected module: $dll" }
+          }
+
+          Compress-Archive -Path dist/* -DestinationPath VOX-GTA-V-Enhanced-to-VI-Story-First-RC1.zip -Force
+
+      - name: Upload complete Story Mode test build
+        uses: actions/upload-artifact@v4
+        with:
+          name: VOX-GTA-V-Enhanced-to-VI-Story-First-RC1
+          path: VOX-GTA-V-Enhanced-to-VI-Story-First-RC1.zip
+          if-no-files-found: error
