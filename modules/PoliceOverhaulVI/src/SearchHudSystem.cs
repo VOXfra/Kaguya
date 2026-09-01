@@ -18,7 +18,7 @@ namespace VOX.PoliceOverhaulVI
         private int _searchLatchedUntil, _visualContactSince;
         private Vector3 _lastCenter;
         private float _lastInnerRadius, _lastOuterRadius;
-        private CustomSprite _face, _clothes, _vehicle;
+        private CustomSprite _face, _clothes, _vehicle, _weapon, _mask;
         private bool _spritesAttempted, _suppressCurrentPhase;
 
         public SearchHudSystem() { _current = this; }
@@ -203,14 +203,15 @@ namespace VOX.PoliceOverhaulVI
             if (memory == null) return;
             EnsureSprites();
 
-            // Wanted stars are owned by PoliceOverhaulVIWantedHudScript. Evidence
-            // icons begin underneath that stable row and represent CURRENT active
-            // signalment, not every historical fact stored in the case file.
-            float iconX = 1012f;
+            float iconX = 978f;
             float iconY = 82f;
             float size = cfg.EvidenceIconSize;
 
             if (memory.FaceKnown && _face != null) DrawIcon(_face, ref iconX, iconY, size);
+
+            bool mask = PoliceSearchRuntimeState.ActiveMaskKnown &&
+                        PoliceSearchRuntimeState.MaskDescriptorValid &&
+                        PoliceSearchRuntimeState.MaskedDescriptor;
 
             bool outfit = PoliceSearchRuntimeState.ActiveOutfit != null
                 ? PoliceSearchRuntimeState.ActiveOutfitValid
@@ -232,15 +233,14 @@ namespace VOX.PoliceOverhaulVI
                 }
                 catch { }
 
-                // If the suspect has abandoned a genuinely tracked flagged car,
-                // the car may remain an active police signal even while the player
-                // is on foot. A merely historical case vehicle does NOT get a badge.
                 bool recentTrackerSignal = runtimeSearch && memory.Vehicle != null && memory.Vehicle.TrackerKnownByPolice &&
                     PoliceSearchRuntimeState.LastTrackerPingAt > 0 && Game.GameTime - PoliceSearchRuntimeState.LastTrackerPingAt < 12000;
                 vehicle = playerInMatchingVehicle || recentTrackerSignal;
             }
 
+            if (mask && _mask != null) DrawIcon(_mask, ref iconX, iconY, size);
             if (outfit && _clothes != null) DrawIcon(_clothes, ref iconX, iconY, size);
+            if (memory.WeaponKnown && memory.WeaponHash != 0 && _weapon != null) DrawIcon(_weapon, ref iconX, iconY, size);
             if (vehicle && _vehicle != null) DrawIcon(_vehicle, ref iconX, iconY, size);
         }
 
@@ -262,6 +262,8 @@ namespace VOX.PoliceOverhaulVI
                 _face = TrySprite(Path.Combine(UiDirectory, "face.png"));
                 _clothes = TrySprite(Path.Combine(UiDirectory, "clothes.png"));
                 _vehicle = TrySprite(Path.Combine(UiDirectory, "vehicle.png"));
+                _weapon = TrySprite(Path.Combine(UiDirectory, "weapon.png"));
+                _mask = TrySprite(Path.Combine(UiDirectory, "mask.png"));
             }
             catch { }
         }
