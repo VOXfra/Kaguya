@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Windows.Forms;
 
 namespace VOX.InventoryRuntimeVI
 {
@@ -13,7 +14,7 @@ namespace VOX.InventoryRuntimeVI
         private const string DataDir = "scripts\\InventoryRuntimeVI";
         private const string LogPath = DataDir + "\\InventoryRuntimeVI.log";
         private const string InventoryPath = DataDir + "\\TrunkInventory.txt";
-        private const int InputReload = 45;
+        private const Keys TrunkKey = Keys.H;
 
         private sealed class WeaponEntry
         {
@@ -25,6 +26,7 @@ namespace VOX.InventoryRuntimeVI
         private int _actionVehicle;
         private int _actionStarted;
         private bool _actionRetrieve;
+        private bool _trunkKeyDown;
         private int _lastHelp;
         private int _lastSave;
 
@@ -34,8 +36,22 @@ namespace VOX.InventoryRuntimeVI
             Load();
             Interval = 50;
             Tick += OnTick;
+            KeyDown += OnKeyDown;
+            KeyUp += OnKeyUp;
             Aborted += OnAborted;
-            Log("Inventory Runtime VI 0.1.0 loaded: persistent physical vehicle-trunk weapon storage.");
+            Log("Inventory Runtime VI 0.1.1 loaded: trunk storage moved to conflict-free H hold control.");
+        }
+
+        private void OnKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.KeyCode == TrunkKey) _trunkKeyDown = true;
+        }
+
+        private void OnKeyUp(object sender, KeyEventArgs e)
+        {
+            if (e.KeyCode != TrunkKey) return;
+            _trunkKeyDown = false;
+            ResetAction();
         }
 
         private void OnTick(object sender, EventArgs e)
@@ -54,8 +70,6 @@ namespace VOX.InventoryRuntimeVI
                     return;
                 }
 
-                try { Function.Call(Hash.DISABLE_CONTROL_ACTION, 0, InputReload, true); } catch { }
-
                 string key = VehicleKey(vehicle);
                 List<WeaponEntry> trunk = GetTrunk(key);
                 int unarmed = SafeHash("WEAPON_UNARMED");
@@ -63,17 +77,16 @@ namespace VOX.InventoryRuntimeVI
                 bool armed = selected != 0 && selected != unarmed;
 
                 if (armed)
-                    ShowHelp("Maintenez ~INPUT_RELOAD~ pres du coffre pour ranger l'arme equipee.");
+                    ShowHelp("Maintenez [H] pres du coffre pour ranger l'arme equipee.");
                 else if (trunk.Count > 0)
-                    ShowHelp("Maintenez ~INPUT_RELOAD~ pres du coffre pour recuperer la derniere arme rangee.");
+                    ShowHelp("Maintenez [H] pres du coffre pour recuperer la derniere arme rangee.");
                 else
                 {
                     ResetAction();
                     return;
                 }
 
-                bool pressed = IsDisabledControlPressed(InputReload);
-                if (!pressed) { ResetAction(); return; }
+                if (!_trunkKeyDown) { ResetAction(); return; }
 
                 bool retrieve = !armed;
                 if (_actionVehicle != vehicle.Handle || _actionRetrieve != retrieve)
@@ -83,10 +96,11 @@ namespace VOX.InventoryRuntimeVI
                     _actionStarted = Game.GameTime;
                     return;
                 }
-                if (Game.GameTime - _actionStarted < 850) return;
+                if (Game.GameTime - _actionStarted < 700) return;
 
                 if (retrieve) RetrieveWeapon(player, key, trunk);
                 else StoreWeapon(player, key, trunk, selected);
+                _trunkKeyDown = false; // one action per deliberate hold; release and press H again for another item
                 ResetAction();
 
                 if (Game.GameTime - _lastSave > 1000)
@@ -177,11 +191,6 @@ namespace VOX.InventoryRuntimeVI
             try { return Function.Call<bool>(Hash.GET_MISSION_FLAG); } catch { return false; }
         }
 
-        private static bool IsDisabledControlPressed(int control)
-        {
-            try { return Function.Call<bool>(Hash.IS_DISABLED_CONTROL_PRESSED, 0, control); } catch { return false; }
-        }
-
         private void ShowHelp(string text)
         {
             if (Game.GameTime - _lastHelp < 80) return;
@@ -232,7 +241,7 @@ namespace VOX.InventoryRuntimeVI
         }
 
         private void ResetAction() { _actionVehicle = 0; _actionStarted = 0; _actionRetrieve = false; }
-        private void OnAborted(object sender, EventArgs e) { Save(); ResetAction(); }
+        private void OnAborted(object sender, EventArgs e) { Save(); _trunkKeyDown = false; ResetAction(); }
         private static void Log(string text)
         {
             try { Directory.CreateDirectory(DataDir); File.AppendAllText(LogPath, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + " | " + text + Environment.NewLine); }
