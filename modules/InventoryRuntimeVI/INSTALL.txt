@@ -1,0 +1,15 @@
+INVENTORY RUNTIME VI — 0.1.0
+
+Requires Script Hook V + Script Hook V .NET Enhanced.
+Copy scripts/InventoryRuntimeVI.dll into GTA V\scripts\.
+
+Effective 0.1 systems:
+- persistent weapon storage per physical vehicle trunk
+- walk to the rear of a non-mission vehicle
+- while armed, hold Reload to put the equipped weapon into that car's trunk
+- while unarmed, hold Reload to recover the most recently stored weapon
+- ammo count is preserved
+- trunk contents persist in scripts\InventoryRuntimeVI\TrunkInventory.txt
+- Rockstar mission/cutscene/player-switch ownership disables the runtime
+
+This is the first physical-inventory layer. It deliberately avoids deleting excess weapons automatically until the carry-limit policy and UI are tested together.
