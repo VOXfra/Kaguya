@@ -50,28 +50,14 @@ namespace VOX.InteractionRuntimeVI
             KeyUp += OnKeyUp;
             Aborted += OnAborted;
             ProbePedBridge();
-            Log("Interaction Runtime VI 0.2.0 native-input + camera-focus correction loaded.");
+            Log("Interaction Runtime VI 0.2.1 story-safe contextual focus loaded.");
         }
 
         private void OnKeyDown(object sender, KeyEventArgs e)
         {
-            if (e.KeyCode == _cfg.FocusKey)
-            {
-                if (!_focusDown)
-                {
-                    _focusDown = true;
-                    _focusStarted = Game.GameTime;
-                    _targetLostSince = 0;
-                    _candidateSince = 0;
-                    _candidateHandle = 0;
-                }
-                return;
-            }
-
             if (!_focusDown || _target == null || !_target.Exists()) return;
             if (Game.GameTime - _focusStarted < _cfg.FocusHoldMs) return;
             if (Game.GameTime - _lastInteraction < _cfg.InteractionCooldownMs) return;
-
             if (e.KeyCode == _cfg.PositiveKey) Perform(0);
             else if (e.KeyCode == _cfg.ContextKey) Perform(1);
             else if (e.KeyCode == _cfg.NegativeKey) Perform(2);
@@ -79,8 +65,7 @@ namespace VOX.InteractionRuntimeVI
 
         private void OnKeyUp(object sender, KeyEventArgs e)
         {
-            if (e.KeyCode != _cfg.FocusKey) return;
-            ResetFocus();
+            if (e.KeyCode == _cfg.FocusKey) ResetFocus(false);
         }
 
         private void OnTick(object sender, EventArgs e)
@@ -91,39 +76,71 @@ namespace VOX.InteractionRuntimeVI
                 Ped player = Game.LocalPlayerPed;
                 if (player == null || !player.Exists() || player.IsDead)
                 {
-                    ResetFocus();
+                    ResetFocus(true);
                     return;
                 }
-
                 if (Game.GameTime - _lastBridgeProbe > 4000) ProbePedBridge();
                 if (ShouldYield())
                 {
-                    ResetFocus();
+                    ResetFocus(true);
                     return;
                 }
 
                 CleanupMemory();
-                SyncFocusInput();
-                if (!_focusDown) return;
+                if (player.IsInVehicle())
+                {
+                    ResetFocus(true);
+                    return;
+                }
 
-                SuppressConflictingControls();
+                // Passive camera acquisition happens before E is owned. If no stable
+                // free-roam ped is under the camera, vanilla E remains untouched.
                 UpdateTarget(player);
-                if (_target == null || !_target.Exists()) return;
+                SyncFocusInput(player);
+                if (!_focusDown) return;
+                if (_target == null || !_target.Exists()) { ResetFocus(true); return; }
 
                 int held = Game.GameTime - _focusStarted;
+                if (held >= _cfg.FocusHoldMs)
+                {
+                    SuppressConflictingControls();
+                    if (_cfg.ShowControls) DrawInteractionHud(player, _target);
+                    PollDirectionalControls();
+                }
+
                 if (held >= _cfg.LookAtAfterMs && Game.GameTime - _lastLookTask > 1500)
                 {
                     _lastLookTask = Game.GameTime;
                     try { Function.Call(Hash.TASK_LOOK_AT_ENTITY, _target.Handle, player.Handle, 1900, 0, 2); } catch { }
                 }
-
-                if (held >= _cfg.FocusHoldMs)
-                {
-                    if (_cfg.ShowControls) DrawInteractionHud(player, _target);
-                    PollDirectionalControls();
-                }
             }
             catch (Exception ex) { Log("Tick error: " + ex); }
+        }
+
+        private void SyncFocusInput(Ped player)
+        {
+            bool pressed = ReadControlPressed(InputContext);
+            if (pressed && !_focusDown)
+            {
+                if (_target == null || !_target.Exists() || !CanOwnContext(player)) return;
+                _focusDown = true;
+                _focusStarted = Game.GameTime;
+                _targetLostSince = 0;
+            }
+            else if (!pressed && _focusDown) ResetFocus(false);
+        }
+
+        private static bool CanOwnContext(Ped player)
+        {
+            if (player == null || !player.Exists() || player.IsInVehicle()) return false;
+            try
+            {
+                int vehicle = Function.Call<int>(Hash.GET_VEHICLE_PED_IS_TRYING_TO_ENTER, player.Handle);
+                if (vehicle != 0) return false;
+            }
+            catch { }
+            try { if (Function.Call<bool>(Hash.IS_PLAYER_FREE_AIMING, Game.Player.Handle)) return false; } catch { }
+            return true;
         }
 
         private void UpdateTarget(Ped player)
@@ -131,31 +148,28 @@ namespace VOX.InteractionRuntimeVI
             int now = Game.GameTime;
             if (now - _lastTargetScan < Math.Max(50, _cfg.TargetScanMs)) return;
             _lastTargetScan = now;
-
             Ped candidate = FindTarget(player);
+
+            if (_target != null && _target.Exists() && IsTargetStillLocked(player, _target))
+            {
+                _targetLostSince = 0;
+                _candidateHandle = 0;
+                _candidateSince = 0;
+                return;
+            }
+
             if (_target != null && _target.Exists())
             {
-                bool targetStillUsable = IsTargetStillLocked(player, _target);
-                if (targetStillUsable)
-                {
-                    _targetLostSince = 0;
-                    _candidateHandle = 0;
-                    _candidateSince = 0;
-                    return;
-                }
-
                 if (_targetLostSince == 0) _targetLostSince = now;
-                if (now - _targetLostSince < Math.Max(150, _cfg.TargetLostGraceMs)) return;
+                if (_focusDown && now - _targetLostSince < Math.Max(150, _cfg.TargetLostGraceMs)) return;
             }
 
             if (candidate == null || !candidate.Exists())
             {
-                if (_targetLostSince > 0 && now - _targetLostSince >= Math.Max(150, _cfg.TargetLostGraceMs))
-                {
+                if (!_focusDown || _targetLostSince == 0 || now - _targetLostSince >= Math.Max(150, _cfg.TargetLostGraceMs))
                     _target = null;
-                    _candidateHandle = 0;
-                    _candidateSince = 0;
-                }
+                _candidateHandle = 0;
+                _candidateSince = 0;
                 return;
             }
 
@@ -165,7 +179,6 @@ namespace VOX.InteractionRuntimeVI
                 _candidateSince = now;
                 return;
             }
-
             if (now - _candidateSince < Math.Max(0, _cfg.TargetAcquireStableMs)) return;
 
             bool changed = _target == null || !_target.Exists() || _target.Handle != candidate.Handle;
@@ -181,12 +194,10 @@ namespace VOX.InteractionRuntimeVI
             Ped[] peds;
             try { peds = World.GetNearbyPeds(player, _cfg.MaxDistance); }
             catch { return null; }
-
             Vector3 camPos = GameplayCamera.Position;
             Vector3 camDir = GameplayCamera.Direction;
             Ped best = null;
             float bestScore = float.MinValue;
-
             foreach (Ped p in peds)
             {
                 if (!UsableTarget(p, player)) continue;
@@ -195,17 +206,11 @@ namespace VOX.InteractionRuntimeVI
                 if (len < 0.1f) continue;
                 float dot = Dot(camDir, delta) / len;
                 if (dot < _cfg.AcquireConeDot) continue;
-
                 bool los = false;
                 try { los = Function.Call<bool>(Hash.HAS_ENTITY_CLEAR_LOS_TO_ENTITY, player.Handle, p.Handle, 17); } catch { }
                 if (!los) continue;
-
-                float score = dot * 120f - len * 1.7f;
-                if (score > bestScore)
-                {
-                    bestScore = score;
-                    best = p;
-                }
+                float score = dot * 120f - len * 2.2f;
+                if (score > bestScore) { bestScore = score; best = p; }
             }
             return best;
         }
@@ -215,7 +220,7 @@ namespace VOX.InteractionRuntimeVI
             if (!UsableTarget(target, player)) return false;
             Vector3 delta = target.Position - GameplayCamera.Position;
             float len = Length(delta);
-            if (len < 0.1f || len > _cfg.MaxDistance + 1.5f) return false;
+            if (len < 0.1f || len > _cfg.MaxDistance + 1.0f) return false;
             float dot = Dot(GameplayCamera.Direction, delta) / len;
             if (dot < _cfg.ReleaseConeDot) return false;
             try { return Function.Call<bool>(Hash.HAS_ENTITY_CLEAR_LOS_TO_ENTITY, player.Handle, target.Handle, 17); }
@@ -228,7 +233,7 @@ namespace VOX.InteractionRuntimeVI
             try { if (p.IsInVehicle()) return false; } catch { }
             if (_cfg.SkipMissionPeds)
             {
-                try { if (Function.Call<bool>(Hash.IS_ENTITY_A_MISSION_ENTITY, p.Handle)) return false; } catch { }
+                try { if (Function.Call<bool>(Hash.IS_ENTITY_A_MISSION_ENTITY, p.Handle)) return false; } catch { return false; }
             }
             try
             {
@@ -239,36 +244,9 @@ namespace VOX.InteractionRuntimeVI
             return true;
         }
 
-        private void SuppressConflictingControls()
+        private static void SuppressConflictingControls()
         {
-            try
-            {
-                // E is our held focus while active. Prevent vanilla context actions
-                // from repeatedly firing under the interaction overlay.
-                Function.Call(Hash.DISABLE_CONTROL_ACTION, 0, InputContext, true);
-                Function.Call(Hash.DISABLE_CONTROL_ACTION, 0, 37, true); // weapon wheel
-                Function.Call(Hash.DISABLE_CONTROL_ACTION, 0, 157, true);
-                Function.Call(Hash.DISABLE_CONTROL_ACTION, 0, 158, true);
-                Function.Call(Hash.DISABLE_CONTROL_ACTION, 0, 160, true);
-            }
-            catch { }
-        }
-
-        private void SyncFocusInput()
-        {
-            bool pressed = ReadControlPressed(InputContext);
-            if (pressed && !_focusDown)
-            {
-                _focusDown = true;
-                _focusStarted = Game.GameTime;
-                _targetLostSince = 0;
-                _candidateSince = 0;
-                _candidateHandle = 0;
-            }
-            else if (!pressed && _focusDown)
-            {
-                ResetFocus();
-            }
+            try { Function.Call(Hash.DISABLE_CONTROL_ACTION, 0, InputContext, true); } catch { }
         }
 
         private void PollDirectionalControls()
@@ -276,11 +254,9 @@ namespace VOX.InteractionRuntimeVI
             bool positive = ReadControlPressed(InputFrontendLeft);
             bool context = ReadControlPressed(InputFrontendUp);
             bool negative = ReadControlPressed(InputFrontendRight);
-
             if (positive && !_positiveControlDown) TryPerform(0);
             else if (context && !_contextControlDown) TryPerform(1);
             else if (negative && !_negativeControlDown) TryPerform(2);
-
             _positiveControlDown = positive;
             _contextControlDown = context;
             _negativeControlDown = negative;
@@ -296,39 +272,21 @@ namespace VOX.InteractionRuntimeVI
 
         private static bool ReadControlPressed(int control)
         {
-            try
-            {
-                return Function.Call<bool>(Hash.IS_CONTROL_PRESSED, 0, control) ||
-                       Function.Call<bool>(Hash.IS_DISABLED_CONTROL_PRESSED, 0, control);
-            }
+            try { return Function.Call<bool>(Hash.IS_CONTROL_PRESSED, 0, control) || Function.Call<bool>(Hash.IS_DISABLED_CONTROL_PRESSED, 0, control); }
             catch { return false; }
         }
 
         private void DrawInteractionHud(Ped player, Ped target)
         {
             float fear = GetFear(target);
-            float opinion = GetOpinion(target);
             bool armed = false;
             try { armed = Function.Call<bool>(Hash.IS_PED_ARMED, player.Handle, 7); } catch { }
-
-            string a = armed ? "[LEFT] Calmer" : "[LEFT] Saluer";
-            string b = fear >= 45f ? "[UP] Laisser partir" : "[UP] Interpeller";
-            string c = armed ? "[RIGHT] Menacer" : "[RIGHT] Provoquer";
-
-            // Deliberately not a trainer-style vertical menu: the three actions are
-            // arranged around one compact contextual focus point.
-            DrawText(0.785f, 0.720f, "^ " + StripDirection(b), 0.28f);
-            DrawText(0.710f, 0.775f, StripDirection(a) + " <", 0.28f);
-            DrawText(0.855f, 0.775f, "> " + StripDirection(c), 0.28f);
-            DrawText(0.795f, 0.775f, "+", 0.25f);
-            if (Math.Abs(opinion) > 15f || fear > 20f)
-                DrawText(0.765f, 0.825f, "Memoire", 0.22f);
-        }
-
-        private static string StripDirection(string value)
-        {
-            int end = value == null ? -1 : value.IndexOf(']');
-            return end >= 0 && end + 1 < value.Length ? value.Substring(end + 1).Trim() : (value ?? string.Empty);
+            string a = armed ? "Calmer" : "Saluer";
+            string b = fear >= 45f ? "Laisser partir" : "Interpeller";
+            string c = armed ? "Menacer" : "Provoquer";
+            DrawText(0.785f, 0.720f, "^ " + b, 0.27f);
+            DrawText(0.710f, 0.775f, a + " <", 0.27f);
+            DrawText(0.855f, 0.775f, "> " + c, 0.27f);
         }
 
         private void Perform(int slot)
@@ -336,88 +294,56 @@ namespace VOX.InteractionRuntimeVI
             Ped player = Game.LocalPlayerPed;
             Ped target = _target;
             if (player == null || target == null || !player.Exists() || !target.Exists()) return;
-
             bool armed = false;
             try { armed = Function.Call<bool>(Hash.IS_PED_ARMED, player.Handle, 7); } catch { }
             string intent = slot == 0 ? (armed ? "calm" : "greet") : slot == 1 ? "context" : (armed ? "threaten" : "antagonize");
             _lastInteraction = Game.GameTime;
-
             Memory m = GetOrCreate(target);
             m.LastAt = Game.GameTime;
             m.Recognition = Math.Min(100f, m.Recognition + 10f);
 
             if (intent == "greet")
             {
-                m.Opinion = Math.Min(100f, m.Opinion + 10f);
-                m.Fear = Math.Max(0f, m.Fear - 3f);
-                Speak(player, "GENERIC_HI");
-                RespondFriendly(target, m);
+                m.Opinion = Math.Min(100f, m.Opinion + 10f); m.Fear = Math.Max(0f, m.Fear - 3f);
+                Speak(player, "GENERIC_HI"); RespondFriendly(target, m);
             }
             else if (intent == "calm")
             {
-                m.Opinion = Math.Min(100f, m.Opinion + 4f);
-                m.Fear = Math.Max(0f, m.Fear - 14f);
-                Speak(player, "GENERIC_HI");
-                RespondCalm(target, m);
+                m.Opinion = Math.Min(100f, m.Opinion + 4f); m.Fear = Math.Max(0f, m.Fear - 14f);
+                Speak(player, "GENERIC_HI"); RespondCalm(target, m);
             }
-            else if (intent == "context")
-            {
-                Speak(player, "GENERIC_HI");
-                RespondContext(target, m);
-            }
+            else if (intent == "context") { Speak(player, "GENERIC_HI"); RespondContext(target, m); }
             else if (intent == "antagonize")
             {
-                m.Opinion = Math.Max(-100f, m.Opinion - 20f);
-                m.Recognition = Math.Min(100f, m.Recognition + 15f);
-                Speak(player, "GENERIC_INSULT_HIGH");
-                RespondAntagonize(target, m, false);
+                m.Opinion = Math.Max(-100f, m.Opinion - 20f); m.Recognition = Math.Min(100f, m.Recognition + 15f);
+                Speak(player, "GENERIC_INSULT_HIGH"); RespondAntagonize(target, m, false);
             }
             else
             {
-                m.Opinion = Math.Max(-100f, m.Opinion - 35f);
-                m.Fear = Math.Min(100f, m.Fear + 38f);
-                m.Recognition = Math.Min(100f, m.Recognition + 30f);
-                Speak(player, "GENERIC_INSULT_HIGH");
-                RespondAntagonize(target, m, true);
+                m.Opinion = Math.Max(-100f, m.Opinion - 35f); m.Fear = Math.Min(100f, m.Fear + 38f); m.Recognition = Math.Min(100f, m.Recognition + 30f);
+                Speak(player, "GENERIC_INSULT_HIGH"); RespondAntagonize(target, m, true);
             }
-
             SendToPedBridge(target, intent, 1f);
-            Log("Interaction ped=" + target.Handle + " intent=" + intent + " opinion=" + (int)m.Opinion + " fear=" + (int)m.Fear + " recognition=" + (int)m.Recognition + ".");
+            Log("Interaction ped=" + target.Handle + " intent=" + intent + ".");
         }
 
         private void RespondFriendly(Ped target, Memory m)
         {
             int roll = Roll(target, 11);
             if (m.Opinion < -30f) { Speak(target, "GENERIC_INSULT_HIGH"); return; }
-            if (roll < 72)
-            {
-                Speak(target, "GENERIC_HI");
-                try { Function.Call(Hash.TASK_LOOK_AT_ENTITY, target.Handle, Game.LocalPlayerPed.Handle, 1800, 0, 2); } catch { }
-            }
+            if (roll < 72) { Speak(target, "GENERIC_HI"); try { Function.Call(Hash.TASK_LOOK_AT_ENTITY, target.Handle, Game.LocalPlayerPed.Handle, 1800, 0, 2); } catch { } }
             else Speak(target, "GENERIC_NO");
         }
 
         private void RespondCalm(Ped target, Memory m)
         {
-            if (m.Fear > 55f)
-            {
-                Speak(target, "GENERIC_FRIGHTENED_HIGH");
-                DiscreetLeave(target, Game.LocalPlayerPed);
-            }
-            else
-            {
-                Speak(target, "GENERIC_THANKS");
-                try { Function.Call(Hash.TASK_LOOK_AT_ENTITY, target.Handle, Game.LocalPlayerPed.Handle, 1300, 0, 2); } catch { }
-            }
+            if (m.Fear > 55f) { Speak(target, "GENERIC_FRIGHTENED_HIGH"); DiscreetLeave(target, Game.LocalPlayerPed); }
+            else { Speak(target, "GENERIC_THANKS"); try { Function.Call(Hash.TASK_LOOK_AT_ENTITY, target.Handle, Game.LocalPlayerPed.Handle, 1300, 0, 2); } catch { } }
         }
 
         private void RespondContext(Ped target, Memory m)
         {
-            if (m.Fear > 45f)
-            {
-                Speak(target, "GENERIC_FRIGHTENED_HIGH");
-                DiscreetLeave(target, Game.LocalPlayerPed);
-            }
+            if (m.Fear > 45f) { Speak(target, "GENERIC_FRIGHTENED_HIGH"); DiscreetLeave(target, Game.LocalPlayerPed); }
             else if (m.Opinion < -25f) Speak(target, "GENERIC_INSULT_HIGH");
             else Speak(target, "GENERIC_HI");
         }
@@ -429,23 +355,12 @@ namespace VOX.InteractionRuntimeVI
             {
                 Speak(target, "GENERIC_FRIGHTENED_HIGH");
                 if (bravery < 60 && Distance(target, Game.LocalPlayerPed) < 8f)
-                {
-                    try { Function.Call(Hash.TASK_HANDS_UP, target.Handle, 3500, Game.LocalPlayerPed.Handle, -1, false); } catch { }
-                }
+                { try { Function.Call(Hash.TASK_HANDS_UP, target.Handle, 3500, Game.LocalPlayerPed.Handle, -1, false); } catch { } }
                 else DiscreetLeave(target, Game.LocalPlayerPed);
                 return;
             }
-
-            if (bravery > 68)
-            {
-                Speak(target, "GENERIC_INSULT_HIGH");
-                try { Function.Call(Hash.TASK_LOOK_AT_ENTITY, target.Handle, Game.LocalPlayerPed.Handle, 2200, 0, 2); } catch { }
-            }
-            else
-            {
-                Speak(target, "GENERIC_SHOCKED_HIGH");
-                DiscreetLeave(target, Game.LocalPlayerPed);
-            }
+            if (bravery > 68) { Speak(target, "GENERIC_INSULT_HIGH"); try { Function.Call(Hash.TASK_LOOK_AT_ENTITY, target.Handle, Game.LocalPlayerPed.Handle, 2200, 0, 2); } catch { } }
+            else { Speak(target, "GENERIC_SHOCKED_HIGH"); DiscreetLeave(target, Game.LocalPlayerPed); }
         }
 
         private static void DiscreetLeave(Ped ped, Ped player)
@@ -467,9 +382,7 @@ namespace VOX.InteractionRuntimeVI
         private void ProbePedBridge()
         {
             _lastBridgeProbe = Game.GameTime;
-            _pedBridgeRegister = null;
-            _pedBridgeFear = null;
-            _pedBridgeOpinion = null;
+            _pedBridgeRegister = _pedBridgeFear = _pedBridgeOpinion = null;
             if (!_cfg.BridgeToPedOverhaul) return;
             try
             {
@@ -496,29 +409,11 @@ namespace VOX.InteractionRuntimeVI
             return local;
         }
 
-        private float GetOpinion(Ped target)
-        {
-            float local = GetOrCreate(target).Opinion;
-            try
-            {
-                if (_pedBridgeOpinion != null)
-                {
-                    float b = Convert.ToSingle(_pedBridgeOpinion.Invoke(null, new object[] { target.Handle }));
-                    if (Math.Abs(b) > Math.Abs(local)) local = b;
-                }
-            }
-            catch { }
-            return local;
-        }
-
         private Memory GetOrCreate(Ped p)
         {
             Memory m;
             if (!_memory.TryGetValue(p.Handle, out m) || m.ModelHash != p.Model.Hash)
-            {
-                m = new Memory { ModelHash = p.Model.Hash };
-                _memory[p.Handle] = m;
-            }
+            { m = new Memory { ModelHash = p.Model.Hash }; _memory[p.Handle] = m; }
             return m;
         }
 
@@ -531,69 +426,38 @@ namespace VOX.InteractionRuntimeVI
 
         private bool ShouldYield()
         {
-            bool storyOwnsScene = false;
-            try { storyOwnsScene |= Function.Call<bool>(Hash.IS_CUTSCENE_ACTIVE) || Function.Call<bool>(Hash.IS_PLAYER_SWITCH_IN_PROGRESS); } catch { }
-            try { storyOwnsScene |= !Function.Call<bool>(Hash.IS_PLAYER_CONTROL_ON, Game.Player.Handle); } catch { }
-            try
-            {
-                storyOwnsScene |= Function.Call<bool>(Hash.IS_SCREEN_FADED_OUT) ||
-                                  Function.Call<bool>(Hash.IS_SCREEN_FADING_OUT) ||
-                                  Function.Call<bool>(Hash.IS_SCREEN_FADING_IN);
-            }
-            catch { }
-            if (_cfg.DisableDuringMissions)
-            {
-                try { storyOwnsScene |= Function.Call<bool>(Hash.GET_MISSION_FLAG); } catch { }
-            }
-            if (storyOwnsScene)
-            {
-                _storyYieldUntil = Game.GameTime + 5000;
-                return true;
-            }
+            bool storyOwns = false;
+            try { storyOwns |= Function.Call<bool>(Hash.IS_CUTSCENE_ACTIVE); } catch { }
+            try { storyOwns |= Function.Call<bool>(Hash.IS_PLAYER_SWITCH_IN_PROGRESS); } catch { }
+            try { storyOwns |= !Function.Call<bool>(Hash.IS_PLAYER_CONTROL_ON, Game.Player.Handle); } catch { }
+            try { storyOwns |= Function.Call<bool>(Hash.IS_SCREEN_FADED_OUT) || Function.Call<bool>(Hash.IS_SCREEN_FADING_OUT) || Function.Call<bool>(Hash.IS_SCREEN_FADING_IN); } catch { }
+            if (_cfg.DisableDuringMissions) { try { storyOwns |= Function.Call<bool>(Hash.GET_MISSION_FLAG); } catch { } }
+            if (storyOwns) { _storyYieldUntil = Game.GameTime + 5000; return true; }
             if (Game.GameTime < _storyYieldUntil) return true;
-            if (_cfg.DisableWhileWanted)
-            {
-                try { if (Function.Call<int>(Hash.GET_PLAYER_WANTED_LEVEL, Game.Player.Handle) > 0) return true; } catch { }
-            }
+            if (_cfg.DisableWhileWanted) { try { if (Function.Call<int>(Hash.GET_PLAYER_WANTED_LEVEL, Game.Player.Handle) > 0) return true; } catch { } }
             return false;
         }
 
-        private void ResetFocus()
+        private void ResetFocus(bool clearTarget)
         {
             _focusDown = false;
             _focusStarted = 0;
-            _target = null;
             _targetLostSince = 0;
-            _candidateHandle = 0;
-            _candidateSince = 0;
-            _positiveControlDown = false;
-            _contextControlDown = false;
-            _negativeControlDown = false;
-        }
-
-        private void OnAborted(object sender, EventArgs e)
-        {
-            ResetFocus();
-            _memory.Clear();
-        }
-
-        private static int Roll(Ped p, int salt)
-        {
-            unchecked
+            _positiveControlDown = _contextControlDown = _negativeControlDown = false;
+            if (clearTarget)
             {
-                int x = p.Handle * 1103515245 + p.Model.Hash * 97 + salt * 7919;
-                x ^= x >> 16;
-                if (x < 0) x = -x;
-                return x % 100;
+                _target = null;
+                _candidateHandle = 0;
+                _candidateSince = 0;
             }
         }
 
-        private static float Distance(Ped a, Ped b)
+        private void OnAborted(object sender, EventArgs e) { ResetFocus(true); _memory.Clear(); }
+        private static int Roll(Ped p, int salt)
         {
-            Vector3 d = a.Position - b.Position;
-            return Length(d);
+            unchecked { int x = p.Handle * 1103515245 + p.Model.Hash * 97 + salt * 7919; x ^= x >> 16; if (x < 0) x = -x; return x % 100; }
         }
-
+        private static float Distance(Ped a, Ped b) { return Length(a.Position - b.Position); }
         private static float Dot(Vector3 a, Vector3 b) { return a.X * b.X + a.Y * b.Y + a.Z * b.Z; }
         private static float Length(Vector3 v) { return (float)Math.Sqrt(v.X * v.X + v.Y * v.Y + v.Z * v.Z); }
 
@@ -601,12 +465,9 @@ namespace VOX.InteractionRuntimeVI
         {
             try
             {
-                Function.Call(Hash.SET_TEXT_FONT, 0);
-                Function.Call(Hash.SET_TEXT_SCALE, 0f, scale);
-                Function.Call(Hash.SET_TEXT_COLOUR, 255, 255, 255, 230);
-                Function.Call(Hash.SET_TEXT_OUTLINE);
-                Function.Call(Hash.BEGIN_TEXT_COMMAND_DISPLAY_TEXT, "STRING");
-                Function.Call(Hash.ADD_TEXT_COMPONENT_SUBSTRING_PLAYER_NAME, text);
+                Function.Call(Hash.SET_TEXT_FONT, 0); Function.Call(Hash.SET_TEXT_SCALE, 0f, scale);
+                Function.Call(Hash.SET_TEXT_COLOUR, 255, 255, 255, 230); Function.Call(Hash.SET_TEXT_OUTLINE);
+                Function.Call(Hash.BEGIN_TEXT_COMMAND_DISPLAY_TEXT, "STRING"); Function.Call(Hash.ADD_TEXT_COMPONENT_SUBSTRING_PLAYER_NAME, text);
                 Function.Call(Hash.END_TEXT_COMMAND_DISPLAY_TEXT, x, y, 0);
             }
             catch { }
@@ -615,47 +476,21 @@ namespace VOX.InteractionRuntimeVI
         private void Log(string s)
         {
             if (!_cfg.DebugLogging) return;
-            try
-            {
-                Directory.CreateDirectory(DataDirectory);
-                File.AppendAllText(LogPath, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + " | " + s + Environment.NewLine);
-            }
+            try { Directory.CreateDirectory(DataDirectory); File.AppendAllText(LogPath, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + " | " + s + Environment.NewLine); }
             catch { }
         }
 
         private sealed class Memory
         {
-            public int ModelHash;
-            public float Opinion;
-            public float Fear;
-            public float Recognition;
-            public int LastAt;
+            public int ModelHash; public float Opinion; public float Fear; public float Recognition; public int LastAt;
         }
 
         private sealed class Config
         {
-            public bool Enabled = true;
-            public bool DebugLogging = true;
-            public bool DisableDuringMissions = true;
-            public bool SkipMissionPeds = true;
-            public bool DisableWhileWanted = true;
-            public bool BridgeToPedOverhaul = true;
-            public bool ShowControls = true;
-            public int TickIntervalMs = 25;
-            public int FocusHoldMs = 450;
-            public int LookAtAfterMs = 650;
-            public int InteractionCooldownMs = 900;
-            public int LocalMemoryMinutes = 10;
-            public int TargetScanMs = 100;
-            public int TargetAcquireStableMs = 180;
-            public int TargetLostGraceMs = 650;
-            public float MaxDistance = 12f;
-            public float AcquireConeDot = 0.86f;
-            public float ReleaseConeDot = 0.78f;
-            public Keys FocusKey = Keys.E;
-            public Keys PositiveKey = Keys.Left;
-            public Keys ContextKey = Keys.Up;
-            public Keys NegativeKey = Keys.Right;
+            public bool Enabled = true, DebugLogging = true, DisableDuringMissions = true, SkipMissionPeds = true, DisableWhileWanted = true, BridgeToPedOverhaul = true, ShowControls = true;
+            public int TickIntervalMs = 25, FocusHoldMs = 450, LookAtAfterMs = 650, InteractionCooldownMs = 900, LocalMemoryMinutes = 10, TargetScanMs = 100, TargetAcquireStableMs = 180, TargetLostGraceMs = 650;
+            public float MaxDistance = 8f, AcquireConeDot = 0.88f, ReleaseConeDot = 0.80f;
+            public Keys FocusKey = Keys.E, PositiveKey = Keys.Left, ContextKey = Keys.Up, NegativeKey = Keys.Right;
 
             public static Config Load(string path)
             {
@@ -664,48 +499,38 @@ namespace VOX.InteractionRuntimeVI
                 string section = string.Empty;
                 foreach (string raw in File.ReadAllLines(path))
                 {
-                    string line = raw.Trim();
-                    if (line.Length == 0 || line.StartsWith(";") || line.StartsWith("#")) continue;
+                    string line = raw.Trim(); if (line.Length == 0 || line.StartsWith(";") || line.StartsWith("#")) continue;
                     if (line.StartsWith("[") && line.EndsWith("]")) { section = line.Substring(1, line.Length - 2).Trim(); continue; }
-                    int eq = line.IndexOf('=');
-                    if (eq <= 0) continue;
-                    string key = line.Substring(0, eq).Trim();
-                    string value = line.Substring(eq + 1).Trim();
-                    string full = section + "." + key;
-                    try
+                    int eq = line.IndexOf('='); if (eq <= 0) continue;
+                    string full = section + "." + line.Substring(0, eq).Trim(); string value = line.Substring(eq + 1).Trim();
+                    switch (full)
                     {
-                        switch (full)
-                        {
-                            case "General.Enabled": c.Enabled = B(value, c.Enabled); break;
-                            case "General.DebugLogging": c.DebugLogging = B(value, c.DebugLogging); break;
-                            case "General.DisableDuringMissions": c.DisableDuringMissions = B(value, c.DisableDuringMissions); break;
-                            case "General.SkipMissionPeds": c.SkipMissionPeds = B(value, c.SkipMissionPeds); break;
-                            case "General.DisableWhileWanted": c.DisableWhileWanted = B(value, c.DisableWhileWanted); break;
-                            case "General.TickIntervalMs": c.TickIntervalMs = I(value, c.TickIntervalMs); break;
-                            case "Focus.FocusKey": c.FocusKey = K(value, c.FocusKey); break;
-                            case "Focus.PositiveKey": c.PositiveKey = K(value, c.PositiveKey); break;
-                            case "Focus.ContextKey": c.ContextKey = K(value, c.ContextKey); break;
-                            case "Focus.NegativeKey": c.NegativeKey = K(value, c.NegativeKey); break;
-                            case "Focus.MaxDistance": c.MaxDistance = F(value, c.MaxDistance); break;
-                            case "Focus.AcquireConeDot": c.AcquireConeDot = F(value, c.AcquireConeDot); break;
-                            case "Focus.ReleaseConeDot": c.ReleaseConeDot = F(value, c.ReleaseConeDot); break;
-                            case "Focus.FocusHoldMs": c.FocusHoldMs = I(value, c.FocusHoldMs); break;
-                            case "Focus.LookAtAfterMs": c.LookAtAfterMs = I(value, c.LookAtAfterMs); break;
-                            case "Focus.InteractionCooldownMs": c.InteractionCooldownMs = I(value, c.InteractionCooldownMs); break;
-                            case "Focus.TargetScanMs": c.TargetScanMs = I(value, c.TargetScanMs); break;
-                            case "Focus.TargetAcquireStableMs": c.TargetAcquireStableMs = I(value, c.TargetAcquireStableMs); break;
-                            case "Focus.TargetLostGraceMs": c.TargetLostGraceMs = I(value, c.TargetLostGraceMs); break;
-                            case "Memory.LocalMemoryMinutes": c.LocalMemoryMinutes = I(value, c.LocalMemoryMinutes); break;
-                            case "Memory.BridgeToPedOverhaul": c.BridgeToPedOverhaul = B(value, c.BridgeToPedOverhaul); break;
-                            case "HUD.ShowControls": c.ShowControls = B(value, c.ShowControls); break;
-                        }
+                        case "General.Enabled": c.Enabled = B(value, c.Enabled); break;
+                        case "General.DebugLogging": c.DebugLogging = B(value, c.DebugLogging); break;
+                        case "General.DisableDuringMissions": c.DisableDuringMissions = B(value, c.DisableDuringMissions); break;
+                        case "General.SkipMissionPeds": c.SkipMissionPeds = B(value, c.SkipMissionPeds); break;
+                        case "General.DisableWhileWanted": c.DisableWhileWanted = B(value, c.DisableWhileWanted); break;
+                        case "General.TickIntervalMs": c.TickIntervalMs = I(value, c.TickIntervalMs); break;
+                        case "Focus.FocusKey": c.FocusKey = K(value, c.FocusKey); break;
+                        case "Focus.PositiveKey": c.PositiveKey = K(value, c.PositiveKey); break;
+                        case "Focus.ContextKey": c.ContextKey = K(value, c.ContextKey); break;
+                        case "Focus.NegativeKey": c.NegativeKey = K(value, c.NegativeKey); break;
+                        case "Focus.MaxDistance": c.MaxDistance = F(value, c.MaxDistance); break;
+                        case "Focus.AcquireConeDot": c.AcquireConeDot = F(value, c.AcquireConeDot); break;
+                        case "Focus.ReleaseConeDot": c.ReleaseConeDot = F(value, c.ReleaseConeDot); break;
+                        case "Focus.FocusHoldMs": c.FocusHoldMs = I(value, c.FocusHoldMs); break;
+                        case "Focus.LookAtAfterMs": c.LookAtAfterMs = I(value, c.LookAtAfterMs); break;
+                        case "Focus.InteractionCooldownMs": c.InteractionCooldownMs = I(value, c.InteractionCooldownMs); break;
+                        case "Focus.TargetScanMs": c.TargetScanMs = I(value, c.TargetScanMs); break;
+                        case "Focus.TargetAcquireStableMs": c.TargetAcquireStableMs = I(value, c.TargetAcquireStableMs); break;
+                        case "Focus.TargetLostGraceMs": c.TargetLostGraceMs = I(value, c.TargetLostGraceMs); break;
+                        case "Memory.LocalMemoryMinutes": c.LocalMemoryMinutes = I(value, c.LocalMemoryMinutes); break;
+                        case "Memory.BridgeToPedOverhaul": c.BridgeToPedOverhaul = B(value, c.BridgeToPedOverhaul); break;
+                        case "HUD.ShowControls": c.ShowControls = B(value, c.ShowControls); break;
                     }
-                    catch { }
                 }
-                c.ReleaseConeDot = Math.Min(c.AcquireConeDot, c.ReleaseConeDot);
-                return c;
+                c.ReleaseConeDot = Math.Min(c.AcquireConeDot, c.ReleaseConeDot); return c;
             }
-
             private static bool B(string s, bool d) { bool v; return bool.TryParse(s, out v) ? v : d; }
             private static int I(string s, int d) { int v; return int.TryParse(s, out v) ? v : d; }
             private static float F(string s, float d) { float v; return float.TryParse(s, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out v) ? v : d; }
