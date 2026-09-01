@@ -1,0 +1,25 @@
+VEHICLE RUNTIME VI — 0.1.0
+
+Target: GTA V Enhanced Story Mode / free roam.
+Requires Script Hook V and Script Hook V .NET Enhanced v1.1.0.6 or compatible newer build.
+
+Install:
+- copy scripts/VehicleRuntimeVI.dll to GTA V\scripts\
+- keep BattlEye disabled for script-modded Story Mode as usual
+
+0.1.0 EFFECTIVE SYSTEMS
+- ambient free-roam vehicles receive deterministic lock profiles
+- protagonist personal-car model safety whitelist (Tailgater / Buffalo S / Bodhi)
+- hold Context near a locked vehicle to bypass its lock
+- higher lock tiers take longer and can trigger the vehicle alarm
+- stolen/unkeyed vehicles do not start instantly: an automatic hotwire delay is applied after entry
+- hotwired vehicles are remembered persistently
+- deterministic tracker presence is stored per vehicle
+- after stealing a tracked vehicle, hold Context near the rear of the car to disable the tracker
+- active vehicle state is exported to scripts\VehicleRuntimeVI\ActiveVehicleState.txt for future Police/Core integration
+- all persistent profiles live in scripts\VehicleRuntimeVI\VehicleProfiles.txt
+
+MISSION SAFETY
+The runtime yields completely when Rockstar's mission flag, cutscene or player-switch ownership is active. Mission entities are never lock-managed.
+
+This first runtime intentionally does not replace vanilla archives and does not modify RPF files.
