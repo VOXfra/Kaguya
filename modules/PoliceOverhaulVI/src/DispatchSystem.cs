@@ -17,7 +17,7 @@ namespace VOX.PoliceOverhaulVI
         }
 
         private readonly List<CustomUnit> _units = new List<CustomUnit>();
-        private int _lastSupportSpawn, _lastHeavySpawn, _lastJetSpawn, _fiveStarStartedAt, _lastFiveStarHeatAt, _sixthStarTextureRequestAt, _lastRiskLog, _lastLevel;
+        private int _lastSupportSpawn, _lastHeavySpawn, _lastJetSpawn, _fiveStarStartedAt, _lastFiveStarHeatAt, _lastRiskLog, _lastLevel;
 
         private static readonly string[] Tier3Urban = { "police3", "police5", "polgauntlet", "polterminus", "poldorado", "polfaction2" };
         private static readonly string[] Tier4Urban = { "police3", "polgauntlet", "poldominator10", "polcaracara", "polcaracara2", "polcoquette4", "polbuffalo6" };
@@ -66,8 +66,6 @@ namespace VOX.PoliceOverhaulVI
 
             if (level >= 6 && _lastLevel < 6)
             {
-                // Do not let tier 3–5 custom units consume every slot before
-                // the actual sixth-star response gets a chance to exist.
                 CleanupBelowTier(6);
                 _lastHeavySpawn = 0;
                 _lastJetSpawn = 0;
@@ -93,8 +91,6 @@ namespace VOX.PoliceOverhaulVI
                 bool explosiveAllowed = !cfg.CivilianRiskEnabled || CivilianRiskSystem.MilitaryEngagementAllowed(player, cfg, out risk);
                 bool spawned = false;
 
-                // Ground military response is mandatory at six stars. Civilian
-                // risk changes whether it may use a tank, not whether Marines exist.
                 if (cfg.SixStarMilitaryGround && _units.Count < maxUnits)
                     spawned |= SpawnMilitaryGround(player, explosiveAllowed, log);
 
@@ -124,29 +120,11 @@ namespace VOX.PoliceOverhaulVI
 
         public void DrawSixthStarIfNeeded(int level)
         {
-            if (level < 6) return;
-            try
-            {
-                if (!Function.Call<bool>(Hash.HAS_STREAMED_TEXTURE_DICT_LOADED, "commonmenu"))
-                {
-                    if (Game.GameTime - _sixthStarTextureRequestAt > 500)
-                    {
-                        _sixthStarTextureRequestAt = Game.GameTime;
-                        Function.Call(Hash.REQUEST_STREAMED_TEXTURE_DICT, "commonmenu", false);
-                    }
-                    return;
-                }
-
-                float safe = Function.Call<float>(Hash.GET_SAFE_ZONE_SIZE);
-                float right = 1f - (1f - safe) * 0.5f;
-                // Vanilla displays only five stars internally. Draw the sixth
-                // immediately to the left of that row instead of the old large
-                // hard-coded offset that was visibly detached on ultrawide.
-                float x = right - 0.074f;
-                float y = 0.0438f;
-                Function.Call(Hash.DRAW_SPRITE, "commonmenu", "leaderboard_star_icon", x, y, 0.0158f, 0.0285f, 0f, 255, 255, 255, 245, false);
-            }
-            catch { }
+            // Vanilla GTA V owns only five wanted-star slots. The old attempt to
+            // inject one commonmenu sprite beside that row flickered and detached
+            // on some aspect ratios. A dedicated per-frame script now owns the
+            // complete 1..6 row whenever VOX owns free-roam wanted state.
+            PoliceWantedHudState.Set(level, level > 0);
         }
 
         public void CleanupAll()
@@ -156,6 +134,7 @@ namespace VOX.PoliceOverhaulVI
             _fiveStarStartedAt = 0;
             _lastFiveStarHeatAt = 0;
             _lastLevel = 0;
+            PoliceWantedHudState.Clear();
         }
 
         private static void ConfigureVanillaDispatch(int level)
