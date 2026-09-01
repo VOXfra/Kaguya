@@ -37,10 +37,11 @@ namespace VOX.CharacterRuntimeVI
         {
             Directory.CreateDirectory(DataDir);
             Load();
+            FitnessRuntimeBridge.AddTraining = ApplyWorkoutTraining;
             Interval = 50;
             Tick += OnTick;
             Aborted += OnAborted;
-            Log("Character Runtime VI 0.1.0 loaded: persistent fitness, gameplay stats and native body-morph bridge state.");
+            Log("Character Runtime VI 0.1.1 loaded: persistent fitness, physical workouts and native body-morph bridge state.");
         }
 
         private void OnTick(object sender, EventArgs e)
@@ -147,6 +148,24 @@ namespace VOX.CharacterRuntimeVI
                     " lean=" + _current.LeanMass.ToString("0.00", CultureInfo.InvariantCulture) +
                     " load=" + _current.TrainingLoad.ToString("0.0", CultureInfo.InvariantCulture) + ".");
             }
+        }
+
+        private void ApplyWorkoutTraining(float strength, float endurance, float leanMass)
+        {
+            Ped player = Game.LocalPlayerPed;
+            if (player == null || !player.Exists() || player.IsDead) return;
+            SelectProfile(player);
+            if (_current == null) return;
+
+            _current.Strength = Clamp(_current.Strength + Math.Max(0f, strength), 0f, 100f);
+            _current.Endurance = Clamp(_current.Endurance + Math.Max(0f, endurance), 0f, 100f);
+            _current.LeanMass = Clamp(_current.LeanMass + Math.Max(0f, leanMass), 0f, 100f);
+            _current.TrainingLoad = Clamp(_current.TrainingLoad + Math.Max(0.5f, strength * 2.2f + endurance + leanMass), 0f, 100f);
+            Save();
+
+            Log("Physical workout credited: strength=" + _current.Strength.ToString("0.00", CultureInfo.InvariantCulture) +
+                " endurance=" + _current.Endurance.ToString("0.00", CultureInfo.InvariantCulture) +
+                " lean=" + _current.LeanMass.ToString("0.00", CultureInfo.InvariantCulture) + ".");
         }
 
         private void ApplyPerformanceStats()
@@ -277,7 +296,15 @@ namespace VOX.CharacterRuntimeVI
         }
 
         private static float Clamp(float v, float min, float max) { return v < min ? min : (v > max ? max : v); }
-        private void OnAborted(object sender, EventArgs e) { Save(); ApplyNeutralPerformanceStats(); WriteBodyState(null, 1f, false, true); }
+
+        private void OnAborted(object sender, EventArgs e)
+        {
+            if (FitnessRuntimeBridge.AddTraining == ApplyWorkoutTraining) FitnessRuntimeBridge.AddTraining = null;
+            Save();
+            ApplyNeutralPerformanceStats();
+            WriteBodyState(null, 1f, false, true);
+        }
+
         private static void Log(string text)
         {
             try { Directory.CreateDirectory(DataDir); File.AppendAllText(LogPath, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + " | " + text + Environment.NewLine); } catch { }
