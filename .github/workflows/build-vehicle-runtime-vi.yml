@@ -11,8 +11,7 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
       - name: Fetch SHVDNE reference
         shell: pwsh
         run: |
@@ -32,10 +31,10 @@ jobs:
           New-Item -ItemType Directory -Force dist/scripts | Out-Null
           Copy-Item modules/VehicleRuntimeVI/bin/Release/net48/VehicleRuntimeVI.dll dist/scripts/VehicleRuntimeVI.dll
           Copy-Item modules/VehicleRuntimeVI/INSTALL.txt dist/INSTALL.txt
-          Compress-Archive -Path dist/* -DestinationPath VehicleRuntimeVI-v0.3.0.zip -Force
+          Compress-Archive -Path dist/* -DestinationPath VehicleRuntimeVI-v0.4.0.zip -Force
       - name: Upload test build
         uses: actions/upload-artifact@v4
         with:
-          name: VehicleRuntimeVI-v0.3.0
-          path: VehicleRuntimeVI-v0.3.0.zip
+          name: VehicleRuntimeVI-v0.4.0
+          path: VehicleRuntimeVI-v0.4.0.zip
           if-no-files-found: error
