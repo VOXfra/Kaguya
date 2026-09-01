@@ -48,7 +48,7 @@ namespace VOX.VehicleRuntimeVI
             Interval = 50;
             Tick += OnTick;
             Aborted += OnAborted;
-            Log("Vehicle Runtime VI 0.1.0 loaded: free-roam locks, lock bypass, hotwire, alarms and tracker state.");
+            Log("Vehicle Runtime VI 0.1.1 loaded: personal-vehicle normalization + safe running-engine theft state.");
         }
 
         private void OnTick(object sender, EventArgs e)
@@ -81,33 +81,34 @@ namespace VOX.VehicleRuntimeVI
         private void UpdateNearbyVehicleInteraction(Ped player)
         {
             Vehicle nearest = FindNearestVehicle(player.Position, 4.0f);
-            if (nearest == null || !nearest.Exists()) { ResetActionIfReleased(); return; }
-            if (IsMissionEntity(nearest)) { ResetActionIfReleased(); return; }
+            if (nearest == null || !nearest.Exists()) { ResetAction(); return; }
+            if (IsMissionEntity(nearest)) { ResetAction(); return; }
 
             VehicleProfile profile = GetProfile(nearest);
             ApplyDoorState(nearest, profile);
 
             Vector3 rear = RearPoint(nearest);
             float rearDistance = Distance(player.Position, rear);
-            bool context = IsControlPressed(InputContext);
 
             if (profile.Stolen && profile.TrackerPresent && !profile.TrackerDisabled && rearDistance <= 2.2f)
             {
+                DisableControl(InputContext);
                 ShowHelp("Maintenez ~INPUT_CONTEXT~ derriere le vehicule pour neutraliser le tracker.");
-                HandleTimedAction(nearest, profile, "tracker", 3200, context);
+                HandleTimedAction(nearest, profile, "tracker", 3200, IsDisabledControlPressed(InputContext));
                 return;
             }
 
             float distance = Distance(player.Position, nearest.Position);
             if (profile.Locked && !profile.HasKey && !profile.AccessBypassed && distance <= 3.2f)
             {
+                DisableControl(InputContext);
                 int duration = 1700 + profile.LockTier * 1050;
                 ShowHelp("Maintenez ~INPUT_CONTEXT~ pres de la porte pour crocheter la serrure.");
-                HandleTimedAction(nearest, profile, "lockpick", duration, context);
+                HandleTimedAction(nearest, profile, "lockpick", duration, IsDisabledControlPressed(InputContext));
                 return;
             }
 
-            ResetActionIfReleased();
+            ResetAction();
         }
 
         private void HandleTimedAction(Vehicle vehicle, VehicleProfile profile, string kind, int duration, bool pressed)
@@ -142,7 +143,7 @@ namespace VOX.VehicleRuntimeVI
                     }
                     catch { }
                 }
-                Log("Vehicle access bypassed key=" + profile.Key + " tier=" + profile.LockTier + ".");
+                Log("Vehicle access bypassed key=" + profile.Key + " tier=" + profile.LockTier + ". Release Context, then use the normal enter control.");
             }
             else if (kind == "tracker")
             {
@@ -156,11 +157,11 @@ namespace VOX.VehicleRuntimeVI
         private void UpdateInsideVehicle(Ped player, Vehicle vehicle)
         {
             VehicleProfile profile = GetProfile(vehicle);
-            if (profile.HasKey || IsLikelyPersonalVehicle(vehicle))
+            bool personal = IsLikelyPersonalVehicle(vehicle);
+
+            if (profile.HasKey || personal)
             {
-                profile.HasKey = true;
-                profile.Locked = false;
-                profile.Hotwired = false;
+                NormalizePersonalProfile(profile);
                 try { Function.Call(Hash.SET_VEHICLE_DOORS_LOCKED, vehicle.Handle, 1); } catch { }
                 return;
             }
@@ -168,6 +169,22 @@ namespace VOX.VehicleRuntimeVI
             profile.Stolen = true;
             profile.Locked = false;
             profile.AccessBypassed = true;
+
+            // Never turn off an engine that was already running when the player got in.
+            // A running unattended/stolen car can simply be driven away; there is
+            // nothing sensible to hotwire until the engine actually needs starting.
+            if (IsEngineRunning(vehicle))
+            {
+                if (!profile.Hotwired)
+                {
+                    profile.Hotwired = true;
+                    SaveProfiles();
+                    Log("Running unkeyed vehicle accepted without forced hotwire key=" + profile.Key + ".");
+                }
+                _hotwireVehicle = 0;
+                _hotwireStarted = 0;
+                return;
+            }
 
             if (profile.Hotwired)
             {
@@ -179,7 +196,6 @@ namespace VOX.VehicleRuntimeVI
             {
                 _hotwireVehicle = vehicle.Handle;
                 _hotwireStarted = Game.GameTime;
-                try { Function.Call(Hash.SET_VEHICLE_ENGINE_ON, vehicle.Handle, false, true, true); } catch { }
                 Log("Automatic hotwire started key=" + profile.Key + ".");
             }
 
@@ -199,10 +215,17 @@ namespace VOX.VehicleRuntimeVI
             string plate = Plate(vehicle);
             int model = vehicle.Model.Hash;
             string key = model.ToString(CultureInfo.InvariantCulture) + ":" + plate;
-            VehicleProfile p;
-            if (_profiles.TryGetValue(key, out p)) return p;
-
             bool personal = IsLikelyPersonalVehicle(vehicle);
+            VehicleProfile p;
+            if (_profiles.TryGetValue(key, out p))
+            {
+                // Older builds may have persisted the protagonist's own car as a
+                // locked/stolen profile. Re-evaluate ownership every time instead
+                // of trusting stale persistence forever.
+                if (personal) NormalizePersonalProfile(p);
+                return p;
+            }
+
             int roll = StableRoll(key);
             p = new VehicleProfile
             {
@@ -214,8 +237,20 @@ namespace VOX.VehicleRuntimeVI
                 LockTier = personal ? 0 : (roll < 42 ? 1 : (roll < 82 ? 2 : 3)),
                 TrackerPresent = !personal && StableRoll(key + ":tracker") < (IsPremium(vehicle) ? 72 : 28)
             };
+            if (personal) NormalizePersonalProfile(p);
             _profiles[key] = p;
             return p;
+        }
+
+        private static void NormalizePersonalProfile(VehicleProfile p)
+        {
+            if (p == null) return;
+            p.HasKey = true;
+            p.Locked = false;
+            p.AccessBypassed = false;
+            p.Hotwired = false;
+            p.Stolen = false;
+            p.TrackerDisabled = false;
         }
 
         private static void ApplyDoorState(Vehicle vehicle, VehicleProfile profile)
@@ -232,6 +267,13 @@ namespace VOX.VehicleRuntimeVI
                 try { if (v.Model.Hash == Function.Call<int>(Hash.GET_HASH_KEY, name)) return true; } catch { }
             }
             return false;
+        }
+
+        private static bool IsEngineRunning(Vehicle v)
+        {
+            if (v == null || !v.Exists()) return false;
+            try { return Function.Call<bool>(Hash.GET_IS_VEHICLE_ENGINE_RUNNING, v.Handle); }
+            catch { return false; }
         }
 
         private static bool IsPremium(Vehicle v)
@@ -277,9 +319,14 @@ namespace VOX.VehicleRuntimeVI
             try { return Function.Call<bool>(Hash.GET_MISSION_FLAG); } catch { return false; }
         }
 
-        private static bool IsControlPressed(int control)
+        private static void DisableControl(int control)
         {
-            try { return Function.Call<bool>(Hash.IS_CONTROL_PRESSED, 0, control); } catch { return false; }
+            try { Function.Call(Hash.DISABLE_CONTROL_ACTION, 0, control, true); } catch { }
+        }
+
+        private static bool IsDisabledControlPressed(int control)
+        {
+            try { return Function.Call<bool>(Hash.IS_DISABLED_CONTROL_PRESSED, 0, control); } catch { return false; }
         }
 
         private void ShowHelp(string text)
@@ -366,7 +413,6 @@ namespace VOX.VehicleRuntimeVI
             return (float)Math.Sqrt(x * x + y * y + z * z);
         }
 
-        private void ResetActionIfReleased() { if (!IsControlPressed(InputContext)) ResetAction(); }
         private void ResetAction() { _actionVehicle = 0; _actionStarted = 0; _actionKind = string.Empty; }
         private void ResetActions() { ResetAction(); _hotwireVehicle = 0; _hotwireStarted = 0; }
         private static int ParseInt(string s) { int v; return int.TryParse(s, out v) ? v : 0; }
