@@ -1,4 +1,4 @@
-WORLD LIFE VI — V0.1.0
+WORLD LIFE VI — 0.3.0
 
 TARGET
 - GTA V Enhanced Story Mode
@@ -8,25 +8,22 @@ REQUIRES
 - ScriptHookVDotNet Enhanced
 
 INSTALL
-1. Copy the contents of this package into the GTA V root directory.
+1. Copy the package contents into the GTA V root directory.
 2. WorldLifeVI.dll and WorldLifeVI.ini must end up in GTA V\scripts\.
 
-V0.1 DYNAMIC WORLD PASS
-- dynamic pedestrian/scenario-ped density refreshed every frame using GTA density natives
-- city daytime/evening crowds are denser; deep night and rural areas are quieter
-- beaches/busy urban zones can receive additional pedestrian density
-- traffic increases are deliberately smaller than pedestrian increases
-- local ped/vehicle budgets taper density back toward vanilla before the scene gets overloaded
-- no population archive/gameconfig replacement is required
-- optional Online civilian vehicle integration uses models already present in the installed game
-- Online vehicles are selected by donor vehicle class (compact/sedan/SUV/muscle/sports/off-road etc.)
-- weaponized/military/special vehicles are deliberately absent from the ambient pool
-- replacements happen only at distance and outside player LOS, never to mission vehicles or the player's vehicle
-- vehicles with passengers are not replaced in this first pass
-- asynchronous model requests prevent a traffic integration check from blocking the game thread
-- scripted/cutscene contexts yield to Rockstar
+0.3.0 STORY-FIRST WORLD RHYTHMS
+- moving traffic, parked vehicles, ambient pedestrians and scenario pedestrians now follow separate hourly rhythms
+- morning and evening commuter traffic peaks independently from foot traffic
+- scenario activity drops more strongly during deep night instead of being a copy of ambient ped density
+- beaches, busy districts and rural zones keep distinct behaviour
+- local performance budgets taper each population channel independently before scenes become overloaded
+- Online civilian vehicles remain low-frequency and class-appropriate
+- donor swaps happen at distance, outside player LOS, never to mission entities, law vehicles/drivers, passenger vehicles or the player's vehicle
+- Online vehicle swaps are suspended while the player is wanted so pursuits are never cosmetically rewritten underneath PoliceOverhaulVI
 
-NOTES
-- Online vehicle integration is intentionally low-frequency. It is meant to make the world less 2013-like, not turn every street into a GTA Online garage.
-- Density and Online vehicle integration can be disabled independently in WorldLifeVI.ini.
-- Runtime-only architecture: no vanilla archive is replaced.
+STORY MODE SAFETY
+- mission flag, cutscene, protagonist switch, loss of player control and fades suspend the runtime
+- pending vehicle swaps are cancelled immediately when Rockstar owns the scene
+- free-roam population ownership resumes only after a five-second grace period
+
+The system is runtime-only: no population archive or gameconfig replacement is required.
