@@ -1,54 +1,29 @@
-CAMERA RUNTIME VI — V0.1.0 TEST BUILD
+CAMERA RUNTIME VI — 0.2.0
 
 TARGET
 - GTA V Enhanced Story Mode
 
-REQUIRES
-- Script Hook V
-- Script Hook V .NET Enhanced v1.1.0.6 or compatible newer build
-
 INSTALL
-1. REMOVE or disable VehicleCameraVI.dll / VehicleCameraVI.ini. Do not run both camera modules together.
-2. Copy this package into the GTA V root directory.
-3. CameraRuntimeVI.dll and CameraRuntimeVI.ini must end up in GTA V\scripts\.
+1. REMOVE or disable VehicleCameraVI.dll / VehicleCameraVI.ini. VehicleCameraVI is deprecated and must never run beside CameraRuntimeVI.
+2. Copy CameraRuntimeVI.dll and CameraRuntimeVI.ini into GTA V\scripts\.
 
 DESIGN
-- This replaces the failed VehicleCameraVI 0.1 prototype.
-- Camera Runtime VI NEVER writes GET/SET_GAMEPLAY_CAM_RELATIVE_HEADING and does not force yaw/pitch/recentering.
-- The player always owns camera direction.
-- It adds only secondary camera motion/shake according to context.
+- the player always owns camera direction
+- the runtime never writes gameplay-camera relative heading/pitch or recenters the view
+- only subtle secondary motion is added for walking/running/sprinting/falling, speed, acceleration and impacts
+- collision feedback now triggers on a new impact edge with cooldown instead of repeatedly pulsing while the vehicle remains in contact
+- amplitude transitions are smoothed without changing camera direction
 
-V0.1 CONTEXTS
-- walking
-- running
-- sprinting
-- falling/ragdoll
-- road speed
-- vehicle acceleration/deceleration
-- motorcycle/bicycle class multiplier
-- collision impulse boost
-- reduced first-person amplitude
-
-VANILLA-FIRST SAFETY
-The runtime immediately yields and removes its effect during:
-- any Rockstar mission flag
-- cutscene
+STORY MODE SAFETY
+The effect is removed immediately for:
+- mission flag / cutscene
 - protagonist switch
-- cinematic/non-gameplay camera
+- loss of player control
+- fades and screen transitions
+- scripted/cinematic camera
 - aiming/free aim
-- deliberate mouse/stick camera movement
-- look-behind input
+- deliberate manual camera movement and look-behind
 
-KNOWN SCOPE
-This is deliberately a safe foundation, not the final cinematic camera. It does NOT yet add FOV-speed curves, positional spring lag, shoulder offsets or scripted look-ahead because those features must be implemented without fighting the player's own camera controls.
+After Rockstar returns control, the runtime waits five seconds before adding secondary motion again.
 
-TEST
-- look behind on foot and in a vehicle: vanilla behavior must remain completely usable
-- rotate camera continuously with mouse/controller: no tug-of-war or unwanted recentering
-- drive slowly then quickly: subtle speed movement should increase
-- accelerate/brake hard and collide lightly: additional motion should be noticeable but not nauseating
-- walk/run/sprint: progressively stronger but subtle secondary movement
-- aim a weapon: custom camera effect should stop
-- launch a story mission/cutscene: custom camera effect should stop immediately
-
-Send scripts\CameraRuntimeVI\CameraRuntimeVI.log with feedback.
+VehicleCameraVI is intentionally excluded from the complete overhaul package.
