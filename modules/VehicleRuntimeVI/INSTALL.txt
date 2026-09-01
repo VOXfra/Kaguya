@@ -1,50 +1,31 @@
-VEHICLE RUNTIME VI — 0.3.0
+VEHICLE RUNTIME VI — 0.4.0
 
 Target: GTA V Enhanced Story Mode / free roam.
 Requires Script Hook V and Script Hook V .NET Enhanced v1.1.0.6 or compatible newer build.
 
 Install:
 - copy scripts/VehicleRuntimeVI.dll to GTA V\scripts\
-- keep BattlEye disabled for script-modded Story Mode as usual
 
-0.3.0 PHYSICAL VEHICLE INTERACTIONS
-- attempting to enter a locked vehicle opens a two-direction theft wheel
-- left chooses a quiet lock-working animation; right chooses GTA's physical
-  smash-window task
-- neither path contains a minigame, progress puzzle, text list or third-party asset
-- hold Context while seated to open a six-direction vehicle wheel
-- the wheel controls engine, seatbelt, driver window, locks, interior light and
-  headlights; releasing Context executes the selected physical state change
-- a fastened seatbelt blocks accidental exit/ejection behavior until deliberately
-  released through the vehicle wheel
-- vehicle control states persist per physical model/plate identity
+PHYSICAL VEHICLE THEFT — NO MOD MENU / NO MINIGAME
+- normal unlocked/personal vehicle entry is left to GTA
+- a real attempt to enter a locked ambient vehicle becomes one bounded physical lock-working action
+- the protagonist turns to the lock and uses an existing Rockstar physical animation
+- there is no theft wheel, lockpick puzzle, progress game or 2D overlay
+- higher security tiers take longer and can trigger the alarm
+- successful access hands directly back to GTA's normal enter task
+- if an unkeyed stolen vehicle is already running, it stays running
+- if it is stopped, its ignition takes a short physical-state delay before starting; no hotwire minigame
+- stolen/hotwired/tracker state persists per model + plate identity
 
-0.2.0 CORRECTIONS
-- merely standing beside a locked car never displays or loops a lockpick action
-- pressing the normal vehicle-enter control on the intended locked car starts one
-  bounded lockpick action
-- the action is entirely physical: turn toward the lock, play Rockstar's existing
-  parking-meter/lock-working animation sequence, unlock, then enter; there is no
-  lockpick minigame, progress puzzle or 2D overlay
-- successful access hands directly back to GTA's normal enter-vehicle task
-- personal vehicles and already-running engines retain the 0.1.1 safety corrections
+INTENTIONAL REMOVALS FROM 0.3
+- removed the two-direction theft wheel
+- removed the six-direction in-vehicle control wheel
+- removed custom seatbelt/window/light/lock control UI; ordinary vehicle functions remain vanilla
+- tracker state is still recorded, but 0.4 does not let the player magically disable it bare-handed. A future tool/inventory system can expose that action physically.
 
-EFFECTIVE SYSTEMS
-- ambient free-roam vehicles receive deterministic lock profiles
-- protagonist personal-car model safety whitelist (Tailgater / Buffalo S / Bodhi)
-- attempt to enter a locked vehicle to begin bypassing its lock
-- higher lock tiers take longer and can trigger the vehicle alarm
-- stolen/unkeyed vehicles do not start instantly: an automatic hotwire delay is applied after entry
-- hotwired vehicles are remembered persistently
-- deterministic tracker presence is stored per vehicle
-- after stealing a tracked vehicle, hold Context near the rear of the car to disable the tracker
-- active vehicle state is exported to scripts\VehicleRuntimeVI\ActiveVehicleState.txt for future Police/Core integration
-- all persistent profiles live in scripts\VehicleRuntimeVI\VehicleProfiles.txt
+STORY MODE SAFETY
+- mission entities are never lock-managed
+- mission flag, cutscene, protagonist switch, loss of player control and fades suspend the runtime
+- free-roam ownership resumes only after a five-second grace period
 
-MISSION SAFETY
-The runtime yields completely when Rockstar's mission flag, cutscene, player switch,
-disabled player control or screen transition is active, then waits five seconds before
-resuming. Mission entities are never lock-managed, including a vehicle the player is
-already sitting in.
-
-This first runtime intentionally does not replace vanilla archives and does not modify RPF files.
+The runtime is additive and does not modify vanilla archives/RPF files.
