@@ -1,0 +1,18 @@
+CHARACTER RUNTIME VI — 0.1.0
+
+Requires Script Hook V + Script Hook V .NET Enhanced.
+Copy scripts/CharacterRuntimeVI.dll into GTA V\scripts\.
+
+EFFECTIVE 0.1 SYSTEMS
+- separate persistent fitness profile per protagonist/model
+- sprinting/running/swimming train endurance
+- melee and swimming train strength/lean mass
+- endurance gives a bounded sprint-speed multiplier
+- strength gives a bounded melee-damage multiplier
+- repeated training gradually increases visible body width/physique in free roam
+- progression persists in scripts\CharacterRuntimeVI\FitnessStats.txt
+
+VISIBLE BODY CHANGE
+The runtime uses a conservative entity-matrix width scale (maximum +4.5%) driven by strength + lean mass. Height stays vanilla. The body modification is disabled in vehicles, swimming, jumping/falling/ragdoll states, cutscenes, character switches and Rockstar missions to avoid fighting scripted animation/mission ownership.
+
+This is an actual runtime body-proportion change, not only a numerical stat. It is deliberately conservative; later physique tiers can use dedicated model/torso assets if we want larger/high-fidelity changes without matrix-scaling limitations.
