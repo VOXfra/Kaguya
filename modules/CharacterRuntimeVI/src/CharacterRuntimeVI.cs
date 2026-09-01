@@ -42,7 +42,7 @@ namespace VOX.CharacterRuntimeVI
             Interval = 50;
             Tick += OnTick;
             Aborted += OnAborted;
-            Log("Character Runtime VI 0.2.0 loaded: story-safe persistent fitness + physical workout bridge.");
+            Log("Character Runtime VI 0.2.1 loaded: story-safe fitness/body progression; melee damage ownership delegated to MeleeRuntimeVI.");
         }
 
         private void OnTick(object sender, EventArgs e)
@@ -164,15 +164,12 @@ namespace VOX.CharacterRuntimeVI
         {
             if (_current == null) return;
             float sprint = 1f + _current.Endurance * 0.00115f;
-            float melee = 1f + _current.Strength * 0.0018f;
             try { Function.Call(Hash.SET_RUN_SPRINT_MULTIPLIER_FOR_PLAYER, Game.Player.Handle, Math.Min(1.15f, sprint)); } catch { }
-            try { Function.Call(Hash.SET_PLAYER_MELEE_WEAPON_DAMAGE_MODIFIER, Game.Player.Handle, Math.Min(1.20f, melee), true); } catch { }
         }
 
         private static void ApplyNeutralPerformanceStats()
         {
             try { Function.Call(Hash.SET_RUN_SPRINT_MULTIPLIER_FOR_PLAYER, Game.Player.Handle, 1f); } catch { }
-            try { Function.Call(Hash.SET_PLAYER_MELEE_WEAPON_DAMAGE_MODIFIER, Game.Player.Handle, 1f, true); } catch { }
         }
 
         private float BodyWidthScale()
