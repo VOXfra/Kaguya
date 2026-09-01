@@ -17,6 +17,7 @@ namespace VOX.WorldLifeVI
         private Config _cfg;
         private int _lastContext;
         private int _lastOnlineCheck;
+        private int _storyYieldUntil;
         private float _pedDensity = 1f;
         private float _scenarioPedDensity = 1f;
         private float _vehicleDensity = 1f;
@@ -45,7 +46,7 @@ namespace VOX.WorldLifeVI
             BuildOnlineHashSet();
             Tick += OnTick;
             Aborted += OnAborted;
-            Log("World Life VI 0.2.1 dynamic population + increased Online civilian traffic runtime loaded.");
+            Log("World Life VI 0.3.0 independent hourly population + story-safe Online civilian runtime loaded.");
         }
 
         private void OnTick(object sender, EventArgs e)
@@ -54,10 +55,21 @@ namespace VOX.WorldLifeVI
             try
             {
                 Ped player = Game.LocalPlayerPed;
-                if (player == null || !player.Exists()) return;
+                if (player == null || !player.Exists() || player.IsDead) { CancelPending(); return; }
 
-                bool yielding = _cfg.DisableDuringMissions && InScriptedContext();
-                if (!yielding && _cfg.DynamicPopulation)
+                if (_cfg.DisableDuringMissions && StoryOwnsScene())
+                {
+                    _storyYieldUntil = Game.GameTime + 5000;
+                    CancelPending();
+                    return;
+                }
+                if (Game.GameTime < _storyYieldUntil)
+                {
+                    CancelPending();
+                    return;
+                }
+
+                if (_cfg.DynamicPopulation)
                 {
                     if (Game.GameTime - _lastContext >= Math.Max(500, _cfg.ContextRefreshMs))
                     {
@@ -67,13 +79,10 @@ namespace VOX.WorldLifeVI
                     ApplyDensityThisFrame();
                 }
 
-                if (!yielding && _cfg.OnlineVehicles) UpdateOnlineVehicles(player);
+                if (_cfg.OnlineVehicles && !PlayerWanted()) UpdateOnlineVehicles(player);
                 else CancelPending();
             }
-            catch (Exception ex)
-            {
-                Log("Tick error: " + ex);
-            }
+            catch (Exception ex) { Log("Tick error: " + ex); }
         }
 
         private void RefreshDensityContext(Ped player)
@@ -89,32 +98,89 @@ namespace VOX.WorldLifeVI
             bool night = hour >= 1 && hour < 6;
             bool evening = hour >= 18 && hour < 24;
 
-            float ped;
-            float veh;
+            float ambientPedBase;
+            float trafficBase;
             if (rural)
             {
-                ped = night ? _cfg.RuralPedNight : _cfg.RuralPedDay;
-                veh = _cfg.RuralTraffic;
+                ambientPedBase = night ? _cfg.RuralPedNight : _cfg.RuralPedDay;
+                trafficBase = _cfg.RuralTraffic;
             }
             else
             {
-                ped = night ? _cfg.CityPedNight : (evening ? _cfg.CityPedEvening : _cfg.CityPedDay);
-                if (beach && hour >= 9 && hour < 20) ped = Math.Max(ped, _cfg.BeachPedDay);
-                if (busy && !night) ped += _cfg.BusyPedBonus;
-                veh = _cfg.CityTraffic;
+                ambientPedBase = night ? _cfg.CityPedNight : (evening ? _cfg.CityPedEvening : _cfg.CityPedDay);
+                if (beach && hour >= 9 && hour < 20) ambientPedBase = Math.Max(ambientPedBase, _cfg.BeachPedDay);
+                if (busy && hour >= 8 && hour < 23) ambientPedBase += _cfg.BusyPedBonus;
+                trafficBase = _cfg.CityTraffic;
             }
+
+            float ped = ambientPedBase * AmbientPedHourFactor(hour, rural);
+            float scenario = ambientPedBase * ScenarioPedHourFactor(hour, rural, beach);
+            float moving = trafficBase * TrafficHourFactor(hour, rural);
+            float parked = _cfg.ParkedVehicle * ParkedHourFactor(hour, rural);
 
             int pedCount = 0, vehicleCount = 0;
             try { pedCount = World.GetNearbyPeds(player, _cfg.BudgetRadius).Length; } catch { }
             try { vehicleCount = World.GetNearbyVehicles(player, _cfg.BudgetRadius).Length; } catch { }
 
             ped = ApplyBudget(ped, pedCount, _cfg.SoftPedBudget, _cfg.HardPedBudget);
-            veh = ApplyBudget(veh, vehicleCount, _cfg.SoftVehicleBudget, _cfg.HardVehicleBudget);
+            scenario = ApplyBudget(scenario, pedCount, _cfg.SoftPedBudget, _cfg.HardPedBudget);
+            moving = ApplyBudget(moving, vehicleCount, _cfg.SoftVehicleBudget, _cfg.HardVehicleBudget);
+            parked = ApplyBudget(parked, vehicleCount, _cfg.SoftVehicleBudget, _cfg.HardVehicleBudget);
 
-            _pedDensity = Clamp(ped, 0.45f, _cfg.MaxPedMultiplier);
-            _scenarioPedDensity = Clamp(ped * (rural ? 0.95f : 1.03f), 0.45f, _cfg.MaxPedMultiplier);
-            _vehicleDensity = Clamp(veh, 0.60f, _cfg.MaxVehicleMultiplier);
-            _parkedDensity = Clamp(_cfg.ParkedVehicle * (rural ? 0.78f : 1f), 0.55f, _cfg.MaxVehicleMultiplier);
+            _pedDensity = Clamp(ped, 0.42f, _cfg.MaxPedMultiplier);
+            _scenarioPedDensity = Clamp(scenario, 0.38f, _cfg.MaxPedMultiplier);
+            _vehicleDensity = Clamp(moving, 0.55f, _cfg.MaxVehicleMultiplier);
+            _parkedDensity = Clamp(parked, 0.50f, _cfg.MaxVehicleMultiplier);
+        }
+
+        private static float AmbientPedHourFactor(int hour, bool rural)
+        {
+            float f;
+            if (hour < 5) f = 0.62f;
+            else if (hour < 7) f = 0.78f;
+            else if (hour < 10) f = 0.94f;
+            else if (hour < 17) f = 1.02f;
+            else if (hour < 22) f = 1.08f;
+            else f = 0.88f;
+            return rural ? 0.92f + (f - 1f) * 0.65f : f;
+        }
+
+        private static float ScenarioPedHourFactor(int hour, bool rural, bool beach)
+        {
+            float f;
+            if (hour < 6) f = 0.45f;
+            else if (hour < 9) f = 0.72f;
+            else if (hour < 12) f = 0.96f;
+            else if (hour < 18) f = 1.08f;
+            else if (hour < 22) f = 1.04f;
+            else f = 0.68f;
+            if (beach && hour >= 10 && hour < 19) f *= 1.08f;
+            if (rural) f *= 0.90f;
+            return f;
+        }
+
+        private static float TrafficHourFactor(int hour, bool rural)
+        {
+            float f;
+            if (hour < 5) f = 0.70f;
+            else if (hour < 7) f = 0.88f;
+            else if (hour < 10) f = 1.16f;      // morning commute
+            else if (hour < 16) f = 1.00f;
+            else if (hour < 20) f = 1.20f;      // evening commute
+            else if (hour < 23) f = 1.02f;
+            else f = 0.84f;
+            return rural ? 0.94f + (f - 1f) * 0.45f : f;
+        }
+
+        private static float ParkedHourFactor(int hour, bool rural)
+        {
+            float f;
+            if (hour < 6) f = 1.08f;
+            else if (hour < 10) f = 0.92f;
+            else if (hour < 17) f = 0.98f;
+            else if (hour < 21) f = 0.94f;
+            else f = 1.06f;
+            return rural ? f * 0.80f : f;
         }
 
         private void ApplyDensityThisFrame()
@@ -129,12 +195,7 @@ namespace VOX.WorldLifeVI
         private void UpdateOnlineVehicles(Ped player)
         {
             int now = Game.GameTime;
-            if (_pending != null)
-            {
-                ProcessPendingSwap(player, now);
-                return;
-            }
-
+            if (_pending != null) { ProcessPendingSwap(player, now); return; }
             if (now - _lastOnlineCheck < Math.Max(2500, _cfg.OnlineVehicleCheckMs)) return;
             _lastOnlineCheck = now;
             if (_random.Next(0, 100) >= Math.Max(0, Math.Min(100, _cfg.OnlineVehicleChancePercent))) return;
@@ -150,8 +211,7 @@ namespace VOX.WorldLifeVI
             {
                 string modelName = pool[(start + i) % pool.Length];
                 int hash = Function.Call<int>(Hash.GET_HASH_KEY, modelName);
-                if (!IsUsableVehicleModel(hash)) continue;
-                if (donor.Model.Hash == hash) continue;
+                if (!IsUsableVehicleModel(hash) || donor.Model.Hash == hash) continue;
                 Function.Call(Hash.REQUEST_MODEL, hash);
                 _pending = new PendingSwap { DonorHandle = donor.Handle, ModelHash = hash, RequestedAt = now };
                 return;
@@ -161,12 +221,8 @@ namespace VOX.WorldLifeVI
         private void ProcessPendingSwap(Ped player, int now)
         {
             if (_pending == null) return;
-            if (now - _pending.RequestedAt > Math.Max(1000, _cfg.OnlineVehicleMaxRequestMs))
-            {
-                ReleaseModel(_pending.ModelHash);
-                _pending = null;
-                return;
-            }
+            if (StoryOwnsScene() || PlayerWanted()) { CancelPending(); return; }
+            if (now - _pending.RequestedAt > Math.Max(1000, _cfg.OnlineVehicleMaxRequestMs)) { CancelPending(); return; }
 
             bool loaded = false;
             try { loaded = Function.Call<bool>(Hash.HAS_MODEL_LOADED, _pending.ModelHash); } catch { }
@@ -175,12 +231,7 @@ namespace VOX.WorldLifeVI
             Entity donorEntity = null;
             try { donorEntity = Entity.FromHandle(_pending.DonorHandle); } catch { }
             Vehicle donor = donorEntity as Vehicle;
-            if (donor == null || !donor.Exists() || !DonorStillSafe(player, donor))
-            {
-                ReleaseModel(_pending.ModelHash);
-                _pending = null;
-                return;
-            }
+            if (donor == null || !donor.Exists() || !DonorStillSafe(player, donor)) { CancelPending(); return; }
 
             SwapVehicle(donor, _pending.ModelHash);
             ReleaseModel(_pending.ModelHash);
@@ -204,14 +255,9 @@ namespace VOX.WorldLifeVI
                 float speed = SafeSpeed(v);
                 if (speed > 1f && !_cfg.ReplaceMovingTraffic) continue;
                 if (speed <= 1f && !_cfg.ReplaceParkedVehicles) continue;
-                if (_onlineHashes.Contains(v.Model.Hash)) continue;
-                if (HasLineOfSight(player, v)) continue;
+                if (_onlineHashes.Contains(v.Model.Hash) || HasLineOfSight(player, v)) continue;
                 float score = d - speed * 0.7f + (v.Driver != null && v.Driver.Exists() ? 4f : 0f);
-                if (score > bestScore)
-                {
-                    bestScore = score;
-                    best = v;
-                }
+                if (score > bestScore) { bestScore = score; best = v; }
             }
             return best;
         }
@@ -219,7 +265,7 @@ namespace VOX.WorldLifeVI
         private bool DonorStillSafe(Ped player, Vehicle v)
         {
             if (v == null || !v.Exists()) return false;
-            try { if (Function.Call<bool>(Hash.IS_ENTITY_A_MISSION_ENTITY, v.Handle)) return false; } catch { }
+            try { if (Function.Call<bool>(Hash.IS_ENTITY_A_MISSION_ENTITY, v.Handle)) return false; } catch { return false; }
             int cls = SafeVehicleClass(v);
             if (!OnlinePools.ContainsKey(cls)) return false;
             try
@@ -228,8 +274,17 @@ namespace VOX.WorldLifeVI
                 if (passengers > 0) return false;
             }
             catch { return false; }
+
+            Ped driver = null;
+            try { driver = v.Driver; } catch { }
+            if (driver != null && driver.Exists())
+            {
+                try { if (Function.Call<bool>(Hash.IS_ENTITY_A_MISSION_ENTITY, driver.Handle)) return false; } catch { return false; }
+                if (IsLawPed(driver)) return false;
+            }
+
             float d = Distance(player.Position, v.Position);
-            return d >= _cfg.OnlineVehicleMinDistance && d <= _cfg.OnlineVehicleMaxDistance + 10f;
+            return d >= _cfg.OnlineVehicleMinDistance && d <= _cfg.OnlineVehicleMaxDistance + 10f && !HasLineOfSight(player, v);
         }
 
         private void SwapVehicle(Vehicle donor, int modelHash)
@@ -243,8 +298,7 @@ namespace VOX.WorldLifeVI
             try { driverHandle = Function.Call<int>(Hash.GET_PED_IN_VEHICLE_SEAT, donor.Handle, -1, false); } catch { }
 
             int newHandle = 0;
-            try { newHandle = Function.Call<int>(Hash.CREATE_VEHICLE, modelHash, pos.X, pos.Y, pos.Z, heading, false, false, false); }
-            catch { }
+            try { newHandle = Function.Call<int>(Hash.CREATE_VEHICLE, modelHash, pos.X, pos.Y, pos.Z, heading, false, false, false); } catch { }
             if (newHandle == 0) return;
 
             try { Function.Call(Hash.SET_ENTITY_VELOCITY, newHandle, velocity.X, velocity.Y, velocity.Z); } catch { }
@@ -257,15 +311,34 @@ namespace VOX.WorldLifeVI
 
             int oldHandle = donor.Handle;
             try { donor.Delete(); } catch { }
-            Log("Online civilian vehicle integrated: donor=" + oldHandle + " class=" + SafeVehicleClassHandle(newHandle) + " model=" + modelHash + ".");
+            Log("Online civilian vehicle integrated off-screen donor=" + oldHandle + " model=" + modelHash + ".");
         }
 
-        private bool InScriptedContext()
+        private static bool StoryOwnsScene()
         {
             try { if (Function.Call<bool>(Hash.IS_CUTSCENE_ACTIVE)) return true; } catch { }
             try { if (Function.Call<bool>(Hash.IS_PLAYER_SWITCH_IN_PROGRESS)) return true; } catch { }
             try { if (Function.Call<bool>(Hash.GET_MISSION_FLAG)) return true; } catch { }
+            try { if (!Function.Call<bool>(Hash.IS_PLAYER_CONTROL_ON, Game.Player.Handle)) return true; } catch { }
+            try
+            {
+                if (Function.Call<bool>(Hash.IS_SCREEN_FADED_OUT) || Function.Call<bool>(Hash.IS_SCREEN_FADING_OUT) ||
+                    Function.Call<bool>(Hash.IS_SCREEN_FADING_IN)) return true;
+            }
+            catch { }
             return false;
+        }
+
+        private static bool PlayerWanted()
+        {
+            try { return Function.Call<int>(Hash.GET_PLAYER_WANTED_LEVEL, Game.Player.Handle) > 0; }
+            catch { return true; }
+        }
+
+        private static bool IsLawPed(Ped p)
+        {
+            try { int t = (int)p.PedType; return t == 6 || t == 27 || t == 29; }
+            catch { return true; }
         }
 
         private void BuildOnlineHashSet()
@@ -277,44 +350,13 @@ namespace VOX.WorldLifeVI
 
         private static bool IsUsableVehicleModel(int hash)
         {
-            try
-            {
-                return hash != 0 && Function.Call<bool>(Hash.IS_MODEL_IN_CDIMAGE, hash) &&
-                       Function.Call<bool>(Hash.IS_MODEL_VALID, hash) &&
-                       Function.Call<bool>(Hash.IS_MODEL_A_VEHICLE, hash);
-            }
+            try { return hash != 0 && Function.Call<bool>(Hash.IS_MODEL_IN_CDIMAGE, hash) && Function.Call<bool>(Hash.IS_MODEL_VALID, hash) && Function.Call<bool>(Hash.IS_MODEL_A_VEHICLE, hash); }
             catch { return false; }
         }
-
-        private static int SafeVehicleClass(Vehicle v)
-        {
-            try { return Function.Call<int>(Hash.GET_VEHICLE_CLASS, v.Handle); }
-            catch { return -1; }
-        }
-
-        private static int SafeVehicleClassHandle(int h)
-        {
-            try { return Function.Call<int>(Hash.GET_VEHICLE_CLASS, h); }
-            catch { return -1; }
-        }
-
-        private static int SafeCurrentVehicleHandle(Ped p)
-        {
-            try { return p.IsInVehicle() && p.CurrentVehicle != null ? p.CurrentVehicle.Handle : 0; }
-            catch { return 0; }
-        }
-
-        private static float SafeSpeed(Entity e)
-        {
-            try { return Function.Call<float>(Hash.GET_ENTITY_SPEED, e.Handle); }
-            catch { return 0f; }
-        }
-
-        private static bool HasLineOfSight(Ped player, Entity e)
-        {
-            try { return Function.Call<bool>(Hash.HAS_ENTITY_CLEAR_LOS_TO_ENTITY, player.Handle, e.Handle, 17); }
-            catch { return true; }
-        }
+        private static int SafeVehicleClass(Vehicle v) { try { return Function.Call<int>(Hash.GET_VEHICLE_CLASS, v.Handle); } catch { return -1; } }
+        private static int SafeCurrentVehicleHandle(Ped p) { try { return p.IsInVehicle() && p.CurrentVehicle != null ? p.CurrentVehicle.Handle : 0; } catch { return 0; } }
+        private static float SafeSpeed(Entity e) { try { return Function.Call<float>(Hash.GET_ENTITY_SPEED, e.Handle); } catch { return 0f; } }
+        private static bool HasLineOfSight(Ped player, Entity e) { try { return Function.Call<bool>(Hash.HAS_ENTITY_CLEAR_LOS_TO_ENTITY, player.Handle, e.Handle, 17); } catch { return true; } }
 
         private static float ApplyBudget(float target, int count, int soft, int hard)
         {
@@ -335,36 +377,11 @@ namespace VOX.WorldLifeVI
                 default: return false;
             }
         }
-
-        private static bool IsBeach(string z)
-        {
-            z = (z ?? string.Empty).ToUpperInvariant();
-            return z == "DELPE" || z == "BEACH" || z == "VESPU" || z == "VCANA";
-        }
-
-        private static bool IsBusyUrban(string z)
-        {
-            z = (z ?? string.Empty).ToUpperInvariant();
-            return z == "DOWNT" || z == "PBOX" || z == "TEXTI" || z == "SKID" ||
-                   z == "VESP" || z == "DELPE" || z == "VCANA" || z == "HAWICK" || z == "ALTA";
-        }
-
-        private static float Clamp(float v, float min, float max)
-        {
-            return Math.Max(min, Math.Min(max, v));
-        }
-
-        private static float Distance(Vector3 a, Vector3 b)
-        {
-            double x = a.X - b.X, y = a.Y - b.Y, z = a.Z - b.Z;
-            return (float)Math.Sqrt(x * x + y * y + z * z);
-        }
-
-        private static void ReleaseModel(int hash)
-        {
-            if (hash == 0) return;
-            try { Function.Call(Hash.SET_MODEL_AS_NO_LONGER_NEEDED, hash); } catch { }
-        }
+        private static bool IsBeach(string z) { z = (z ?? string.Empty).ToUpperInvariant(); return z == "DELPE" || z == "BEACH" || z == "VESPU" || z == "VCANA"; }
+        private static bool IsBusyUrban(string z) { z = (z ?? string.Empty).ToUpperInvariant(); return z == "DOWNT" || z == "PBOX" || z == "TEXTI" || z == "SKID" || z == "VESP" || z == "DELPE" || z == "VCANA" || z == "HAWICK" || z == "ALTA"; }
+        private static float Clamp(float v, float min, float max) { return Math.Max(min, Math.Min(max, v)); }
+        private static float Distance(Vector3 a, Vector3 b) { double x = a.X - b.X, y = a.Y - b.Y, z = a.Z - b.Z; return (float)Math.Sqrt(x*x + y*y + z*z); }
+        private static void ReleaseModel(int hash) { if (hash == 0) return; try { Function.Call(Hash.SET_MODEL_AS_NO_LONGER_NEEDED, hash); } catch { } }
 
         private void CancelPending()
         {
@@ -372,29 +389,13 @@ namespace VOX.WorldLifeVI
             ReleaseModel(_pending.ModelHash);
             _pending = null;
         }
-
-        private void OnAborted(object sender, EventArgs e)
-        {
-            CancelPending();
-        }
-
+        private void OnAborted(object sender, EventArgs e) { CancelPending(); }
         private void Log(string message)
         {
             if (_cfg != null && !_cfg.DebugLogging) return;
-            try
-            {
-                Directory.CreateDirectory(DataDirectory);
-                File.AppendAllText(LogPath,
-                    DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + " | " + message + Environment.NewLine);
-            }
-            catch { }
+            try { Directory.CreateDirectory(DataDirectory); File.AppendAllText(LogPath, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + " | " + message + Environment.NewLine); } catch { }
         }
 
-        private sealed class PendingSwap
-        {
-            public int DonorHandle;
-            public int ModelHash;
-            public int RequestedAt;
-        }
+        private sealed class PendingSwap { public int DonorHandle; public int ModelHash; public int RequestedAt; }
     }
 }
