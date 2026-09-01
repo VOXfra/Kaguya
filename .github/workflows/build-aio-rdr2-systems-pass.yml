@@ -23,7 +23,7 @@ jobs:
           Expand-Archive shvdne.zip -DestinationPath shvdne
           $ref = Get-ChildItem shvdne -Recurse -Filter ScriptHookVDotNet3.dll | Select-Object -First 1
           if (-not $ref) { throw 'ScriptHookVDotNet3.dll not found.' }
-          $mods = @('VOXCoreVI','CameraRuntimeVI','CharacterRuntimeVI','InteractionRuntimeVI','InventoryRuntimeVI','PedOverhaulVI','PoliceOverhaulVI','VehicleRuntimeVI','WorldLifeVI','MeleeRuntimeVI','VehicleOccupantVI')
+          $mods = @('VOXCoreVI','CameraRuntimeVI','CharacterRuntimeVI','InteractionRuntimeVI','InventoryRuntimeVI','PedOverhaulVI','PoliceOverhaulVI','VehicleRuntimeVI','WorldLifeVI','MeleeRuntimeVI','VehicleOccupantVI','FireRuntimeVI','WildlifeRuntimeVI')
           foreach ($m in $mods) {
             New-Item -ItemType Directory -Force "modules/$m/refs" | Out-Null
             Copy-Item $ref.FullName "modules/$m/refs/ScriptHookVDotNet3.dll" -Force
@@ -43,7 +43,9 @@ jobs:
             'modules/VehicleRuntimeVI/VehicleRuntimeVI.csproj',
             'modules/WorldLifeVI/WorldLifeVI.csproj',
             'modules/MeleeRuntimeVI/MeleeRuntimeVI.csproj',
-            'modules/VehicleOccupantVI/VehicleOccupantVI.csproj'
+            'modules/VehicleOccupantVI/VehicleOccupantVI.csproj',
+            'modules/FireRuntimeVI/FireRuntimeVI.csproj',
+            'modules/WildlifeRuntimeVI/WildlifeRuntimeVI.csproj'
           )
           foreach ($p in $projects) {
             Write-Host "=== BUILD $p ==="
@@ -61,7 +63,7 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist/scripts/PoliceOverhaulVI/UI | Out-Null
-          $managed = @('VOXCoreVI','CameraRuntimeVI','CharacterRuntimeVI','InteractionRuntimeVI','InventoryRuntimeVI','PedOverhaulVI','PoliceOverhaulVI','VehicleRuntimeVI','WorldLifeVI','MeleeRuntimeVI','VehicleOccupantVI')
+          $managed = @('VOXCoreVI','CameraRuntimeVI','CharacterRuntimeVI','InteractionRuntimeVI','InventoryRuntimeVI','PedOverhaulVI','PoliceOverhaulVI','VehicleRuntimeVI','WorldLifeVI','MeleeRuntimeVI','VehicleOccupantVI','FireRuntimeVI','WildlifeRuntimeVI')
           foreach ($m in $managed) { Copy-Item "modules/$m/bin/Release/net48/$m.dll" "dist/scripts/$m.dll" }
           $configs = @(
             'CameraRuntimeVI/config/CameraRuntimeVI.ini',
