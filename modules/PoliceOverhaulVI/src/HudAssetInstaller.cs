@@ -17,6 +17,8 @@ namespace VOX.PoliceOverhaulVI
                 Ensure(Path.Combine(UiDirectory, "face.png"), DrawFace);
                 Ensure(Path.Combine(UiDirectory, "clothes.png"), DrawClothes);
                 Ensure(Path.Combine(UiDirectory, "vehicle.png"), DrawVehicle);
+                Ensure(Path.Combine(UiDirectory, "weapon.png"), DrawWeapon);
+                Ensure(Path.Combine(UiDirectory, "mask.png"), DrawMask);
                 Ensure(Path.Combine(UiDirectory, "starRED.png"), DrawStar);
             }
             catch { }
@@ -109,6 +111,50 @@ namespace VOX.PoliceOverhaulVI
                 g.FillPolygon(red, new[] { new PointF(91,79), new PointF(165,79), new PointF(181,113), new PointF(75,113) });
                 g.FillPolygon(red, new[] { new PointF(62,142), new PointF(94,148), new PointF(99,163), new PointF(65,160) });
                 g.FillPolygon(red, new[] { new PointF(194,142), new PointF(162,148), new PointF(157,163), new PointF(191,160) });
+            }
+        }
+
+        private static void DrawWeapon(Graphics g)
+        {
+            using (Brush white = new SolidBrush(Color.White))
+            {
+                PointF[] slide =
+                {
+                    new PointF(55,91), new PointF(174,91), new PointF(196,106),
+                    new PointF(185,126), new PointF(107,126), new PointF(95,139),
+                    new PointF(65,139), new PointF(65,121), new PointF(55,115)
+                };
+                g.FillPolygon(white, slide);
+                PointF[] grip =
+                {
+                    new PointF(116,122), new PointF(156,122), new PointF(148,184),
+                    new PointF(113,184), new PointF(104,143)
+                };
+                g.FillPolygon(white, grip);
+                g.FillRectangle(white, 174, 101, 28, 10);
+                using (var pen = new Pen(white, 9f) { StartCap = LineCap.Round, EndCap = LineCap.Round })
+                    g.DrawArc(pen, 88, 116, 45, 39, 200, 135);
+            }
+        }
+
+        private static void DrawMask(Graphics g)
+        {
+            using (Brush white = new SolidBrush(Color.White))
+            using (Brush red = new SolidBrush(Color.FromArgb(118, 10, 27)))
+            {
+                g.FillEllipse(white, 71, 61, 114, 132);
+                PointF[] bandana =
+                {
+                    new PointF(69,119), new PointF(187,119), new PointF(175,174),
+                    new PointF(128,201), new PointF(81,174)
+                };
+                g.FillPolygon(white, bandana);
+                g.FillEllipse(red, 91, 91, 25, 14);
+                g.FillEllipse(red, 140, 91, 25, 14);
+                g.FillPolygon(red, new[]
+                {
+                    new PointF(103,139), new PointF(153,139), new PointF(128,160)
+                });
             }
         }
 
