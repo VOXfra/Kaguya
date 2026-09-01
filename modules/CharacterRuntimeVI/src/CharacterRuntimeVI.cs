@@ -32,6 +32,7 @@ namespace VOX.CharacterRuntimeVI
         private int _lastSave;
         private int _lastBodyState;
         private int _lastProgressLog;
+        private int _storyYieldUntil;
 
         public CharacterRuntimeVIScript()
         {
@@ -41,7 +42,7 @@ namespace VOX.CharacterRuntimeVI
             Interval = 50;
             Tick += OnTick;
             Aborted += OnAborted;
-            Log("Character Runtime VI 0.1.1 loaded: persistent fitness, physical workouts and native body-morph bridge state.");
+            Log("Character Runtime VI 0.2.0 loaded: story-safe persistent fitness + physical workout bridge.");
         }
 
         private void OnTick(object sender, EventArgs e)
@@ -52,17 +53,20 @@ namespace VOX.CharacterRuntimeVI
                 if (player == null || !player.Exists() || player.IsDead)
                 {
                     _lastTick = 0;
+                    ApplyNeutralPerformanceStats();
                     WriteBodyState(null, 1f, false, true);
                     return;
                 }
 
                 SelectProfile(player);
                 int now = Game.GameTime;
+                if (StoryOwnsScene()) _storyYieldUntil = now + 5000;
+                bool yielding = now < _storyYieldUntil;
+
                 float dt = _lastTick > 0 ? Math.Max(0f, Math.Min(0.20f, (now - _lastTick) / 1000f)) : 0.05f;
                 _lastTick = now;
 
-                bool rockstarOwns = RockstarOwnsScene();
-                if (!rockstarOwns)
+                if (!yielding)
                 {
                     UpdateTraining(player, dt);
                     ApplyPerformanceStats();
@@ -70,22 +74,19 @@ namespace VOX.CharacterRuntimeVI
                 else ApplyNeutralPerformanceStats();
 
                 float bodyWidth = BodyWidthScale();
-                bool bodySafe = !rockstarOwns && BodyMorphSafe(player);
+                bool bodySafe = !yielding && BodyMorphSafe(player);
                 if (now - _lastBodyState >= 150)
                 {
                     _lastBodyState = now;
                     WriteBodyState(player, bodyWidth, bodySafe, false);
                 }
 
-                if (now - _lastSave >= 10000)
-                {
-                    _lastSave = now;
-                    Save();
-                }
+                if (now - _lastSave >= 10000) { _lastSave = now; Save(); }
             }
             catch (Exception ex)
             {
                 Log("Tick error: " + ex.Message);
+                ApplyNeutralPerformanceStats();
                 WriteBodyState(null, 1f, false, true);
             }
         }
@@ -108,9 +109,7 @@ namespace VOX.CharacterRuntimeVI
                 };
                 _profiles[model] = _current;
             }
-            Log("Fitness profile selected model=" + model + " strength=" + _current.Strength.ToString("0.0", CultureInfo.InvariantCulture) +
-                " endurance=" + _current.Endurance.ToString("0.0", CultureInfo.InvariantCulture) +
-                " lean=" + _current.LeanMass.ToString("0.0", CultureInfo.InvariantCulture) + ".");
+            Log("Fitness profile selected model=" + model + ".");
         }
 
         private void UpdateTraining(Ped player, float dt)
@@ -121,12 +120,10 @@ namespace VOX.CharacterRuntimeVI
             bool swimming = SafeBool(Hash.IS_PED_SWIMMING, player.Handle) || SafeBool(Hash.IS_PED_SWIMMING_UNDER_WATER, player.Handle);
             bool melee = SafeBool(Hash.IS_PED_IN_MELEE_COMBAT, player.Handle);
 
-            float enduranceWork = 0f;
+            float enduranceWork = sprinting ? 1f : (running ? 0.48f : 0f);
             float strengthWork = 0f;
-            if (sprinting) enduranceWork += 1.00f;
-            else if (running) enduranceWork += 0.48f;
             if (swimming) { enduranceWork += 0.72f; strengthWork += 0.18f; }
-            if (melee) strengthWork += 1.00f;
+            if (melee) strengthWork += 1f;
 
             float work = enduranceWork + strengthWork;
             if (work > 0f)
@@ -145,27 +142,22 @@ namespace VOX.CharacterRuntimeVI
                 _lastProgressLog = Game.GameTime;
                 Log("Training progress strength=" + _current.Strength.ToString("0.00", CultureInfo.InvariantCulture) +
                     " endurance=" + _current.Endurance.ToString("0.00", CultureInfo.InvariantCulture) +
-                    " lean=" + _current.LeanMass.ToString("0.00", CultureInfo.InvariantCulture) +
-                    " load=" + _current.TrainingLoad.ToString("0.0", CultureInfo.InvariantCulture) + ".");
+                    " lean=" + _current.LeanMass.ToString("0.00", CultureInfo.InvariantCulture) + ".");
             }
         }
 
         private void ApplyWorkoutTraining(float strength, float endurance, float leanMass)
         {
             Ped player = Game.LocalPlayerPed;
-            if (player == null || !player.Exists() || player.IsDead) return;
+            if (player == null || !player.Exists() || player.IsDead || StoryOwnsScene() || Game.GameTime < _storyYieldUntil) return;
             SelectProfile(player);
             if (_current == null) return;
-
             _current.Strength = Clamp(_current.Strength + Math.Max(0f, strength), 0f, 100f);
             _current.Endurance = Clamp(_current.Endurance + Math.Max(0f, endurance), 0f, 100f);
             _current.LeanMass = Clamp(_current.LeanMass + Math.Max(0f, leanMass), 0f, 100f);
             _current.TrainingLoad = Clamp(_current.TrainingLoad + Math.Max(0.5f, strength * 2.2f + endurance + leanMass), 0f, 100f);
             Save();
-
-            Log("Physical workout credited: strength=" + _current.Strength.ToString("0.00", CultureInfo.InvariantCulture) +
-                " endurance=" + _current.Endurance.ToString("0.00", CultureInfo.InvariantCulture) +
-                " lean=" + _current.LeanMass.ToString("0.00", CultureInfo.InvariantCulture) + ".");
+            Log("Physical workout credited.");
         }
 
         private void ApplyPerformanceStats()
@@ -206,8 +198,7 @@ namespace VOX.CharacterRuntimeVI
                 if (!force && player == null) return;
                 int handle = player != null && player.Exists() ? player.Handle : 0;
                 Vector3 p = player != null && player.Exists() ? player.Position : Vector3.Zero;
-                string text =
-                    "enabled=" + enabled + Environment.NewLine +
+                string text = "enabled=" + enabled + Environment.NewLine +
                     "ped=" + handle.ToString(CultureInfo.InvariantCulture) + Environment.NewLine +
                     "x=" + p.X.ToString("R", CultureInfo.InvariantCulture) + Environment.NewLine +
                     "y=" + p.Y.ToString("R", CultureInfo.InvariantCulture) + Environment.NewLine +
@@ -226,7 +217,6 @@ namespace VOX.CharacterRuntimeVI
             if (model == trevor) return 52f;
             return 35f;
         }
-
         private static float BaselineEndurance(int model)
         {
             int michael = SafeHash("player_zero"), franklin = SafeHash("player_one"), trevor = SafeHash("player_two");
@@ -236,22 +226,22 @@ namespace VOX.CharacterRuntimeVI
             return 35f;
         }
 
-        private static bool RockstarOwnsScene()
+        private static bool StoryOwnsScene()
         {
             try { if (Function.Call<bool>(Hash.IS_CUTSCENE_ACTIVE)) return true; } catch { }
             try { if (Function.Call<bool>(Hash.IS_PLAYER_SWITCH_IN_PROGRESS)) return true; } catch { }
-            try { return Function.Call<bool>(Hash.GET_MISSION_FLAG); } catch { return false; }
+            try { if (Function.Call<bool>(Hash.GET_MISSION_FLAG)) return true; } catch { }
+            try { if (!Function.Call<bool>(Hash.IS_PLAYER_CONTROL_ON, Game.Player.Handle)) return true; } catch { }
+            try
+            {
+                if (Function.Call<bool>(Hash.IS_SCREEN_FADED_OUT) || Function.Call<bool>(Hash.IS_SCREEN_FADING_OUT) || Function.Call<bool>(Hash.IS_SCREEN_FADING_IN)) return true;
+            }
+            catch { }
+            return false;
         }
 
-        private static bool SafeBool(Hash hash, params InputArgument[] args)
-        {
-            try { return Function.Call<bool>(hash, args); } catch { return false; }
-        }
-
-        private static int SafeHash(string name)
-        {
-            try { return Function.Call<int>(Hash.GET_HASH_KEY, name); } catch { return 0; }
-        }
+        private static bool SafeBool(Hash hash, params InputArgument[] args) { try { return Function.Call<bool>(hash, args); } catch { return false; } }
+        private static int SafeHash(string name) { try { return Function.Call<int>(Hash.GET_HASH_KEY, name); } catch { return 0; } }
 
         private void Load()
         {
@@ -260,10 +250,8 @@ namespace VOX.CharacterRuntimeVI
             {
                 foreach (string line in File.ReadAllLines(StatsPath))
                 {
-                    string[] p = line.Split('|');
-                    if (p.Length < 5) continue;
-                    int model;
-                    float strength, endurance, lean, load;
+                    string[] p = line.Split('|'); if (p.Length < 5) continue;
+                    int model; float strength, endurance, lean, load;
                     if (!int.TryParse(p[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out model)) continue;
                     if (!float.TryParse(p[1], NumberStyles.Float, CultureInfo.InvariantCulture, out strength)) continue;
                     if (!float.TryParse(p[2], NumberStyles.Float, CultureInfo.InvariantCulture, out endurance)) continue;
@@ -296,15 +284,11 @@ namespace VOX.CharacterRuntimeVI
         }
 
         private static float Clamp(float v, float min, float max) { return v < min ? min : (v > max ? max : v); }
-
         private void OnAborted(object sender, EventArgs e)
         {
             if (FitnessRuntimeBridge.AddTraining == ApplyWorkoutTraining) FitnessRuntimeBridge.AddTraining = null;
-            Save();
-            ApplyNeutralPerformanceStats();
-            WriteBodyState(null, 1f, false, true);
+            Save(); ApplyNeutralPerformanceStats(); WriteBodyState(null, 1f, false, true);
         }
-
         private static void Log(string text)
         {
             try { Directory.CreateDirectory(DataDir); File.AppendAllText(LogPath, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + " | " + text + Environment.NewLine); } catch { }
