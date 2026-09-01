@@ -21,7 +21,7 @@ namespace VOX.PedOverhaulVI
         private int _cursor;
         private bool _policeModuleLoaded;
         private int _lastModuleProbe;
-        private int _missionFlagSince;
+        private int _storyYieldUntil;
 
         public PedOverhaulVIScript()
         {
@@ -31,7 +31,7 @@ namespace VOX.PedOverhaulVI
             Tick += OnTick;
             Aborted += OnAborted;
             ProbeModules();
-            Log("Ped Overhaul VI 0.5.1 ambient-awareness stabilization loaded.");
+            Log("Ped Overhaul VI 0.6.1 story-first cognition runtime loaded.");
         }
 
         private void OnTick(object sender, EventArgs e)
@@ -42,7 +42,11 @@ namespace VOX.PedOverhaulVI
                 Ped player = Game.LocalPlayerPed;
                 if (player == null || !player.Exists() || player.IsDead) return;
                 if (Game.GameTime - _lastModuleProbe > 3000) ProbeModules();
-                if (_cfg.DisableDuringRockstarMissions && ShouldYieldToMission()) return;
+                if (_cfg.DisableDuringRockstarMissions && ShouldYieldToStory())
+                {
+                    _nearby.Clear();
+                    return;
+                }
 
                 RefreshNearby(player);
                 _sceneRuntime.Update(player, _nearby, _states, _cfg, Log);
@@ -150,11 +154,6 @@ namespace VOX.PedOverhaulVI
                 state.Suspicion = Math.Min(state.Suspicion, 6f);
                 state.Certainty = Math.Min(state.Certainty, 8f);
                 state.Fear = Math.Min(state.Fear, 4f);
-
-                // MaskSuspicion is intentionally zero in the default config.
-                // Seeing a face covering can be remembered as context, but it
-                // must not create a 300 ms Unaware <-> Noticed oscillation just
-                // because generic visual attention crossed the threshold.
                 if (state.Suspicion < _cfg.NoticedThreshold && state.Certainty < _cfg.NoticedThreshold && state.Fear < _cfg.NoticedThreshold)
                 {
                     state.Attention = Math.Min(state.Attention, _cfg.NoticedThreshold - 2f);
@@ -222,25 +221,26 @@ namespace VOX.PedOverhaulVI
             return state.Suspicion < 12f && state.Certainty < 12f && state.Fear < 12f;
         }
 
-        private bool ShouldYieldToMission()
+        private bool ShouldYieldToStory()
         {
-            bool cut = false, switching = false, flag = false;
-            try { cut = Function.Call<bool>(Hash.IS_CUTSCENE_ACTIVE); } catch { }
-            try { switching = Function.Call<bool>(Hash.IS_PLAYER_SWITCH_IN_PROGRESS); } catch { }
-            try { flag = Function.Call<bool>(Hash.GET_MISSION_FLAG); } catch { }
-            if (cut || switching) return true;
-            int wanted = 0;
-            try { wanted = Function.Call<int>(Hash.GET_PLAYER_WANTED_LEVEL, Game.Player.Handle); } catch { }
-            bool shooting = false;
-            try { shooting = Function.Call<bool>(Hash.IS_PED_SHOOTING, Game.LocalPlayerPed.Handle); } catch { }
-            if (!flag)
+            bool storyOwns = false;
+            try { storyOwns |= Function.Call<bool>(Hash.IS_CUTSCENE_ACTIVE); } catch { }
+            try { storyOwns |= Function.Call<bool>(Hash.IS_PLAYER_SWITCH_IN_PROGRESS); } catch { }
+            try { storyOwns |= Function.Call<bool>(Hash.GET_MISSION_FLAG); } catch { }
+            try { storyOwns |= !Function.Call<bool>(Hash.IS_PLAYER_CONTROL_ON, Game.Player.Handle); } catch { }
+            try
             {
-                _missionFlagSince = 0;
-                return false;
+                storyOwns |= Function.Call<bool>(Hash.IS_SCREEN_FADED_OUT) ||
+                             Function.Call<bool>(Hash.IS_SCREEN_FADING_OUT) ||
+                             Function.Call<bool>(Hash.IS_SCREEN_FADING_IN);
             }
-            if (wanted > 0 || shooting) return false;
-            if (_missionFlagSince == 0) _missionFlagSince = Game.GameTime;
-            return Game.GameTime - _missionFlagSince > 1800;
+            catch { }
+            if (storyOwns)
+            {
+                _storyYieldUntil = Game.GameTime + 5000;
+                return true;
+            }
+            return Game.GameTime < _storyYieldUntil;
         }
 
         private void RefreshNearby(Ped player)
