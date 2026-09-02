@@ -1,0 +1,52 @@
+name: Build VOX RDR2 RPF8 Cataloger
+
+on:
+  push:
+    branches:
+      - rc3-runtime-repair
+    paths:
+      - 'tools/rdr2-rpf8/**'
+      - '.github/workflows/build-rdr2-rpf8-cataloger.yml'
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build standalone EXE
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller
+          pyinstaller --clean --onefile --console --name VOX-RDR2-RPF8-Cataloger tools/rdr2-rpf8/vox_rdr2_rpf8_catalog.py
+          if (-not (Test-Path dist/VOX-RDR2-RPF8-Cataloger.exe)) { throw 'EXE not built' }
+
+      - name: Assemble package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force package | Out-Null
+          Copy-Item dist/VOX-RDR2-RPF8-Cataloger.exe package/
+          Copy-Item tools/rdr2-rpf8/Run-VOX-RDR2-RPF8-Cataloger.bat package/
+          Copy-Item tools/rdr2-rpf8/Run-VOX-RDR2-RPF8-Cataloger-DEEP.bat package/
+          Copy-Item tools/rdr2-rpf8/README.txt package/
+          Copy-Item tools/rdr2-rpf8/vox_rdr2_rpf8_catalog.py package/
+          Compress-Archive -Path package/* -DestinationPath VOX-RDR2-RPF8-Cataloger-v0.3.0.zip -Force
+
+      - name: Smoke test EXE
+        shell: pwsh
+        run: |
+          & .\package\VOX-RDR2-RPF8-Cataloger.exe --help
+          if ($LASTEXITCODE -ne 0) { throw 'EXE smoke test failed' }
+          Get-FileHash VOX-RDR2-RPF8-Cataloger-v0.3.0.zip -Algorithm SHA256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VOX-RDR2-RPF8-Cataloger-v0.3.0
+          path: VOX-RDR2-RPF8-Cataloger-v0.3.0.zip
+          if-no-files-found: error
