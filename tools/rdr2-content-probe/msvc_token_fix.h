@@ -1,4 +1,5 @@
 #pragma once
+#include <windows.h>
 #define return100 return 100
 #define return96 return 96
 #define return90 return 90
