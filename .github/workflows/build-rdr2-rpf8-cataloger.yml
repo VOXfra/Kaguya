@@ -24,7 +24,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pyinstaller
-          pyinstaller --clean --onefile --console --name VOX-RDR2-RPF8-Cataloger tools/rdr2-rpf8/vox_rdr2_rpf8_catalog.py
+          pyinstaller --clean --onefile --console --name VOX-RDR2-RPF8-Cataloger tools/rdr2-rpf8/vox_rdr2_rpf8_catalog_v031.py
           if (-not (Test-Path dist/VOX-RDR2-RPF8-Cataloger.exe)) { throw 'EXE not built' }
 
       - name: Assemble package
@@ -32,21 +32,62 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force package | Out-Null
           Copy-Item dist/VOX-RDR2-RPF8-Cataloger.exe package/
-          Copy-Item tools/rdr2-rpf8/Run-VOX-RDR2-RPF8-Cataloger.bat package/
-          Copy-Item tools/rdr2-rpf8/Run-VOX-RDR2-RPF8-Cataloger-DEEP.bat package/
-          Copy-Item tools/rdr2-rpf8/README.txt package/
-          Copy-Item tools/rdr2-rpf8/vox_rdr2_rpf8_catalog.py package/
-          Compress-Archive -Path package/* -DestinationPath VOX-RDR2-RPF8-Cataloger-v0.3.0.zip -Force
+          (Get-Content tools/rdr2-rpf8/Run-VOX-RDR2-RPF8-Cataloger.bat -Raw).Replace('v0.3.0','v0.3.1') | Set-Content package/Run-VOX-RDR2-RPF8-Cataloger.bat -Encoding ASCII
+          (Get-Content tools/rdr2-rpf8/Run-VOX-RDR2-RPF8-Cataloger-DEEP.bat -Raw).Replace('v0.3.0','v0.3.1') | Set-Content package/Run-VOX-RDR2-RPF8-Cataloger-DEEP.bat -Encoding ASCII
+          (Get-Content tools/rdr2-rpf8/README.txt -Raw).Replace('v0.3.0','v0.3.1') | Set-Content package/README.txt -Encoding UTF8
+          Copy-Item tools/rdr2-rpf8/vox_rdr2_rpf8_catalog.py package/vox_rdr2_rpf8_catalog.py
+          Copy-Item tools/rdr2-rpf8/vox_rdr2_rpf8_catalog_v031.py package/vox_rdr2_rpf8_catalog_v031.py
+          Compress-Archive -Path package/* -DestinationPath VOX-RDR2-RPF8-Cataloger-v0.3.1.zip -Force
 
-      - name: Smoke test EXE
+      - name: Functional smoke test RPF8 magic and TFIT guard
         shell: pwsh
         run: |
-          & .\package\VOX-RDR2-RPF8-Cataloger.exe --help
-          if ($LASTEXITCODE -ne 0) { throw 'EXE smoke test failed' }
-          Get-FileHash VOX-RDR2-RPF8-Cataloger-v0.3.0.zip -Algorithm SHA256
+          New-Item -ItemType Directory -Force smoke/root | Out-Null
+          New-Item -ItemType File -Force smoke/root/RDR2.exe | Out-Null
+          @'
+          from pathlib import Path
+          import struct
+          root = Path('smoke/root')
+          h = 0x12345678
+          ext_id = 67  # ycd
+          q0 = h | (0xFF << 40) | (ext_id << 48) | (1 << 56)
+          offset = 0x200
+          on_disk = 32
+          q8 = (on_disk >> 4) | ((offset >> 4) << 28)
+          q10 = 0x11111111 | (0x22222222 << 32)
+          entry = struct.pack('<QQQ', q0, q8, q10)
+          header = b'8FPR' + struct.pack('<IIHH', 1, 0, 0x00FF, 1)
+          data = bytearray(0x240)
+          data[:16] = header
+          data[16:272] = bytes(256)
+          data[272:296] = entry
+          data[offset:offset+4] = b'RSC8'
+          (root/'common_0.rpf').write_bytes(data)
+          header2 = b'8FPR' + struct.pack('<IIHH', 1, 0, 0x1234, 1)
+          data2 = bytearray(0x200)
+          data2[:16] = header2
+          data2[16:272] = b'X' * 256
+          data2[272:296] = b'Y' * 24
+          (root/'tfit.rpf').write_bytes(data2)
+          '@ | Set-Content smoke/make.py -Encoding UTF8
+          python smoke/make.py
+          & .\package\VOX-RDR2-RPF8-Cataloger.exe --root "$PWD\smoke\root" --out "$PWD\smoke\out" --target common_0.rpf --target tfit.rpf --deep-signatures
+          if ($LASTEXITCODE -ne 0) { throw 'EXE functional smoke test failed' }
+          $archives = Import-Csv smoke/out/RPF8-archives.csv
+          $plain = $archives | Where-Object { $_.path -eq 'common_0.rpf' }
+          $tfit = $archives | Where-Object { $_.path -eq 'tfit.rpf' }
+          if (-not $plain) { throw 'Plain RPF8 smoke row missing' }
+          if ($plain.magic -ne '8FPR' -or $plain.toc_state -ne 'plaintext_toc' -or $plain.parsed_entries -ne '1') { throw "Plain RPF8 parse assertion failed: $($plain | ConvertTo-Json -Compress)" }
+          if (-not $tfit -or $tfit.toc_state -ne 'tfit_encrypted_toc' -or $tfit.parsed_entries -ne '0') { throw 'TFIT guard assertion failed' }
+          $entry = Import-Csv smoke/out/RPF8-entries.csv | Select-Object -First 1
+          if (-not $entry -or $entry.generated_name -ne '12345678.ycd' -or $entry.magic_at_offset -ne 'RSC8') { throw 'Entry decode assertion failed' }
+          $sigs = Import-Csv smoke/out/RPF8-signature-offsets.csv
+          if (-not ($sigs | Where-Object { $_.archive -eq 'common_0.rpf' -and $_.signature -eq 'RPF8' -and $_.offset -eq '0' })) { throw 'RPF8 signature assertion failed' }
+          if (-not ($sigs | Where-Object { $_.archive -eq 'common_0.rpf' -and $_.signature -eq 'RSC8' -and $_.offset -eq '512' })) { throw 'RSC8 signature assertion failed' }
+          Get-FileHash VOX-RDR2-RPF8-Cataloger-v0.3.1.zip -Algorithm SHA256
 
       - uses: actions/upload-artifact@v4
         with:
-          name: VOX-RDR2-RPF8-Cataloger-v0.3.0
-          path: VOX-RDR2-RPF8-Cataloger-v0.3.0.zip
+          name: VOX-RDR2-RPF8-Cataloger-v0.3.1
+          path: VOX-RDR2-RPF8-Cataloger-v0.3.1.zip
           if-no-files-found: error
