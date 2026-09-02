@@ -1,4 +1,4 @@
-name: Build RDR2 Animation Bridge Helper
+name: Build RDR2 to GTA V Direct Animation Bridge
 
 on:
   workflow_dispatch:
@@ -7,6 +7,7 @@ on:
       - rdr2-animation-bridge
     paths:
       - 'tools/RDR2AnimationBridge/**'
+      - 'modules/RDR2AnimationBridgeVI/**'
       - '.github/workflows/build-rdr2-animation-bridge.yml'
 
 jobs:
@@ -24,7 +25,6 @@ jobs:
         run: |
           git clone https://github.com/0x1F9F1/Swage.git _deps/Swage
           git -C _deps/Swage checkout 201320d61ae04909f01af247c41f864a9174b691
-          git -C _deps/Swage status --short
 
       - name: Apply VOX Oodle + headless patches
         shell: pwsh
@@ -44,36 +44,84 @@ jobs:
           cmake --build _build/Swage --config Release --target ArchiveExplorer -- /m
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Assemble one-click bridge package
+      - name: Clone pinned CodeWalker source
+        shell: pwsh
+        run: |
+          git clone https://github.com/dexyfex/CodeWalker.git _deps/CodeWalker
+          git -C _deps/CodeWalker checkout 485d56bec00262ed7fa472261cce7bbc6202b96e
+
+      - name: Build RSC8 to RSC7 YCD compatibility bridge
+        shell: pwsh
+        run: |
+          $cw = "$($PWD.Path)\_deps\CodeWalker"
+          dotnet publish tools/RDR2AnimationBridge/Rdr2YcdCompat/Rdr2YcdCompat.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -p:CodeWalkerRoot="$cw" -o _build/Rdr2YcdCompat
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Build RPF7 DLC packer
+        shell: pwsh
+        run: |
+          cargo build --manifest-path tools/RDR2AnimationBridge/VoxRpfPack/Cargo.toml --release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Fetch ScriptHookVDotNet Enhanced reference
+        shell: pwsh
+        run: |
+          $url = 'https://github.com/Chiheb-Bacha/ScriptHookVDotNetEnhanced/releases/download/v1.1.0.6/ScriptHookVDotNetEnhanced-v1.1.0.6.zip'
+          Invoke-WebRequest -Uri $url -OutFile shvdne.zip
+          Expand-Archive shvdne.zip -DestinationPath shvdne
+          $ref = Get-ChildItem shvdne -Recurse -Filter ScriptHookVDotNet3.dll | Select-Object -First 1
+          if (-not $ref) { throw 'ScriptHookVDotNet3.dll not found.' }
+          New-Item -ItemType Directory -Force modules/RDR2AnimationBridgeVI/refs | Out-Null
+          Copy-Item $ref.FullName modules/RDR2AnimationBridgeVI/refs/ScriptHookVDotNet3.dll
+
+      - name: Build GTA V Enhanced playback runtime
+        shell: pwsh
+        run: |
+          dotnet build modules/RDR2AnimationBridgeVI/RDR2AnimationBridgeVI.csproj -c Release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Assemble direct bridge package
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $exe = Get-ChildItem _build/Swage -Recurse -Filter ArchiveExplorer.exe | Select-Object -First 1
-          if (-not $exe) { throw 'ArchiveExplorer.exe was not produced' }
+          $dist = 'dist/VOX-RDR2-to-GTAV-Direct-Bridge'
+          New-Item -ItemType Directory -Force -Path "$dist/helper", "$dist/bridge", "$dist/runtime" | Out-Null
 
-          New-Item -ItemType Directory -Force -Path dist/RDR2AnimationBridge/helper | Out-Null
-          Copy-Item $exe.FullName dist/RDR2AnimationBridge/helper/ArchiveExplorer.exe
-
-          Get-ChildItem $exe.Directory.FullName -Filter *.dll -File | ForEach-Object {
-            Copy-Item $_.FullName dist/RDR2AnimationBridge/helper/$($_.Name)
+          $archiveExplorer = Get-ChildItem _build/Swage -Recurse -Filter ArchiveExplorer.exe | Select-Object -First 1
+          if (-not $archiveExplorer) { throw 'ArchiveExplorer.exe was not produced.' }
+          Copy-Item $archiveExplorer.FullName "$dist/helper/ArchiveExplorer.exe"
+          Get-ChildItem $archiveExplorer.Directory.FullName -Filter *.dll -File | ForEach-Object {
+            Copy-Item $_.FullName "$dist/helper/$($_.Name)"
           }
 
-          Copy-Item tools/RDR2AnimationBridge/RUN_FIRST_YCD_BRIDGE.ps1 dist/RDR2AnimationBridge/
-          Copy-Item tools/RDR2AnimationBridge/RUN_FIRST_YCD_BRIDGE.bat dist/RDR2AnimationBridge/
+          Copy-Item _build/Rdr2YcdCompat/* "$dist/bridge/" -Recurse
+          $packer = Get-ChildItem tools/RDR2AnimationBridge/VoxRpfPack/target/release -Filter vox-rpf-pack.exe | Select-Object -First 1
+          if (-not $packer) { throw 'vox-rpf-pack.exe was not produced.' }
+          Copy-Item $packer.FullName "$dist/bridge/vox-rpf-pack.exe"
+
+          $runtime = 'modules/RDR2AnimationBridgeVI/bin/Release/net48/RDR2AnimationBridgeVI.dll'
+          if (-not (Test-Path $runtime)) { throw 'RDR2AnimationBridgeVI.dll was not produced.' }
+          Copy-Item $runtime "$dist/runtime/RDR2AnimationBridgeVI.dll"
+
+          Copy-Item tools/RDR2AnimationBridge/RUN_DIRECT_GTA_BRIDGE.ps1 "$dist/RUN_DIRECT_GTA_BRIDGE.ps1"
+          Copy-Item tools/RDR2AnimationBridge/RUN_DIRECT_GTA_BRIDGE.bat "$dist/RUN_DIRECT_GTA_BRIDGE.bat"
 
           @"
-          VOX RDR2 Animation Bridge - first complete YCD extractor
-          Swage upstream: 201320d61ae04909f01af247c41f864a9174b691
-          VOX patch: exact Oodle quantum input + headless extraction mode
-          Game assets, RDR2 keys and Oodle DLL are NOT included.
-          "@ | Set-Content -Encoding UTF8 dist/RDR2AnimationBridge/BUILD.txt
+          VOX RDR2 -> GTA V Direct Animation Bridge v0.1
+          Purpose: one real end-to-end RDR2 animation -> GTA V Enhanced attempt.
+          Source animation is read from the user's own RDR2 installation and is never bundled.
+          Swage source is fetched at build time and patched with the exact-quantum Oodle fix proven by 3755/3755 YCD decodes.
+          CodeWalker source is fetched at build time and used as the YCD ClipDictionary compatibility/rebuild layer.
+          RPF7 DLC packaging uses rpf-rs pinned at 3526dde8b15570f76caa1433278e31a564506c8d.
+          Runtime targets ScriptHookVDotNet Enhanced v1.1.0.6.
+          "@ | Set-Content -Encoding UTF8 "$dist/BUILD.txt"
 
-          Get-ChildItem dist/RDR2AnimationBridge -Recurse | Select-Object FullName,Length
+          Get-ChildItem $dist -Recurse | Select-Object FullName,Length
 
-      - name: Upload bridge package
+      - name: Upload direct bridge
         uses: actions/upload-artifact@v4
         with:
-          name: VOX-RDR2-Animation-Bridge-First-YCD
-          path: dist/RDR2AnimationBridge
+          name: VOX-RDR2-to-GTAV-Direct-Bridge
+          path: dist/VOX-RDR2-to-GTAV-Direct-Bridge
           if-no-files-found: error
           compression-level: 9

@@ -1,0 +1,8 @@
+[package]
+name = "vox-rpf-pack"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0"
+rpf-archive = { git = "https://github.com/VIRUXE/rpf-rs", rev = "3526dde8b15570f76caa1433278e31a564506c8d" }
