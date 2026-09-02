@@ -1,0 +1,58 @@
+VOX GTA V Enhanced -> VI - AIO RC4 Runtime Repair
+
+This release is a regression-repair pass based on the RC3 in-game test.
+
+Inventory / weapons
+- Removed SatchelRuntimeScript and its custom weapon/satchel/craft wheels.
+- Four carried weapon categories only: long gun, sidearm, melee, throwable.
+- Loadout selection is performed at Ammu-Nation using GTA's native weapon wheel.
+- Legacy SatchelWeapons.txt is disabled and never used to grant weapons.
+- Molotov crafting is exposed while the Molotov is selected in the native wheel; there is no craft wheel/page.
+- Trunk inventory only exists at the physical rear of a vehicle, opens the trunk door and permits exact item selection.
+- Stored weapon snapshot includes ammo, tint and known components.
+- Named outfits are vehicle-trunk local.
+- General-store materials are checkout-local, never world-global.
+
+Vehicle theft
+- No vehicle interaction radial.
+- A locked-car entry attempt opens a bounded method choice instead of auto-lockpicking.
+- Hold Enter/Y for quiet lock work, or Attack/RT for window smash; Cancel aborts.
+- Driver-door bone is used to calculate a single approach/animation anchor.
+- Approach and break-in tasks are issued once per phase; holding a button cannot restart them every frame.
+- Door is unlocked only after the chosen animation completes.
+
+Traffic
+- RC3 Online donor replacement is disabled for this repair release.
+- The ongoing traffic-retask healer was removed.
+- Vanilla traffic owns driving until an Online-vehicle transfer can preserve driver/task atomically.
+
+Police
+- Removed PursuitDriverRecoveryScript.
+- ForcePolicySystem is advisory only and no longer rewrites Rockstar police weapons, combat tasks or driver tasks.
+- Normal 1-5 star ground response is Rockstar-owned.
+- Custom military response is reserved for tier 6.
+- Custom tier-6 direct-combat units are removed when a real LOS search starts, so tunnels/walls can break contact.
+- Player death clears native wanted, search state and all VOX-owned military entities, with post-respawn reacquisition grace.
+- Field surrender added when on foot, unarmed, stationary and near a visible officer.
+- Sixth-star display now calls Rockstar's own HUD_WANTED_STARS Scaleform and its built-in sixth star instead of drawing a shop/custom star.
+- Search lifetimes are bounded by threat level.
+
+NPC interaction
+- State model changed toward RDR2-style contextual actions: Greet/Defuse, Antagonize/Threaten and Rob/Respond based on tension, fear/opinion and weapon state.
+- No interaction ownership while aiming or entering a vehicle.
+
+Fitness
+- Three activities: chin-ups, bench press, free weights/barbell.
+- Sessions detect/recover naturally ended scenarios instead of leaving the player frozen after a prop/animation ends.
+- Fitness rewards differ by activity.
+- Managed shoulder/upper-arm morph is driven by strength/lean-mass profile.
+
+Tools
+- Scan-RDR2-Install.bat and Scan-SoundPack.bat wrap the PowerShell scanners, show exit errors and pause before closing.
+
+Not claimed as fixed until tested in GTA V Enhanced:
+- runtime quality/positioning of every vehicle break-in animation,
+- every protagonist clothing/accessory combination,
+- every workout prop/scenario placement,
+- exact six-star Scaleform runtime behavior on Enhanced,
+- police driving/combat regression itself. The code paths that fought Rockstar AI have been removed; in-game test is authoritative.
