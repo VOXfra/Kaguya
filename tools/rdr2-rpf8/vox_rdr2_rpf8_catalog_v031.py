@@ -12,5 +12,15 @@ import vox_rdr2_rpf8_catalog as core
 core.VERSION = "0.3.1"
 core.RPF8_MAGIC = b"8FPR"
 
+_original_process_archive = core.process_archive
+
+def _process_archive_with_physical_magic(*args, **kwargs):
+    header = _original_process_archive(*args, **kwargs)
+    if header.toc_state != "not_rpf8" and header.magic == "RPF8":
+        header.magic = "8FPR"
+    return header
+
+core.process_archive = _process_archive_with_physical_magic
+
 if __name__ == "__main__":
     raise SystemExit(core.main())
