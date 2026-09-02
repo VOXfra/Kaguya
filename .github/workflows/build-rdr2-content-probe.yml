@@ -23,7 +23,7 @@ jobs:
           if not defined VSROOT exit /b 1
           call "%VSROOT%\VC\Auxiliary\Build\vcvars64.bat"
           if not exist dist mkdir dist
-          cl /nologo /EHsc /std:c++17 /O2 /MT /W4 /DUNICODE /D_UNICODE /FItools\rdr2-content-probe\msvc_token_fix.h /Fe:dist\VOX-RDR2-RPF8-Content-Probe.exe tools\rdr2-content-probe\VOX-RDR2-RPF8-Content-Probe.cpp
+          cl /nologo /EHsc /std:c++17 /O2 /MT /W4 /DUNICODE /D_UNICODE /FI"%CD%\tools\rdr2-content-probe\msvc_token_fix.h" /Fe:dist\VOX-RDR2-RPF8-Content-Probe.exe tools\rdr2-content-probe\VOX-RDR2-RPF8-Content-Probe.cpp
           if errorlevel 1 exit /b 1
           if not exist dist\VOX-RDR2-RPF8-Content-Probe.exe exit /b 1
 
