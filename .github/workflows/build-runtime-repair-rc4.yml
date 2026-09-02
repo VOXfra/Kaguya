@@ -101,6 +101,8 @@ jobs:
           Copy-Item tools/Scan-SoundPack.bat dist/TOOLS/Scan-SoundPack.bat
           Copy-Item tools/Scan-RDR2-Install.ps1 dist/TOOLS/Scan-RDR2-Install.ps1
           Copy-Item tools/Scan-RDR2-Install.bat dist/TOOLS/Scan-RDR2-Install.bat
+          Copy-Item tools/Scan-RDR2-Targets.py dist/TOOLS/Scan-RDR2-Targets.py
+          Copy-Item tools/Scan-RDR2-Targets.bat dist/TOOLS/Scan-RDR2-Targets.bat
           Copy-Item docs/AIO_RC4_INSTALL.txt dist/INSTALL-AIO.txt
           Copy-Item docs/AIO_RC4_TESTING.txt dist/TEST-AIO.txt
           Copy-Item docs/AIO_RC4_CHANGELOG.txt dist/CHANGELOG-AIO.txt
@@ -126,6 +128,8 @@ jobs:
           if (-not (Test-Path verify/VOXBodyMorphVI.asi)) { throw 'Archive missing compatibility bridge' }
           if (-not (Test-Path verify/TOOLS/Scan-RDR2-Install.bat)) { throw 'Archive missing RDR2 BAT launcher' }
           if (-not (Test-Path verify/TOOLS/Scan-SoundPack.bat)) { throw 'Archive missing Sound Pack BAT launcher' }
+          if (-not (Test-Path verify/TOOLS/Scan-RDR2-Targets.bat)) { throw 'Archive missing targeted RDR2 BAT launcher' }
+          if (-not (Test-Path verify/TOOLS/Scan-RDR2-Targets.py)) { throw 'Archive missing targeted RDR2 scanner core' }
           $zip = Get-Item VOX-GTA-V-Enhanced-to-VI-AIO-RC4.zip
           Write-Host "ZIP_SIZE=$($zip.Length)"
           Get-FileHash VOX-GTA-V-Enhanced-to-VI-AIO-RC4.zip -Algorithm SHA256
