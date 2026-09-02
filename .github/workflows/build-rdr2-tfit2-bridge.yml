@@ -18,8 +18,12 @@ jobs:
       - name: Build bridge
         shell: cmd
         run: |
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSROOT=%%i"
+          if not defined VSROOT exit /b 1
+          call "%VSROOT%\VC\Auxiliary\Build\vcvars64.bat"
           if not exist dist mkdir dist
           cl /nologo /EHsc /std:c++17 /O2 /MT /W4 /DUNICODE /D_UNICODE /Fe:dist\VOX-RDR2-TFIT2-Bridge.exe tools\rdr2-tfit2\VOX-RDR2-TFIT2-Bridge.cpp
+          if errorlevel 1 exit /b 1
           if not exist dist\VOX-RDR2-TFIT2-Bridge.exe exit /b 1
 
       - name: TFIT2 deterministic self-test
