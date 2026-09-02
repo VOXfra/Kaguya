@@ -83,20 +83,20 @@ foreach($a in $archives | Sort-Object {[int]$_.outer_index}) {
     })
 }
 $mapRows | Sort-Object outer_index | Export-Csv -NoTypeInformation -Encoding UTF8 -LiteralPath (Join-Path $OutDir 'ANIM0-exact-archive-map.csv')
-$mapRows | Sort-Object priority_score -Descending,ycd_count -Descending | Export-Csv -NoTypeInformation -Encoding UTF8 -LiteralPath (Join-Path $OutDir 'ANIM0-exact-priority-archives.csv')
+$mapRows | Sort-Object -Property @{Expression={[int]$_.priority_score};Descending=$true}, @{Expression={[int]$_.ycd_count};Descending=$true} | Export-Csv -NoTypeInformation -Encoding UTF8 -LiteralPath (Join-Path $OutDir 'ANIM0-exact-priority-archives.csv')
 
 $mapByIndex=@{};foreach($m in $mapRows){$mapByIndex[[int]$m.outer_index]=$m}
 $ycdRows=foreach($r in $nested|Where-Object extension -eq 'ycd'){
     $m=$mapByIndex[[int]$r.outer_index]
     [pscustomobject]@{outer_index=$m.outer_index;public_archive_name=$m.public_archive_name;archive_confidence=$m.confidence;systems=$m.systems;nested_index=$r.nested_index;ycd_hash=$r.hash_hex;generated_name=$r.generated_name;enc_key=$r.enc_key;enc_config=$r.enc_config;compressor=$r.compressor;logical_size=$r.logical_size;on_disk_size=$r.on_disk_size;is_resource=$r.is_resource;archive_priority=$m.priority_score}
 }
-$ycdRows|Sort-Object archive_priority -Descending,outer_index,nested_index|Export-Csv -NoTypeInformation -Encoding UTF8 -LiteralPath (Join-Path $OutDir 'ANIM0-exact-ycd-candidates.csv')
+$ycdRows | Sort-Object -Property @{Expression={[int]$_.archive_priority};Descending=$true}, @{Expression={[int]$_.outer_index};Descending=$false}, @{Expression={[int]$_.nested_index};Descending=$false} | Export-Csv -NoTypeInformation -Encoding UTF8 -LiteralPath (Join-Path $OutDir 'ANIM0-exact-ycd-candidates.csv')
 
 $yasRows=foreach($r in $nested|Where-Object extension -eq 'yas'){
     $m=$mapByIndex[[int]$r.outer_index]
     [pscustomobject]@{outer_index=$m.outer_index;public_archive_name=$m.public_archive_name;archive_confidence=$m.confidence;systems=$m.systems;nested_index=$r.nested_index;yas_hash=$r.hash_hex;generated_name=$r.generated_name;enc_key=$r.enc_key;enc_config=$r.enc_config;compressor=$r.compressor;logical_size=$r.logical_size;on_disk_size=$r.on_disk_size;archive_priority=$m.priority_score}
 }
-$yasRows|Sort-Object archive_priority -Descending,outer_index,nested_index|Export-Csv -NoTypeInformation -Encoding UTF8 -LiteralPath (Join-Path $OutDir 'ANIM0-exact-yas-candidates.csv')
+$yasRows | Sort-Object -Property @{Expression={[int]$_.archive_priority};Descending=$true}, @{Expression={[int]$_.outer_index};Descending=$false}, @{Expression={[int]$_.nested_index};Descending=$false} | Export-Csv -NoTypeInformation -Encoding UTF8 -LiteralPath (Join-Path $OutDir 'ANIM0-exact-yas-candidates.csv')
 
 $sysCounts=@{}
 foreach($m in $mapRows){foreach($s in ([string]$m.systems -split ';')){if(-not $sysCounts.ContainsKey($s)){$sysCounts[$s]=[ordered]@{archives=0;ycd=0;yas=0}};$sysCounts[$s].archives++;$sysCounts[$s].ycd+=[int]$m.ycd_count;$sysCounts[$s].yas+=[int]$m.yas_count}}
@@ -112,10 +112,11 @@ $report.Add("YCD entries: $($ycdRows.Count)")
 $report.Add("YAS entries: $($yasRows.Count)")
 $report.Add('')
 $report.Add('PROJECT SYSTEM COUNTS')
-foreach($k in $sysCounts.Keys|Sort-Object){$v=$sysCounts[$k];$report.Add("$k: archives=$($v.archives) ycd=$($v.ycd) yas=$($v.yas)")}
+foreach($k in $sysCounts.Keys|Sort-Object){$v=$sysCounts[$k];$report.Add("${k}: archives=$($v.archives) ycd=$($v.ycd) yas=$($v.yas)")}
 $report.Add('')
 $report.Add('TOP EXACT ARCHIVES')
-foreach($m in $mapRows|Where-Object confidence -eq 'exact_toc_sha256'|Sort-Object priority_score -Descending,ycd_count -Descending|Select-Object -First 80){$report.Add(('[{0,3}] {1} | {2} | ycd={3} yas={4} ymt={5} | sha={6}' -f $m.priority_score,$m.public_archive_name,$m.systems,$m.ycd_count,$m.yas_count,$m.ymt_count,$m.toc_sha256))}
+$topExact = $mapRows | Where-Object confidence -eq 'exact_toc_sha256' | Sort-Object -Property @{Expression={[int]$_.priority_score};Descending=$true}, @{Expression={[int]$_.ycd_count};Descending=$true} | Select-Object -First 80
+foreach($m in $topExact){$report.Add(('[{0,3}] {1} | {2} | ycd={3} yas={4} ymt={5} | sha={6}' -f $m.priority_score,$m.public_archive_name,$m.systems,$m.ycd_count,$m.yas_count,$m.ymt_count,$m.toc_sha256))}
 $report|Set-Content -Encoding UTF8 -LiteralPath (Join-Path $OutDir 'ANIM0-exact-report.txt')
 
 [pscustomobject]@{tool='VOX RDR2 anim_0 exact mapper';version='0.8.0';nested_archives=$archives.Count;citizenfx_subarchives=$publicCount;exact_toc_sha256_matches=$exact;ambiguous_matches=$ambiguous;unresolved=$unresolved;ycd_entries=$ycdRows.Count;yas_entries=$yasRows.Count;raw_assets_written=$false} | ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 -LiteralPath (Join-Path $OutDir 'ANIM0-exact-summary.json')
