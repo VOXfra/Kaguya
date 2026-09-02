@@ -26,10 +26,12 @@ jobs:
           git clone https://github.com/0x1F9F1/Swage.git _deps/Swage
           git -C _deps/Swage checkout 201320d61ae04909f01af247c41f864a9174b691
 
-      - name: Apply VOX Oodle + headless key retry patches
+      - name: Apply VOX Oodle + headless + deterministic hash patches
         shell: pwsh
         run: |
           python tools/RDR2AnimationBridge/patch_swage.py _deps/Swage
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python tools/RDR2AnimationBridge/patch_swage_hash_alias.py _deps/Swage
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Configure ArchiveExplorer x64
@@ -107,8 +109,8 @@ jobs:
           Copy-Item tools/RDR2AnimationBridge/RUN_DIRECT_GTA_BRIDGE.bat "$dist/RUN_DIRECT_GTA_BRIDGE.bat"
 
           @"
-          VOX RDR2 -> GTA V Direct Animation Bridge v0.1.1
-          Fix: wait for RDR2 sgaWindow, retry key discovery, reload RPF8 keys immediately, and verify anim_0.rpf before extraction.
+          VOX RDR2 -> GTA V Direct Animation Bridge v0.1.3
+          Fixes: stable RDR2 key loading plus deterministic hash aliases for every RPF8 entry, even when Swage resolves a Rockstar filename from local name databases.
           End-to-end target: one local RDR2 YCD -> CodeWalker ClipDictionary -> GTA V RSC7 YCD -> RPF7 DLC -> Enhanced F8 playback runtime.
           RDR2 assets, encryption keys and Oodle DLL are not bundled.
           "@ | Set-Content -Encoding UTF8 "$dist/BUILD.txt"
@@ -118,7 +120,7 @@ jobs:
       - name: Upload direct bridge
         uses: actions/upload-artifact@v4
         with:
-          name: VOX-RDR2-to-GTAV-Direct-Bridge-v0.1.1
+          name: VOX-RDR2-to-GTAV-Direct-Bridge-v0.1.3
           path: dist/VOX-RDR2-to-GTAV-Direct-Bridge
           if-no-files-found: error
           compression-level: 9
