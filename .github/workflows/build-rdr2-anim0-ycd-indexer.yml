@@ -1,0 +1,191 @@
+name: Build VOX RDR2 anim_0 YCD Indexer
+
+on:
+  push:
+    branches:
+      - rc3-runtime-repair
+    paths:
+      - 'tools/rdr2-anim0-ycd/**'
+      - 'tools/rdr2-content-probe/**'
+      - 'tools/rdr2-tfit2/**'
+      - '.github/workflows/build-rdr2-anim0-ycd-indexer.yml'
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate targeted anim_0 YCD indexer source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $source='tools/rdr2-content-probe/VOX-RDR2-RPF8-Content-Probe.cpp'
+          $text=Get-Content $source -Raw
+
+          $needle='for(auto&rel:DefaultTargets())'
+          if(([regex]::Matches($text,[regex]::Escape($needle))).Count -ne 1){throw 'Default target loop marker mismatch'}
+          $text=$text.Replace($needle,'std::vector<std::string> voxAnimTargets={"anim_0.rpf"};for(auto&rel:voxAnimTargets)')
+          $text=$text.Replace('VOX RDR2 RPF8 Recursive Content Probe','VOX RDR2 anim_0 Targeted YCD String Indexer').Replace('0.6.0','0.9.0')
+
+          $topHelper=@'
+          #include <bcrypt.h>
+          #pragma comment(lib,"bcrypt.lib")
+          static std::string VoxSha256Hex(const std::vector<uint8_t>& data){
+              BCRYPT_ALG_HANDLE alg=nullptr;BCRYPT_HASH_HANDLE hash=nullptr;DWORD objLen=0,hashLen=0,cb=0;
+              if(BCryptOpenAlgorithmProvider(&alg,BCRYPT_SHA256_ALGORITHM,nullptr,0)<0)throw std::runtime_error("BCryptOpenAlgorithmProvider SHA256 failed");
+              if(BCryptGetProperty(alg,BCRYPT_OBJECT_LENGTH,(PUCHAR)&objLen,sizeof(objLen),&cb,0)<0){BCryptCloseAlgorithmProvider(alg,0);throw std::runtime_error("BCrypt OBJECT_LENGTH failed");}
+              if(BCryptGetProperty(alg,BCRYPT_HASH_LENGTH,(PUCHAR)&hashLen,sizeof(hashLen),&cb,0)<0){BCryptCloseAlgorithmProvider(alg,0);throw std::runtime_error("BCrypt HASH_LENGTH failed");}
+              std::vector<uint8_t> obj(objLen),digest(hashLen);
+              if(BCryptCreateHash(alg,&hash,obj.data(),(ULONG)obj.size(),nullptr,0,0)<0){BCryptCloseAlgorithmProvider(alg,0);throw std::runtime_error("BCryptCreateHash failed");}
+              if(!data.empty()&&BCryptHashData(hash,(PUCHAR)data.data(),(ULONG)data.size(),0)<0){BCryptDestroyHash(hash);BCryptCloseAlgorithmProvider(alg,0);throw std::runtime_error("BCryptHashData failed");}
+              if(BCryptFinishHash(hash,digest.data(),(ULONG)digest.size(),0)<0){BCryptDestroyHash(hash);BCryptCloseAlgorithmProvider(alg,0);throw std::runtime_error("BCryptFinishHash failed");}
+              BCryptDestroyHash(hash);BCryptCloseAlgorithmProvider(alg,0);
+              std::ostringstream s;s<<std::hex<<std::setfill('0');for(uint8_t b:digest)s<<std::setw(2)<<(int)b;return s.str();
+          }
+          struct VoxTargetDef{uint32_t index;uint32_t hash;const char* name;const char* system;const char* rawSha;};
+          static const VoxTargetDef VoxTargets[]={
+              {5,0x024D61CE,"clip_ai_gestures.rpf","interaction","b55e08fdb3805e38aab45af1abf2cbe93c080d46e2ccf3f1546f99d9454ba2bc"},
+              {543,0xEEA37994,"clip_script_common.rpf","interaction","79b579ba0947d39b54bf73157934a47ad4e327f1e8874e5fe652a6f885aa1f3b"},
+              {183,0x568C1BB5,"clip_ai_combat.rpf","melee","a067c3ce28dc095c7ae22842fac53e328a3c3c5063fcfdb373663b7cd5d0436a"},
+              {410,0xBD0B90DE,"clip_mech_melee.rpf","melee","bcbb1c2d1a0dd1bbf15eee05dd92bbce20eec345d606420559f06f6d95441836"},
+              {508,0xE0296150,"clip_mech_grapple.rpf","melee","64491c127657f55759801554ecd70dadbf4b14048e46e7098b47f21f761e87e8"},
+              {205,0x60D83661,"clip_mech_loco_m.rpf","locomotion","c03fd34309c11ca2b5483e9e055fdda79ecb5dc0598a6ed9d9b00c9059868fc7"},
+              {9,0x05B77FF9,"clip_mech_loco_f.rpf","locomotion","5cf307911c409ef44a34ac599b28dfc49ac01ca2bdd41ec1a8d74b3d97376044"},
+              {432,0xC593BAF1,"clip_ai_getup.rpf","locomotion;reactions","0ff2e6babfcbebde1afd000473a17dd71af1cd6dd25ba45119644e7b09d7a66e"},
+              {79,0x2917967E,"clip_ai_react.rpf","interaction;reactions","d2832079077d0ce16f06ee66dac7b3358277917b75fe6cdc89c63d3451b96a48"},
+              {239,0x7157544D,"clip_ai_ragdoll.rpf","reactions","68cc269097a736958467fd07f1cd7498c071c919a329a3eac25d500ad1a78a70"},
+              {16,0x082E9FEB,"clip_mech_doors.rpf","doors","783c844ab4283d858c749f642cef771aeb020bbe715ca36106277da5f0931bbc"},
+              {44,0x193DCEA0,"clip_mech_busted.rpf","police","160f473d61308877195ca86c4d29133b6bb0b8bca9e209e0355cfa3d0986aaff"},
+              {438,0xC7413AE8,"clip_mech_revive.rpf","reactions","03c773fa1ad5da2399e937a067f2cb9932a6ecd55ccd741090b24fdb5ea94f0a"}
+          };
+          static const VoxTargetDef* VoxFindTarget(uint32_t index,uint32_t hash){for(const auto&v:VoxTargets)if(v.index==index&&v.hash==hash)return &v;return nullptr;}
+          '@
+          $insertMarker='#undef wmain'
+          if(-not $text.Contains($insertMarker)){throw 'Top insert marker missing'}
+          $text=$text.Replace($insertMarker,$insertMarker+"`r`n"+$topHelper)
+
+          $memoryHelper=@'
+          static std::vector<uint8_t> VoxReadEntryPrefixMemory(const std::vector<uint8_t>&container,const EntryMeta&e,const Tfit2Context&ctx,const std::map<uint16_t,Tfit2Key>&keys,const uint8_t iv[16],OodleApi*oodle,size_t want,std::string&status){
+              if(e.dir||!e.logical){status="empty";return{};}uint64_t raw=e.disk,off=e.off;
+              if(e.sig){if(raw<0x100){status="bad_signature_size";return{};}raw-=0x100;}
+              if(e.resource){if(raw<16){status="bad_resource_size";return{};}off+=16;raw-=16;}
+              uint64_t streamLen=e.comp?raw:e.logical;if(off>=container.size()){status="out_of_bounds";return{};}
+              size_t rawCap=(size_t)std::min<uint64_t>(streamLen,container.size()-off);std::vector<uint8_t>b(container.begin()+off,container.begin()+off+rawCap);
+              if(e.encKey!=0xFF){auto it=keys.find(e.encKey);if(it==keys.end()){status="missing_entry_key";return{};}uint64_t chunk=e.resource?(e.comp?0x80000:e.logical):(e.comp?0x2000:0x1000);ApplyStridedDecryptPrefix(ctx,it->second,iv,e.encCfg,streamLen,chunk,b);}
+              if(e.comp==0){if(b.size()>want)b.resize(want);status="ok_uncompressed";return b;}
+              if(e.comp==2){if(!oodle){status="oodle_unavailable";return{};}std::vector<uint8_t>out;std::string er;if(!OodleDecodePrefix(*oodle,b,e.logical,want,out,er)){status=er;return out;}status="ok_oodle";return out;}
+              status="unsupported_compressor_"+std::to_string(e.comp);return{};
+          }
+          static std::vector<std::string> VoxUsefulStrings(const std::vector<uint8_t>&b){
+              std::vector<std::string>out;std::string cur;
+              auto add=[&](){if(cur.size()<5){cur.clear();return;}std::string l=cur;std::transform(l.begin(),l.end(),l.begin(),[](unsigned char c){return(char)std::tolower(c);});
+                  bool useful=cur.find('@')!=std::string::npos||l.find("pack:/")!=std::string::npos||l.find(".clip")!=std::string::npos||l.find(".anim")!=std::string::npos||l.find("skel_")!=std::string::npos||l.find("ph_")!=std::string::npos||l.find("ik_")!=std::string::npos||l.find("greet")!=std::string::npos||l.find("antagon")!=std::string::npos||l.find("threat")!=std::string::npos||l.find("defus")!=std::string::npos||l.find("melee")!=std::string::npos||l.find("grapple")!=std::string::npos||l.find("combat")!=std::string::npos||l.find("robbery")!=std::string::npos||l.find("intimid")!=std::string::npos||l.find("door")!=std::string::npos||l.find("ragdoll")!=std::string::npos||l.find("getup")!=std::string::npos||l.find("react")!=std::string::npos||l.find("loco")!=std::string::npos||l.find("strafe")!=std::string::npos||l.find("climb")!=std::string::npos||l.find("busted")!=std::string::npos||l.find("revive")!=std::string::npos;
+                  if(useful&&std::find(out.begin(),out.end(),cur)==out.end())out.push_back(cur.substr(0,220));cur.clear();};
+              for(uint8_t x:b){if(x>=32&&x<=126){if(cur.size()<400)cur.push_back((char)x);}else add();if(out.size()>=250)break;}add();return out;
+          }
+          '@
+          $parseMarker='static bool ParseRpfTocPrefix'
+          if(-not $text.Contains($parseMarker)){throw 'Parse insert marker missing'}
+          $text=$text.Replace($parseMarker,$memoryHelper+"`r`n"+$parseMarker)
+
+          $rawCapOld='size_t rawCap=(size_t)std::min<uint64_t>(streamLen,64ull*1024*1024);'
+          if(-not $text.Contains($rawCapOld)){throw 'ReadEntryPrefixFile raw cap marker missing'}
+          $text=$text.Replace($rawCapOld,'size_t rawCap=(size_t)std::min<uint64_t>(streamLen,e.comp?64ull*1024*1024:(uint64_t)want);')
+
+          $oldStream='std::ofstream nested(out/"CONTENT-nested-entries.csv",std::ios::binary),direct(out/"CONTENT-direct-probes.csv",std::ios::binary),hits(out/"CONTENT-keyword-hits.csv",std::ios::binary),prio(out/"CONTENT-priority-candidates.csv",std::ios::binary);nested<<"outer_archive,outer_index,outer_name,nested_index,hash_hex,extension,generated_name,enc_key,enc_config,compressor,logical_size,on_disk_size,is_resource\n";'
+          if(-not $text.Contains($oldStream)){throw 'Output stream marker missing'}
+          $newStream='std::ofstream nested(out/"CONTENT-nested-entries.csv",std::ios::binary),direct(out/"CONTENT-direct-probes.csv",std::ios::binary),hits(out/"CONTENT-keyword-hits.csv",std::ios::binary),prio(out/"CONTENT-priority-candidates.csv",std::ios::binary),targetArc(out/"YCD-target-archives.csv",std::ios::binary),ycdSummary(out/"YCD-entry-summary.csv",std::ios::binary),ycdStrings(out/"YCD-string-index.csv",std::ios::binary);nested<<"outer_archive,outer_index,outer_name,nested_index,hash_hex,extension,generated_name,enc_key,enc_config,compressor,logical_size,on_disk_size,is_resource\n";targetArc<<"archive,system,outer_index,outer_hash,expected_raw_toc_sha256,actual_raw_toc_sha256,identity_exact,nested_entries,outer_logical_size\n";ycdSummary<<"archive,system,outer_index,nested_index,ycd_hash,status,magic,logical_size,on_disk_size,enc_key,enc_config,compressor,decoded_bytes,useful_strings\n";ycdStrings<<"archive,system,outer_index,nested_index,ycd_hash,string\n";'
+          $text=$text.Replace($oldStream,$newStream)
+
+          $counterOld='uint64_t outerCount=0,nestedArchives=0,nestedEntries=0,ycd=0,yas=0,ymt=0,directOk=0,keywordCount=0;'
+          if(-not $text.Contains($counterOld)){throw 'Counter marker missing'}
+          $text=$text.Replace($counterOld,'uint64_t outerCount=0,nestedArchives=0,nestedEntries=0,ycd=0,yas=0,ymt=0,directOk=0,keywordCount=0,voxTargetsSeen=0,voxTargetsExact=0,voxYcdInspected=0,voxYcdOk=0,voxStrings=0;')
+
+          $wantOld='EntryMeta e=ParseEntry(toc.data()+i*24);std::string ext=ExtFor(e.extId,platform),name=HashName(e,platform);size_t want=(ext=="rpf")?16ull*1024*1024:512ull*1024;'
+          if(-not $text.Contains($wantOld)){throw 'Target/want marker missing'}
+          $wantNew='EntryMeta e=ParseEntry(toc.data()+i*24);const VoxTargetDef* voxTarget=VoxFindTarget(i,e.hash);std::string ext=ExtFor(e.extId,platform),name=HashName(e,platform);size_t want=(ext=="rpf")?(voxTarget?(size_t)e.logical:16ull*1024*1024):512ull*1024;'
+          $text=$text.Replace($wantOld,$wantNew)
+
+          $parseOld='if(ParseRpfTocPrefix(pref,ctx,keys,iv,np,nt,ne,ps)){nestedArchives++;char nplat='
+          if(-not $text.Contains($parseOld)){throw 'Nested parse marker missing'}
+          $parseNew='if(ParseRpfTocPrefix(pref,ctx,keys,iv,np,nt,ne,ps)){nestedArchives++;bool voxTargetExact=false;std::string voxRawSha;if(voxTarget){voxTargetsSeen++;uint32_t voxN=U32LE(pref.data()+4);uint64_t voxNeed=TOC_OFFSET+(uint64_t)voxN*24;if(voxNeed<=pref.size()){std::vector<uint8_t>voxRaw(pref.begin()+TOC_OFFSET,pref.begin()+voxNeed);voxRawSha=VoxSha256Hex(voxRaw);voxTargetExact=(voxRawSha==voxTarget->rawSha);}if(voxTargetExact)voxTargetsExact++;targetArc<<Csv(voxTarget->name)<<","<<Csv(voxTarget->system)<<","<<i<<","<<Hex(e.hash,8)<<","<<voxTarget->rawSha<<","<<voxRawSha<<","<<(voxTargetExact?"true":"false")<<","<<ne.size()<<","<<e.logical<<"\n";}char nplat='
+          $text=$text.Replace($parseOld,$parseNew)
+
+          $innerOld='nestedEntries++;if(xe=="ycd")ycd++;if(xe=="yas")yas++;if(xe=="ymt")ymt++;priorities.push_back({ExtPriority(xe)+25,rel,i,xn,xe,0});'
+          if(-not $text.Contains($innerOld)){throw 'Nested entry counter marker missing'}
+          $innerNew='nestedEntries++;if(xe=="ycd"){ycd++;if(voxTarget&&voxTargetExact){voxYcdInspected++;std::string yst;size_t ywant=(size_t)std::min<uint64_t>(x.logical,8ull*1024*1024);auto yb=VoxReadEntryPrefixMemory(pref,x,ctx,keys,iv,oodleOk?&oa:nullptr,ywant,yst);auto ys=VoxUsefulStrings(yb);if(yst.rfind("ok_",0)==0)voxYcdOk++;voxStrings+=ys.size();ycdSummary<<Csv(voxTarget->name)<<","<<Csv(voxTarget->system)<<","<<i<<","<<j<<","<<Hex(x.hash,8)<<","<<yst<<","<<Csv(FirstMagic(yb))<<","<<x.logical<<","<<x.disk<<","<<(int)x.encKey<<","<<(int)x.encCfg<<","<<(int)x.comp<<","<<yb.size()<<","<<ys.size()<<"\n";for(auto&s:ys)ycdStrings<<Csv(voxTarget->name)<<","<<Csv(voxTarget->system)<<","<<i<<","<<j<<","<<Hex(x.hash,8)<<","<<Csv(s)<<"\n";}}if(xe=="yas")yas++;if(xe=="ymt")ymt++;priorities.push_back({ExtPriority(xe)+25,rel,i,xn,xe,0});'
+          $text=$text.Replace($innerOld,$innerNew)
+
+          $closeOld='nested.close();direct.close();hits.close();prio.close();'
+          if(-not $text.Contains($closeOld)){throw 'Close marker missing'}
+          $text=$text.Replace($closeOld,'nested.close();direct.close();hits.close();prio.close();targetArc.close();ycdSummary.close();ycdStrings.close();')
+
+          $reportMarker='rp.close();std::cout<<'
+          if(-not $text.Contains($reportMarker)){throw 'Final report marker missing'}
+          $extra='rp.close();std::ofstream yjs(out/"YCD-index-summary.json",std::ios::binary);yjs<<"{\n  \"tool\":\"VOX RDR2 anim_0 Targeted YCD String Indexer\",\n  \"version\":\"0.9.0\",\n  \"target_archives_expected\":"<<std::size(VoxTargets)<<",\n  \"target_archives_seen\":"<<voxTargetsSeen<<",\n  \"target_archives_exact\":"<<voxTargetsExact<<",\n  \"ycd_inspected\":"<<voxYcdInspected<<",\n  \"ycd_decode_ok\":"<<voxYcdOk<<",\n  \"useful_strings\":"<<voxStrings<<",\n  \"raw_assets_written\":false\n}\n";yjs.close();std::ofstream yr(out/"YCD-index-report.txt",std::ios::binary);yr<<"VOX RDR2 anim_0 Targeted YCD String Indexer v0.9.0\nREAD-ONLY / metadata and strings only\nTarget archives exact: "<<voxTargetsExact<<"/"<<std::size(VoxTargets)<<"\nYCD inspected: "<<voxYcdInspected<<"\nYCD decode OK: "<<voxYcdOk<<"\nUseful strings indexed: "<<voxStrings<<"\n";yr.close();std::cout<<'
+          $text=$text.Replace($reportMarker,$extra)
+
+          $selfMarker='static bool ProbeSelfTest(){'
+          if(-not $text.Contains($selfMarker)){throw 'Self-test marker missing'}
+          $selfPrefix='static bool ProbeSelfTest(){auto voxT=VoxFindTarget(5,0x024D61CE);if(!voxT||std::string(voxT->name)!="clip_ai_gestures.rpf")return false;std::vector<uint8_t>voxS={''a'',''i'',''_'',''g'',''e'',''s'',''t'',''u'',''r'',''e'',''s'',''@'',''t'',''e'',''s'',''t''};if(VoxUsefulStrings(voxS).empty())return false;'
+          $text=$text.Replace($selfMarker,$selfPrefix)
+
+          $generated='tools/rdr2-content-probe/VOX-RDR2-Anim0-YCD-Indexer.generated.cpp'
+          Set-Content -LiteralPath $generated -Value $text -Encoding UTF8
+          $check=Get-Content $generated -Raw
+          foreach($must in @('voxAnimTargets={"anim_0.rpf"}','VoxReadEntryPrefixMemory','YCD-string-index.csv','clip_ai_gestures.rpf','clip_mech_doors.rpf','voxTargetExact')){if(-not $check.Contains($must)){throw "Generated source missing $must"}}
+          if($check -match 'for\(auto&rel:DefaultTargets\(\)\)'){throw 'Generic target loop survived specialization'}
+
+      - name: Build native YCD indexer
+        shell: cmd
+        run: |
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSROOT=%%i"
+          if not defined VSROOT exit /b 1
+          call "%VSROOT%\VC\Auxiliary\Build\vcvars64.bat"
+          if not exist dist mkdir dist
+          cl /nologo /EHsc /std:c++17 /O2 /MT /W4 /DUNICODE /D_UNICODE /FI"%GITHUB_WORKSPACE%\tools\rdr2-content-probe\msvc_token_fix.h" /Fe:dist\VOX-RDR2-Anim0-YCD-Indexer.exe tools\rdr2-content-probe\VOX-RDR2-Anim0-YCD-Indexer.generated.cpp
+          if errorlevel 1 exit /b 1
+          if not exist dist\VOX-RDR2-Anim0-YCD-Indexer.exe exit /b 1
+
+      - name: Deterministic TFIT2 RPF8 target and string self-test
+        shell: cmd
+        run: |
+          dist\VOX-RDR2-Anim0-YCD-Indexer.exe --self-test
+          if errorlevel 1 exit /b 1
+
+      - name: Validate pinned public fingerprint schema
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $ProgressPreference='SilentlyContinue'
+          New-Item -ItemType Directory -Force smoke | Out-Null
+          $swage='https://raw.githubusercontent.com/0x1F9F1/Swage/201320d61ae04909f01af247c41f864a9174b691'
+          Invoke-WebRequest -UseBasicParsing -Headers @{'User-Agent'='VOX-RDR2-Anim0-YCD-CI'} -Uri "$swage/src/games/rage/hashes/RDR2.h" -OutFile smoke/RDR2.h
+          Invoke-WebRequest -UseBasicParsing -Headers @{'User-Agent'='VOX-RDR2-Anim0-YCD-CI'} -Uri "$swage/src/games/rage/rpf8.cpp" -OutFile smoke/rpf8.cpp
+          & .\dist\VOX-RDR2-Anim0-YCD-Indexer.exe --fingerprint-self-test --fingerprints smoke/RDR2.h --rpf8-source smoke/rpf8.cpp
+          if($LASTEXITCODE -ne 0){throw 'Pinned Swage fingerprint schema failed'}
+
+      - name: Assemble and verify package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force package | Out-Null
+          Copy-Item dist/VOX-RDR2-Anim0-YCD-Indexer.exe package/
+          Copy-Item tools/rdr2-anim0-ycd/Run-VOX-RDR2-Anim0-YCD-Indexer.bat package/
+          Copy-Item tools/rdr2-anim0-ycd/README.txt package/
+          $bat=Get-Content package/Run-VOX-RDR2-Anim0-YCD-Indexer.bat -Raw
+          if($bat -notmatch 'READ-ONLY' -or $bat -notmatch 'No Rockstar asset' -or $bat -notmatch 'YCD-string-index'){throw 'Launcher safety/output markers missing'}
+          Compress-Archive -Path package/* -DestinationPath VOX-RDR2-Anim0-YCD-String-Indexer-v0.9.0.zip -Force
+          Expand-Archive VOX-RDR2-Anim0-YCD-String-Indexer-v0.9.0.zip verify -Force
+          $names=@(Get-ChildItem verify -File | Select-Object -ExpandProperty Name | Sort-Object)
+          if($names.Count -ne 3){throw "Unexpected package file count: $($names.Count)"}
+          if(-not (Test-Path verify/VOX-RDR2-Anim0-YCD-Indexer.exe)){throw 'EXE missing from package'}
+          Get-FileHash VOX-RDR2-Anim0-YCD-String-Indexer-v0.9.0.zip -Algorithm SHA256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VOX-RDR2-Anim0-YCD-String-Indexer-v0.9.0
+          path: VOX-RDR2-Anim0-YCD-String-Indexer-v0.9.0.zip
+          if-no-files-found: error
