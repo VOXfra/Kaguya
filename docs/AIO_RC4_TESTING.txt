@@ -1,0 +1,92 @@
+VOX GTA V Enhanced -> VI - RC4 TEST MATRIX
+
+A. STARTUP / STORY SAFETY
+- Start Story Mode and check ScriptHookVDotNet logs for load exceptions.
+- Run a short mission/cutscene/character switch. VOX interactions, workout, inventory, theft and police ownership must yield immediately.
+- Confirm VehicleCameraVI is not loaded.
+
+B. POLICE REGRESSION - PRIORITY TEST
+1. Create a normal 1-star witnessed crime in free roam.
+2. Do NOT drive toward the police. Watch whether dispatched ground units actually arrive.
+3. Escalate to 2-4 stars and drive normally through several intersections.
+4. Observe several police cars: they must accelerate, steer and recover normally. They must not twitch forward as if a handbrake/task is repeatedly applied.
+5. Exit the vehicle and fight. Rockstar officers must choose their own weapons/combat tasks and actually engage.
+6. Check PoliceOverhaulVI.log: force messages should say advisory only; there must be no 'Retasked stalled police pursuit vehicle' entries.
+
+C. SIXTH STAR / SEARCH / DEATH / SURRENDER
+1. Sustain five stars and continued violent heat until tier 6 is authorized.
+2. The first five stars must stay exactly Rockstar's native style; the sixth must come from the same HUD_WANTED_STARS artwork, not a shop/custom star.
+3. Break direct LOS in a long tunnel/covered location. Tier-6 VOX military direct-combat entities should be withdrawn when custom search begins. They must not keep firing through walls/tunnel geometry.
+4. Remain hidden until the bounded search expires. Six stars must be loseable.
+5. During another wanted event, go on foot, holster the weapon, stop near a visible officer and hold Context. Surrender should clear the active chase.
+6. During another tier-6 pursuit, die. After hospital respawn there must be no active wanted level or surviving VOX military unit, and the case must not instantly reacquire you.
+
+D. IDENTIFICATION ICONS
+- Outfit/vehicle icons should only display when those facts are currently known/valid.
+- For face: deliberately let a nearby officer see an unmasked face long enough for recognition; verify face icon appears only after confidence is earned.
+- For weapon: expose a visible weapon to police at recognition distance; verify weapon icon appears.
+- Change outfit/vehicle/mask and verify active signalment can invalidate independently.
+
+E. INVENTORY / FOUR-SLOT LOADOUT
+1. Visit Ammu-Nation with several legitimately owned weapons.
+2. Enter loadout configuration and use the normal GTA weapon wheel to choose exactly one long gun, one pistol, one melee weapon and one throwable.
+3. Leave configuration. The normal wheel should expose only the selected carried weapon in each category; no VOX satchel/craft/coffre radial should exist.
+4. Confirm no weapon you never owned is granted. Check that legacy SatchelWeapons.txt was renamed .disabled if present.
+5. Re-enter Ammu-Nation, change one slot, leave and verify only that category changes.
+
+F. NATIVE-WHEEL CRAFT
+1. Buy/obtain Tissu + Alcool at a general-store checkout.
+2. Equip Molotov as the throwable slot and consume all Molotov ammo.
+3. Hold the normal GTA weapon wheel and select Molotov.
+4. A small craft help should appear; press Reload/B as indicated.
+5. Exactly one Molotov should be created and materials decremented. There must be no separate craft wheel/menu.
+
+G. VEHICLE TRUNK
+1. Stand at the physical rear of a non-mission vehicle.
+2. Press Context once. The trunk lid must physically open and the inventory must only exist while you remain at that trunk.
+3. Store two different owned weapons one at a time. Holding Context must not repeatedly store/retrieve.
+4. Reopen and choose exactly which stored weapon to retrieve. Verify ammo, tint, scope/light/suppressor components where applicable.
+5. Save two outfits with different names, close/reopen trunk, choose the desired named outfit.
+6. Walk away: trunk UI must close and lid should shut. There must be no 'coffre' entry accessible in the street away from a vehicle.
+
+H. ACCESSORIES / SUPPRESSOR
+- Wear a mask, hat and glasses; use the trunk accessory entries to remove/restore each and note any protagonist/slot that fails.
+- On an owned weapon with an actually purchased/previously observed suppressor, use the native-wheel suppressor action. It must never create a suppressor that was never owned.
+
+I. VEHICLE THEFT
+1. Test several locked parked vehicles of different sizes.
+2. Tap Enter/Y once: there must be no automatic lockpick loop.
+3. Choose quiet method by holding Enter/Y, or smash by Attack/RT. Cancel/B must abort.
+4. The character should approach the driver-door bone once, then play one break-in animation at that anchor.
+5. Door unlock may happen only after the chosen sequence completes.
+6. Holding a button must not restart the animation/task every frame.
+7. Verify there is no in-vehicle VOX radial and aim/fire remain vanilla while driving.
+
+J. TRAFFIC
+- Drive around Los Santos for 10+ minutes. RC4 has disabled VOX Online donor swaps and removed the continuous traffic-retask healer.
+- There should be no new clusters of empty Online cars abandoned in travel lanes by WorldLifeVI.
+- Vanilla traffic should retain normal driver behavior.
+
+K. NPC INTERACTIONS
+- Focus several different civilians, including relaxed/hostile contexts.
+- Unarmed: test repeated Greet chain, Antagonize chain and Defuse after tension.
+- Armed: verify contextual actions become Threaten/Rob rather than generic identical speech.
+- Aim or start entering a vehicle: interaction focus must release immediately.
+- This is a state-model repair, not a claim that every RDR2 conversation/animation is already reproduced.
+
+L. WORKOUT / MUSCLE
+1. At Muscle Beach test chin-ups, bench press and free weights/barbell separately.
+2. Each activity must continue/recover if its native scenario cycle ends; the player must not drop the prop once and remain frozen.
+3. Context should stop a session cleanly.
+4. Complete sessions and compare CharacterRuntimeVI/FitnessStats.txt values.
+5. Observe shoulders/upper arms over repeated completed training. The managed morph must either visibly apply or log a clear safe failure; no player height distortion.
+
+M. LOGS TO SEND AFTER TEST
+scripts/InventoryRuntimeVI/InventoryRuntimeVI.log
+scripts/VehicleRuntimeVI/VehicleRuntimeVI.log
+scripts/WorldLifeVI/WorldLifeVI.log
+scripts/PoliceOverhaulVI/PoliceOverhaulVI.log
+scripts/InteractionRuntimeVI/InteractionRuntimeVI.log
+scripts/CharacterRuntimeVI/CharacterRuntimeVI.log
+scripts/CharacterRuntimeVI/BodyMorphBridge.log (if native bridge packaged/active)
+plus ScriptHookVDotNet log if any exception occurs.
