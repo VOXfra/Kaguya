@@ -44,6 +44,14 @@ jobs:
           & .\dist\VOX-RDR2-TFIT2-Bridge.exe --fingerprint-self-test --fingerprints smoke/RDR2.h --rpf8-source smoke/rpf8.cpp
           if ($LASTEXITCODE -ne 0) { throw 'Pinned fingerprint schema test failed' }
 
+      - name: Validate launcher hotfix markers
+        shell: pwsh
+        run: |
+          $bat = Get-Content tools/rdr2-tfit2/Run-VOX-RDR2-TFIT2-Bridge.bat -Raw
+          foreach ($required in @('v0.4.1', ':EnsureRDR2', 'Starting the selected local installation', 'attempt !SCANTRY!/3', '--elevated')) {
+            if (-not $bat.Contains($required)) { throw "Launcher hotfix marker missing: $required" }
+          }
+
       - name: Assemble package
         shell: pwsh
         run: |
@@ -51,11 +59,11 @@ jobs:
           Copy-Item dist/VOX-RDR2-TFIT2-Bridge.exe package/
           Copy-Item tools/rdr2-tfit2/Run-VOX-RDR2-TFIT2-Bridge.bat package/
           Copy-Item tools/rdr2-tfit2/README.txt package/
-          Compress-Archive -Path package/* -DestinationPath VOX-RDR2-TFIT2-Metadata-Bridge-v0.4.0.zip -Force
-          Get-FileHash VOX-RDR2-TFIT2-Metadata-Bridge-v0.4.0.zip -Algorithm SHA256
+          Compress-Archive -Path package/* -DestinationPath VOX-RDR2-TFIT2-Metadata-Bridge-v0.4.1.zip -Force
+          Get-FileHash VOX-RDR2-TFIT2-Metadata-Bridge-v0.4.1.zip -Algorithm SHA256
 
       - uses: actions/upload-artifact@v4
         with:
-          name: VOX-RDR2-TFIT2-Metadata-Bridge-v0.4.0
-          path: VOX-RDR2-TFIT2-Metadata-Bridge-v0.4.0.zip
+          name: VOX-RDR2-TFIT2-Metadata-Bridge-v0.4.1
+          path: VOX-RDR2-TFIT2-Metadata-Bridge-v0.4.1.zip
           if-no-files-found: error
