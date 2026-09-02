@@ -113,9 +113,19 @@ function Extract-RpfEntry {
 Section '1/4 - Pull one generic RDR2 locomotion animation'
 $LocoRpf = Join-Path $Work 'clip_mech_loco_m.rpf'
 $SourceYcd = Join-Path $Work '0386705F-rdr2.ycd'
-# JOAAT("clip_mech_loco_m") = 1C5D5822
-# 0386705F = generic action/unarmed locomotion-idle family from our completed index.
-Extract-RpfEntry -Archive $Anim0 -Entry 'hash/1C5D5822.rpf' -Destination $LocoRpf -FindKeys
+# RPF8 hashes the full normalized path without extension, not only the basename.
+# JOAAT("anim/ingame/clip_mech_loco_m") = 60D83661.
+# If ArchiveExplorer has rdr2_files.txt, Swage exposes the resolved path; otherwise it exposes hash/60D83661.rpf.
+$SwageNames = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'ArchiveExplorer\rdr2_files.txt'
+if (Test-Path $SwageNames) {
+    $LocoEntry = 'anim/ingame/clip_mech_loco_m.rpf'
+    Write-Host '[RPF8] Using resolved archive path: anim/ingame/clip_mech_loco_m.rpf'
+} else {
+    $LocoEntry = 'hash/60D83661.rpf'
+    Write-Host '[RPF8] Using deterministic archive hash: 60D83661'
+}
+# 0386705F is an unresolved YCD entry listed inside clip_mech_loco_m.rpf.
+Extract-RpfEntry -Archive $Anim0 -Entry $LocoEntry -Destination $LocoRpf -FindKeys
 Extract-RpfEntry -Archive $LocoRpf -Entry 'hash/0386705F.ycd' -Destination $SourceYcd
 
 if ($StartedRdr2) {
