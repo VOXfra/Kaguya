@@ -1,0 +1,102 @@
+name: Build VOX RDR2 anim_0 Research
+
+on:
+  push:
+    branches:
+      - rc3-runtime-repair
+    paths:
+      - 'tools/rdr2-anim0/**'
+      - 'tools/rdr2-content-probe/**'
+      - 'tools/rdr2-tfit2/**'
+      - '.github/workflows/build-rdr2-anim0-research.yml'
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate anim_0-only probe source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $source='tools/rdr2-content-probe/VOX-RDR2-RPF8-Content-Probe.cpp'
+          $text=Get-Content $source -Raw
+          $needle='for(auto&rel:DefaultTargets())'
+          $matches=([regex]::Matches($text,[regex]::Escape($needle))).Count
+          if($matches -ne 1){throw "Expected exactly one default-target loop, got $matches"}
+          $replacement='std::vector<std::string> voxAnimTargets={"anim_0.rpf"};for(auto&rel:voxAnimTargets)'
+          $text=$text.Replace($needle,$replacement)
+          $text=$text.Replace('VOX RDR2 RPF8 Recursive Content Probe','VOX RDR2 anim_0 Focused Probe').Replace('0.6.0','0.7.0')
+          $generated='tools/rdr2-content-probe/VOX-RDR2-Anim0-Probe.generated.cpp'
+          Set-Content -LiteralPath $generated -Value $text -Encoding UTF8
+          $check=Get-Content $generated -Raw
+          if($check -notmatch 'voxAnimTargets=\{\"anim_0\.rpf\"\}') { throw 'anim_0 target patch missing' }
+          if($check -match 'for\(auto&rel:DefaultTargets\(\)\)') { throw 'Default target loop survived specialization' }
+
+      - name: Build native probe
+        shell: cmd
+        run: |
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSROOT=%%i"
+          if not defined VSROOT exit /b 1
+          call "%VSROOT%\VC\Auxiliary\Build\vcvars64.bat"
+          if not exist dist mkdir dist
+          cl /nologo /EHsc /std:c++17 /O2 /MT /W4 /DUNICODE /D_UNICODE /FI"%GITHUB_WORKSPACE%\tools\rdr2-content-probe\msvc_token_fix.h" /Fe:dist\VOX-RDR2-Anim0-Probe.exe tools\rdr2-content-probe\VOX-RDR2-Anim0-Probe.generated.cpp
+          if errorlevel 1 exit /b 1
+          if not exist dist\VOX-RDR2-Anim0-Probe.exe exit /b 1
+
+      - name: Deterministic TFIT2 and nested RPF8 self-test
+        shell: cmd
+        run: |
+          dist\VOX-RDR2-Anim0-Probe.exe --self-test
+          if errorlevel 1 exit /b 1
+
+      - name: Validate pinned public sources and mapper
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $ProgressPreference='SilentlyContinue'
+          New-Item -ItemType Directory -Force smoke | Out-Null
+          $swage='https://raw.githubusercontent.com/0x1F9F1/Swage/201320d61ae04909f01af247c41f864a9174b691'
+          Invoke-WebRequest -UseBasicParsing -Headers @{'User-Agent'='VOX-RDR2-Anim0-CI'} -Uri "$swage/src/games/rage/hashes/RDR2.h" -OutFile smoke/RDR2.h
+          Invoke-WebRequest -UseBasicParsing -Headers @{'User-Agent'='VOX-RDR2-Anim0-CI'} -Uri "$swage/src/games/rage/rpf8.cpp" -OutFile smoke/rpf8.cpp
+          & .\dist\VOX-RDR2-Anim0-Probe.exe --fingerprint-self-test --fingerprints smoke/RDR2.h --rpf8-source smoke/rpf8.cpp
+          if($LASTEXITCODE -ne 0){throw 'Pinned Swage fingerprint schema failed'}
+          $cfx='https://raw.githubusercontent.com/citizenfx/fivem/03dcc562ca175e24eb018569ecb919b4b7a56824/code/components/glue/include/BaseGameRpfHeaderHashes_RDR3.h'
+          Invoke-WebRequest -UseBasicParsing -Headers @{'User-Agent'='VOX-RDR2-Anim0-CI'} -Uri $cfx -OutFile smoke/BaseGameRpfHeaderHashes_RDR3.h
+          @'
+          outer_archive,outer_index,outer_name,nested_index,hash_hex,extension,generated_name,enc_key,enc_config,compressor,logical_size,on_disk_size,is_resource
+          anim_0.rpf,0,A4DBCAC5.rpf,0,12345678,ycd,12345678.ycd,7,1,2,4096,2048,true
+          '@ | Set-Content smoke/CONTENT-nested-entries.csv -Encoding ASCII
+          & .\tools\rdr2-anim0\Map-VOX-RDR2-Anim0.ps1 -NestedCsv smoke/CONTENT-nested-entries.csv -CitizenFxHeader smoke/BaseGameRpfHeaderHashes_RDR3.h -OutDir smoke/out
+          if($LASTEXITCODE -ne 0){throw 'anim_0 mapper smoke test failed'}
+          $m=Import-Csv smoke/out/ANIM0-archive-map.csv | Select-Object -First 1
+          if(-not $m){throw 'archive map missing'}
+          if($m.public_archive_name -ne 'clip_mech_animal_interaction.rpf' -or $m.confidence -ne 'exact_rage_hash'){throw "Unexpected mapping: $($m|ConvertTo-Json -Compress)"}
+          $s=Get-Content smoke/out/ANIM0-summary.json -Raw | ConvertFrom-Json
+          if($s.exact_hash_matches -ne 1 -or $s.ycd_entries -ne 1){throw 'mapper summary assertions failed'}
+
+      - name: Assemble and verify package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force package | Out-Null
+          Copy-Item dist/VOX-RDR2-Anim0-Probe.exe package/
+          Copy-Item tools/rdr2-anim0/Run-VOX-RDR2-Anim0-Research.bat package/
+          Copy-Item tools/rdr2-anim0/Map-VOX-RDR2-Anim0.ps1 package/
+          Copy-Item tools/rdr2-anim0/README.txt package/
+          $bat=Get-Content package/Run-VOX-RDR2-Anim0-Research.bat -Raw
+          if($bat -notmatch 'anim_0\.rpf' -or $bat -notmatch 'No Rockstar asset'){throw 'Launcher safety/target markers missing'}
+          Compress-Archive -Path package/* -DestinationPath VOX-RDR2-Anim0-Research-v0.7.0.zip -Force
+          Expand-Archive VOX-RDR2-Anim0-Research-v0.7.0.zip verify -Force
+          $names=@(Get-ChildItem verify -File | Select-Object -ExpandProperty Name | Sort-Object)
+          if($names.Count -ne 4){throw "Unexpected package file count: $($names.Count)"}
+          if(-not (Test-Path verify/VOX-RDR2-Anim0-Probe.exe)){throw 'EXE missing from package'}
+          Get-FileHash VOX-RDR2-Anim0-Research-v0.7.0.zip -Algorithm SHA256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VOX-RDR2-Anim0-Research-v0.7.0
+          path: VOX-RDR2-Anim0-Research-v0.7.0.zip
+          if-no-files-found: error
