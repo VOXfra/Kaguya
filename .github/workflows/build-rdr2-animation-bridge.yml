@@ -1,0 +1,79 @@
+name: Build RDR2 Animation Bridge Helper
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - rdr2-animation-bridge
+    paths:
+      - 'tools/RDR2AnimationBridge/**'
+      - '.github/workflows/build-rdr2-animation-bridge.yml'
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout Kaguya bridge branch
+        uses: actions/checkout@v4
+
+      - name: Clone pinned Swage source
+        shell: pwsh
+        run: |
+          git clone https://github.com/0x1F9F1/Swage.git _deps/Swage
+          git -C _deps/Swage checkout 201320d61ae04909f01af247c41f864a9174b691
+          git -C _deps/Swage status --short
+
+      - name: Apply VOX Oodle + headless patches
+        shell: pwsh
+        run: |
+          python tools/RDR2AnimationBridge/patch_swage.py _deps/Swage
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Configure ArchiveExplorer x64
+        shell: pwsh
+        run: |
+          cmake -S _deps/Swage -B _build/Swage -A x64
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Build ArchiveExplorer Release
+        shell: pwsh
+        run: |
+          cmake --build _build/Swage --config Release --target ArchiveExplorer -- /m
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Assemble one-click bridge package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = Get-ChildItem _build/Swage -Recurse -Filter ArchiveExplorer.exe | Select-Object -First 1
+          if (-not $exe) { throw 'ArchiveExplorer.exe was not produced' }
+
+          New-Item -ItemType Directory -Force -Path dist/RDR2AnimationBridge/helper | Out-Null
+          Copy-Item $exe.FullName dist/RDR2AnimationBridge/helper/ArchiveExplorer.exe
+
+          Get-ChildItem $exe.Directory.FullName -Filter *.dll -File | ForEach-Object {
+            Copy-Item $_.FullName dist/RDR2AnimationBridge/helper/$($_.Name)
+          }
+
+          Copy-Item tools/RDR2AnimationBridge/RUN_FIRST_YCD_BRIDGE.ps1 dist/RDR2AnimationBridge/
+          Copy-Item tools/RDR2AnimationBridge/RUN_FIRST_YCD_BRIDGE.bat dist/RDR2AnimationBridge/
+
+          @"
+          VOX RDR2 Animation Bridge - first complete YCD extractor
+          Swage upstream: 201320d61ae04909f01af247c41f864a9174b691
+          VOX patch: exact Oodle quantum input + headless extraction mode
+          Game assets, RDR2 keys and Oodle DLL are NOT included.
+          "@ | Set-Content -Encoding UTF8 dist/RDR2AnimationBridge/BUILD.txt
+
+          Get-ChildItem dist/RDR2AnimationBridge -Recurse | Select-Object FullName,Length
+
+      - name: Upload bridge package
+        uses: actions/upload-artifact@v4
+        with:
+          name: VOX-RDR2-Animation-Bridge-First-YCD
+          path: dist/RDR2AnimationBridge
+          if-no-files-found: error
+          compression-level: 9
