@@ -42,7 +42,7 @@ namespace VOX.CharacterRuntimeVI
             Interval = 50;
             Tick += OnTick;
             Aborted += OnAborted;
-            Log("Character Runtime VI 0.2.1 loaded: story-safe fitness/body progression; melee damage ownership delegated to MeleeRuntimeVI.");
+            Log("Character Runtime VI 0.3.0 loaded: fitness profile now drives visible shoulder/body morph and varied workouts.");
         }
 
         private void OnTick(object sender, EventArgs e)
@@ -53,6 +53,7 @@ namespace VOX.CharacterRuntimeVI
                 if (player == null || !player.Exists() || player.IsDead)
                 {
                     _lastTick = 0;
+                    FitnessRuntimeBridge.ClearPublished();
                     ApplyNeutralPerformanceStats();
                     WriteBodyState(null, 1f, false, true);
                     return;
@@ -70,8 +71,13 @@ namespace VOX.CharacterRuntimeVI
                 {
                     UpdateTraining(player, dt);
                     ApplyPerformanceStats();
+                    PublishProfile();
                 }
-                else ApplyNeutralPerformanceStats();
+                else
+                {
+                    FitnessRuntimeBridge.ClearPublished();
+                    ApplyNeutralPerformanceStats();
+                }
 
                 float bodyWidth = BodyWidthScale();
                 bool bodySafe = !yielding && BodyMorphSafe(player);
@@ -85,7 +91,8 @@ namespace VOX.CharacterRuntimeVI
             }
             catch (Exception ex)
             {
-                Log("Tick error: " + ex.Message);
+                Log("Tick error: " + ex);
+                FitnessRuntimeBridge.ClearPublished();
                 ApplyNeutralPerformanceStats();
                 WriteBodyState(null, 1f, false, true);
             }
@@ -109,7 +116,14 @@ namespace VOX.CharacterRuntimeVI
                 };
                 _profiles[model] = _current;
             }
-            Log("Fitness profile selected model=" + model + ".");
+            PublishProfile();
+            Log("Fitness profile selected model=" + model + " strength=" + _current.Strength.ToString("0.0", CultureInfo.InvariantCulture) + " lean=" + _current.LeanMass.ToString("0.0", CultureInfo.InvariantCulture) + ".");
+        }
+
+        private void PublishProfile()
+        {
+            if (_current == null) { FitnessRuntimeBridge.ClearPublished(); return; }
+            FitnessRuntimeBridge.Publish(_current.Strength, _current.Endurance, _current.LeanMass);
         }
 
         private void UpdateTraining(Ped player, float dt)
@@ -152,12 +166,18 @@ namespace VOX.CharacterRuntimeVI
             if (player == null || !player.Exists() || player.IsDead || StoryOwnsScene() || Game.GameTime < _storyYieldUntil) return;
             SelectProfile(player);
             if (_current == null) return;
-            _current.Strength = Clamp(_current.Strength + Math.Max(0f, strength), 0f, 100f);
-            _current.Endurance = Clamp(_current.Endurance + Math.Max(0f, endurance), 0f, 100f);
-            _current.LeanMass = Clamp(_current.LeanMass + Math.Max(0f, leanMass), 0f, 100f);
-            _current.TrainingLoad = Clamp(_current.TrainingLoad + Math.Max(0.5f, strength * 2.2f + endurance + leanMass), 0f, 100f);
+
+            // A complete physical exercise session represents substantially more work
+            // than a few seconds of incidental sprinting/melee. The multiplier keeps
+            // visible progression measurable over several sessions without instant max stats.
+            float sessionScale = 2.35f;
+            _current.Strength = Clamp(_current.Strength + Math.Max(0f, strength) * sessionScale, 0f, 100f);
+            _current.Endurance = Clamp(_current.Endurance + Math.Max(0f, endurance) * 1.75f, 0f, 100f);
+            _current.LeanMass = Clamp(_current.LeanMass + Math.Max(0f, leanMass) * 2.05f, 0f, 100f);
+            _current.TrainingLoad = Clamp(_current.TrainingLoad + Math.Max(1.0f, strength * 3.2f + endurance * 1.5f + leanMass * 2f), 0f, 100f);
+            PublishProfile();
             Save();
-            Log("Physical workout credited.");
+            Log("Physical workout credited: strength=" + _current.Strength.ToString("0.00", CultureInfo.InvariantCulture) + " lean=" + _current.LeanMass.ToString("0.00", CultureInfo.InvariantCulture) + ".");
         }
 
         private void ApplyPerformanceStats()
@@ -175,8 +195,8 @@ namespace VOX.CharacterRuntimeVI
         private float BodyWidthScale()
         {
             if (_current == null) return 1f;
-            float physique = Clamp((_current.Strength * 0.42f + _current.LeanMass * 0.58f) / 100f, 0f, 1f);
-            return 1f + physique * 0.045f;
+            float physique = Clamp((_current.Strength * 0.44f + _current.LeanMass * 0.56f) / 100f, 0f, 1f);
+            return 1f + physique * 0.065f;
         }
 
         private static bool BodyMorphSafe(Ped player)
@@ -200,7 +220,7 @@ namespace VOX.CharacterRuntimeVI
                     "x=" + p.X.ToString("R", CultureInfo.InvariantCulture) + Environment.NewLine +
                     "y=" + p.Y.ToString("R", CultureInfo.InvariantCulture) + Environment.NewLine +
                     "z=" + p.Z.ToString("R", CultureInfo.InvariantCulture) + Environment.NewLine +
-                    "width=" + Clamp(width, 1f, 1.05f).ToString("R", CultureInfo.InvariantCulture) + Environment.NewLine;
+                    "width=" + Clamp(width, 1f, 1.07f).ToString("R", CultureInfo.InvariantCulture) + Environment.NewLine;
                 File.WriteAllText(BodyStatePath, text);
             }
             catch { }
@@ -284,6 +304,7 @@ namespace VOX.CharacterRuntimeVI
         private void OnAborted(object sender, EventArgs e)
         {
             if (FitnessRuntimeBridge.AddTraining == ApplyWorkoutTraining) FitnessRuntimeBridge.AddTraining = null;
+            FitnessRuntimeBridge.ClearPublished();
             Save(); ApplyNeutralPerformanceStats(); WriteBodyState(null, 1f, false, true);
         }
         private static void Log(string text)
