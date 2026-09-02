@@ -110,14 +110,16 @@ foreach($g in $outerGroups) {
     $row=[pscustomobject]@{outer_index=$idx;outer_hash=$hx;outer_generated_name=$outerName;public_archive_name=$public;confidence=$confidence;hash_variant=$variant;citizenfx_order_candidate=$orderCandidate;systems=$systems;ycd_count=$ycd;yas_count=$yas;ymt_count=$ymt;nested_entries=$g.Count;priority_score=$score}
     $mapRows.Add($row);$mappedByIndex[$idx]=$row
 }
+$sortPriority=@(@{Expression='priority_score';Descending=$true},@{Expression='ycd_count';Descending=$true},@{Expression='outer_index';Descending=$false})
 $mapRows | Sort-Object outer_index | Export-Csv -NoTypeInformation -Encoding UTF8 -LiteralPath (Join-Path $OutDir 'ANIM0-archive-map.csv')
-$mapRows | Sort-Object priority_score -Descending,ycd_count -Descending | Export-Csv -NoTypeInformation -Encoding UTF8 -LiteralPath (Join-Path $OutDir 'ANIM0-priority-archives.csv')
+$mapRows | Sort-Object -Property $sortPriority | Export-Csv -NoTypeInformation -Encoding UTF8 -LiteralPath (Join-Path $OutDir 'ANIM0-priority-archives.csv')
 
 $ycdRows = foreach($r in $nested | Where-Object extension -eq 'ycd') {
     $idx=[int]$r.outer_index; $m=$mappedByIndex[$idx]
     [pscustomobject]@{outer_index=$idx;outer_hash=$m.outer_hash;public_archive_name=$m.public_archive_name;archive_confidence=$m.confidence;systems=$m.systems;nested_index=$r.nested_index;ycd_hash=$r.hash_hex;generated_name=$r.generated_name;enc_key=$r.enc_key;enc_config=$r.enc_config;compressor=$r.compressor;logical_size=$r.logical_size;on_disk_size=$r.on_disk_size;is_resource=$r.is_resource;archive_priority=$m.priority_score}
 }
-$ycdRows | Sort-Object archive_priority -Descending,outer_index,nested_index | Export-Csv -NoTypeInformation -Encoding UTF8 -LiteralPath (Join-Path $OutDir 'ANIM0-ycd-candidates.csv')
+$sortYcd=@(@{Expression='archive_priority';Descending=$true},@{Expression='outer_index';Descending=$false},@{Expression='nested_index';Descending=$false})
+$ycdRows | Sort-Object -Property $sortYcd | Export-Csv -NoTypeInformation -Encoding UTF8 -LiteralPath (Join-Path $OutDir 'ANIM0-ycd-candidates.csv')
 
 $sysCounts=@{}
 foreach($m in $mapRows){foreach($s in ([string]$m.systems -split ';')){if(-not $sysCounts.ContainsKey($s)){$sysCounts[$s]=0};$sysCounts[$s]+=[int]$m.ycd_count}}
@@ -134,7 +136,7 @@ $report.Add('YCD BY PROJECT SYSTEM')
 foreach($kv in $sysCounts.GetEnumerator() | Sort-Object Value -Descending){$report.Add("$($kv.Key): $($kv.Value)")}
 $report.Add('')
 $report.Add('TOP ARCHIVES')
-foreach($m in $mapRows | Sort-Object priority_score -Descending,ycd_count -Descending | Select-Object -First 60){$report.Add(('[{0,3}] {1} | {2} | ycd={3} yas={4} ymt={5} | {6}' -f $m.priority_score,$m.public_archive_name,$m.systems,$m.ycd_count,$m.yas_count,$m.ymt_count,$m.confidence))}
+foreach($m in $mapRows | Sort-Object -Property $sortPriority | Select-Object -First 60){$report.Add(('[{0,3}] {1} | {2} | ycd={3} yas={4} ymt={5} | {6}' -f $m.priority_score,$m.public_archive_name,$m.systems,$m.ycd_count,$m.yas_count,$m.ymt_count,$m.confidence))}
 $report | Set-Content -Encoding UTF8 -LiteralPath (Join-Path $OutDir 'ANIM0-report.txt')
 
 [pscustomobject]@{
