@@ -14,7 +14,7 @@ namespace VOX.PoliceOverhaulVI
         public PoliceOverhaulVIRuntimeRepairScript()
         {
             Interval=100;Tick+=OnTick;Aborted+=OnAborted;
-            Log("Police runtime repair 0.8.1 loaded: death reset, custom-unit cleanup and bounded searches.");
+            Log("Police runtime repair 0.8.2 loaded: death reset, post-death reacquire grace and bounded searches.");
         }
 
         private void OnTick(object sender,EventArgs e)
@@ -23,33 +23,20 @@ namespace VOX.PoliceOverhaulVI
             {
                 Ped player=Game.LocalPlayerPed;
                 bool dead=player==null||!player.Exists()||player.IsDead;
-                if(dead)
-                {
-                    if(!_deathHandled){_deathHandled=true;ResetActivePursuitOnDeath();}
-                    return;
-                }
+                if(dead){if(!_deathHandled){_deathHandled=true;ResetActivePursuitOnDeath();}return;}
                 _deathHandled=false;
 
                 if(PoliceSearchRuntimeState.SearchActive)
                 {
-                    int threat=Math.Max(1,Math.Min(6,PoliceSearchRuntimeState.ThreatLevel));
-                    int maximum=SearchLifetimeMs(threat);
-                    int cap=PoliceSearchRuntimeState.SearchStartedAt+maximum;
-                    if(PoliceSearchRuntimeState.SearchStartedAt>0&&PoliceSearchRuntimeState.SearchDeadlineAt>cap)
-                    {
-                        PoliceSearchRuntimeState.SearchDeadlineAt=cap;
-                        if(Game.GameTime-_lastClampLog>5000){_lastClampLog=Game.GameTime;Log("Search deadline bounded: threat="+threat+" lifetime="+(maximum/1000)+"s.");}
-                    }
+                    int threat=Math.Max(1,Math.Min(6,PoliceSearchRuntimeState.ThreatLevel));int maximum=SearchLifetimeMs(threat);int cap=PoliceSearchRuntimeState.SearchStartedAt+maximum;
+                    if(PoliceSearchRuntimeState.SearchStartedAt>0&&PoliceSearchRuntimeState.SearchDeadlineAt>cap){PoliceSearchRuntimeState.SearchDeadlineAt=cap;if(Game.GameTime-_lastClampLog>5000){_lastClampLog=Game.GameTime;Log("Search deadline bounded: threat="+threat+" lifetime="+(maximum/1000)+"s.");}}
                 }
                 else try{if(Function.Call<int>(Hash.GET_PLAYER_WANTED_LEVEL,Game.Player.Handle)<=0)Function.Call(Hash.SET_POLICE_IGNORE_PLAYER,Game.Player.Handle,false);}catch{}
             }
             catch(Exception ex){Log("Runtime repair tick error: "+ex.Message);}
         }
 
-        private static int SearchLifetimeMs(int threat)
-        {
-            switch(threat){case 1:return 75000;case 2:return 90000;case 3:return 120000;case 4:return 150000;case 5:return 180000;default:return 210000;}
-        }
+        private static int SearchLifetimeMs(int threat){switch(threat){case 1:return 75000;case 2:return 90000;case 3:return 120000;case 4:return 150000;case 5:return 180000;default:return 210000;}}
 
         private static void ResetActivePursuitOnDeath()
         {
@@ -57,10 +44,10 @@ namespace VOX.PoliceOverhaulVI
             try{Function.Call(Hash.SET_POLICE_IGNORE_PLAYER,Game.Player.Handle,false);}catch{}
             try{Function.Call(Hash.SET_DISPATCH_COPS_FOR_PLAYER,Game.Player.Handle,false);}catch{}
             DispatchSystem.EmergencyCleanup();
-            PoliceSearchRuntimeState.ResetSearch(true);
+            PoliceSearchRuntimeState.NotifyPlayerDeath();
             PoliceWantedHudState.Clear();
             SearchHudSystem.NotifyPlayerDeath();
-            Log("Player death: vanilla wanted, VOX military and active search cleared; historical evidence retained.");
+            Log("Player death: active pursuit cleared and reacquisition suppressed through hospital respawn grace.");
         }
 
         private void OnAborted(object sender,EventArgs e){try{Function.Call(Hash.SET_POLICE_IGNORE_PLAYER,Game.Player.Handle,false);}catch{}DispatchSystem.EmergencyCleanup();}
