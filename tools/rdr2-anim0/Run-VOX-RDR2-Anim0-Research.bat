@@ -1,15 +1,15 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
-title VOX RDR2 anim_0 Research v0.7.0
+title VOX RDR2 anim_0 Research v0.8.0
 cd /d "%~dp0"
 
 echo ============================================================
-echo   VOX RDR2 anim_0 Research v0.7.0
+echo   VOX RDR2 anim_0 Research v0.8.0
 echo ============================================================
 echo.
 echo READ-ONLY: RDR2 files are never modified.
 echo No Rockstar asset, key bytes or memory dump is written to disk.
-echo Only RPF8 metadata and public-name matches are exported.
+echo Only RPF8 metadata, TOC SHA-256 hashes and public-name matches are exported.
 echo.
 set "ROOT=%~1"
 if not defined ROOT set /p "ROOT=RDR2 folder containing RDR2.exe: "
@@ -63,25 +63,30 @@ echo [2/4] Validating TFIT2/RPF8 format definitions...
 "VOX-RDR2-Anim0-Probe.exe" --fingerprint-self-test --fingerprints "%HASHES%" --rpf8-source "%RPF8SRC%"
 if errorlevel 1 goto TESTFAIL
 
-echo [3/4] Opening anim_0.rpf and nested RPF8 TOCs in memory...
+echo [3/4] Opening anim_0.rpf and hashing decrypted nested RPF8 TOCs in memory...
 "VOX-RDR2-Anim0-Probe.exe" --root "%ROOT%" --fingerprints "%HASHES%" --rpf8-source "%RPF8SRC%" --out "%OUT%"
 set "RC=!ERRORLEVEL!"
 if not "!RC!"=="0" goto PROBEFAIL
+if not exist "%OUT%\CONTENT-nested-archives.csv" (
+  echo [ERROR] Exact nested archive TOC hash report is missing.
+  pause
+  exit /b 6
+)
 
-echo [4/4] Mapping nested archives against pinned public CitizenFX names...
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0Map-VOX-RDR2-Anim0.ps1" -NestedCsv "%OUT%\CONTENT-nested-entries.csv" -CitizenFxHeader "%CFX%" -OutDir "%OUT%"
+echo [4/4] Mapping nested archives by exact CitizenFX TOC SHA-256...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0Map-VOX-RDR2-Anim0-v080.ps1" -NestedCsv "%OUT%\CONTENT-nested-entries.csv" -NestedArchivesCsv "%OUT%\CONTENT-nested-archives.csv" -CitizenFxHeader "%CFX%" -OutDir "%OUT%"
 set "MAPRC=!ERRORLEVEL!"
 rd /s /q "%TMPDIR%" >nul 2>&1
 if not "!MAPRC!"=="0" (
-  echo [WARNING] anim_0 metadata succeeded, but public-name mapping returned !MAPRC!.
+  echo [WARNING] anim_0 metadata succeeded, but exact public-name mapping returned !MAPRC!.
   echo Output metadata is still available in: %OUT%
   pause
   exit /b !MAPRC!
 )
 echo.
-echo [OK] anim_0 research pass completed.
+echo [OK] anim_0 exact research pass completed.
 echo Output: %OUT%
-echo Send ANIM0-report.txt, ANIM0-summary.json, ANIM0-priority-archives.csv and ANIM0-ycd-candidates.csv.
+echo Send ANIM0-exact-report.txt, ANIM0-exact-summary.json and ANIM0-exact-priority-archives.csv.
 pause
 exit /b 0
 
