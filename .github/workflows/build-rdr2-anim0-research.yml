@@ -46,7 +46,9 @@ jobs:
               std::ostringstream s;s<<std::hex<<std::setfill('0');for(uint8_t b:digest)s<<std::setw(2)<<(int)b;return s.str();
           }
           '@
-          $text=$shaHelper+"`r`n"+$text
+          $insertMarker='#undef wmain'
+          if(-not $text.Contains($insertMarker)){throw 'Common probe include marker missing'}
+          $text=$text.Replace($insertMarker,$insertMarker+"`r`n"+$shaHelper)
 
           $self='static bool ProbeSelfTest(){'
           if(-not $text.Contains($self)){throw 'ProbeSelfTest marker missing'}
