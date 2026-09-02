@@ -91,21 +91,33 @@ if (-not $proc) {
 if (-not $proc) { throw 'RDR2.exe did not start.' }
 Start-Sleep -Seconds 8
 
-function Extract-RpfEntry {
-    param([string]$Archive, [string]$Entry, [string]$Destination, [switch]$FindKeys)
+function Extract-RpfHash {
+    param(
+        [string]$Archive,
+        [string]$Hash,
+        [int]$ExtId,
+        [string]$Destination,
+        [switch]$FindKeys
+    )
+
     $env:SWAGE_VERIFY_RPF = $Archive
-    $env:SWAGE_EXTRACT_ENTRY = $Entry
+    $env:SWAGE_DIRECT_HASH = $Hash
+    $env:SWAGE_DIRECT_EXTID = [string]$ExtId
     $env:SWAGE_EXTRACT_OUT = $Destination
+    Remove-Item Env:SWAGE_EXTRACT_ENTRY -ErrorAction SilentlyContinue
     if ($FindKeys) { $env:SWAGE_FIND_KEYS = '1' } else { Remove-Item Env:SWAGE_FIND_KEYS -ErrorAction SilentlyContinue }
+
     try {
         & $Helper
-        if ($LASTEXITCODE -ne 0) { throw "Archive extraction failed with code $LASTEXITCODE" }
-        if (-not (Test-Path $Destination)) { throw "Archive extraction did not create $Destination" }
+        if ($LASTEXITCODE -ne 0) { throw "Direct RPF8 extraction failed with code $LASTEXITCODE" }
+        if (-not (Test-Path $Destination)) { throw "Direct RPF8 extraction did not create $Destination" }
     }
     finally {
         Remove-Item Env:SWAGE_VERIFY_RPF -ErrorAction SilentlyContinue
-        Remove-Item Env:SWAGE_EXTRACT_ENTRY -ErrorAction SilentlyContinue
+        Remove-Item Env:SWAGE_DIRECT_HASH -ErrorAction SilentlyContinue
+        Remove-Item Env:SWAGE_DIRECT_EXTID -ErrorAction SilentlyContinue
         Remove-Item Env:SWAGE_EXTRACT_OUT -ErrorAction SilentlyContinue
+        Remove-Item Env:SWAGE_EXTRACT_ENTRY -ErrorAction SilentlyContinue
         Remove-Item Env:SWAGE_FIND_KEYS -ErrorAction SilentlyContinue
     }
 }
@@ -113,20 +125,16 @@ function Extract-RpfEntry {
 Section '1/4 - Pull one generic RDR2 locomotion animation'
 $LocoRpf = Join-Path $Work 'clip_mech_loco_m.rpf'
 $SourceYcd = Join-Path $Work '0386705F-rdr2.ycd'
-# RPF8 hashes the full normalized path without extension, not only the basename.
-# JOAAT("anim/ingame/clip_mech_loco_m") = 60D83661.
-# If ArchiveExplorer has rdr2_files.txt, Swage exposes the resolved path; otherwise it exposes hash/60D83661.rpf.
-$SwageNames = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'ArchiveExplorer\rdr2_files.txt'
-if (Test-Path $SwageNames) {
-    $LocoEntry = 'anim/ingame/clip_mech_loco_m.rpf'
-    Write-Host '[RPF8] Using resolved archive path: anim/ingame/clip_mech_loco_m.rpf'
-} else {
-    $LocoEntry = 'hash/60D83661.rpf'
-    Write-Host '[RPF8] Using deterministic archive hash: 60D83661'
-}
-# 0386705F is an unresolved YCD entry listed inside clip_mech_loco_m.rpf.
-Extract-RpfEntry -Archive $Anim0 -Entry $LocoEntry -Destination $LocoRpf -FindKeys
-Extract-RpfEntry -Archive $LocoRpf -Entry 'hash/0386705F.ycd' -Destination $SourceYcd
+
+# Completed v0.9 scan: clip_mech_loco_m is outer entry index 205,
+# hash 60D83661, ext-id 0 (RPF). We now bypass Swage's VFS/name lookup entirely.
+Write-Host '[RPF8] Direct table lookup: hash 60D83661 / ext 0 (clip_mech_loco_m.rpf)'
+Extract-RpfHash -Archive $Anim0 -Hash '60D83661' -ExtId 0 -Destination $LocoRpf -FindKeys
+
+# 0386705F is the selected YCD hash inside clip_mech_loco_m.
+# RPF8 ExtraRageExts id 67 is #cd -> ycd on PC platform y.
+Write-Host '[RPF8] Direct nested lookup: hash 0386705F / ext 67 (YCD)'
+Extract-RpfHash -Archive $LocoRpf -Hash '0386705F' -ExtId 67 -Destination $SourceYcd
 
 if ($StartedRdr2) {
     try {
