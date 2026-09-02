@@ -11,112 +11,101 @@ on:
       - '.github/workflows/build-rdr2-animation-bridge.yml'
 
 jobs:
-  build-windows:
-    runs-on: windows-2022
+  build-direct-bridge:
+    runs-on: ubuntu-latest
     permissions:
       contents: read
+      actions: read
 
     steps:
       - name: Checkout Kaguya bridge branch
         uses: actions/checkout@v4
 
-      - name: Clone pinned Swage source
-        shell: pwsh
-        run: |
-          git clone https://github.com/0x1F9F1/Swage.git _deps/Swage
-          git -C _deps/Swage checkout 201320d61ae04909f01af247c41f864a9174b691
-
-      - name: Apply VOX Oodle + headless patches
-        shell: pwsh
-        run: |
-          python tools/RDR2AnimationBridge/patch_swage.py _deps/Swage
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      - name: Configure ArchiveExplorer x64
-        shell: pwsh
-        run: |
-          cmake -S _deps/Swage -B _build/Swage -A x64 "-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      - name: Build ArchiveExplorer Release
-        shell: pwsh
-        run: |
-          cmake --build _build/Swage --config Release --target ArchiveExplorer -- /m
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Reuse validated patched ArchiveExplorer helper
+        uses: actions/download-artifact@v4
+        with:
+          name: VOX-RDR2-Animation-Bridge-First-YCD
+          path: _helper_artifact
+          github-token: ${{ github.token }}
+          run-id: 33636267789
 
       - name: Clone pinned CodeWalker source
-        shell: pwsh
+        shell: bash
         run: |
           git clone https://github.com/dexyfex/CodeWalker.git _deps/CodeWalker
           git -C _deps/CodeWalker checkout 485d56bec00262ed7fa472261cce7bbc6202b96e
 
-      - name: Build RSC8 to RSC7 YCD compatibility bridge
-        shell: pwsh
+      - name: Build Windows RSC8 to RSC7 YCD compatibility bridge
+        shell: bash
         run: |
-          $cw = "$($PWD.Path)\_deps\CodeWalker"
-          dotnet publish tools/RDR2AnimationBridge/Rdr2YcdCompat/Rdr2YcdCompat.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -p:CodeWalkerRoot="$cw" -o _build/Rdr2YcdCompat
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          CW="$GITHUB_WORKSPACE/_deps/CodeWalker"
+          dotnet publish tools/RDR2AnimationBridge/Rdr2YcdCompat/Rdr2YcdCompat.csproj \
+            -c Release -r win-x64 --self-contained true \
+            -p:PublishSingleFile=false -p:CodeWalkerRoot="$CW" \
+            -o _build/Rdr2YcdCompat
 
-      - name: Build RPF7 DLC packer
-        shell: pwsh
+      - name: Install Windows Rust cross toolchain
+        shell: bash
         run: |
-          cargo build --manifest-path tools/RDR2AnimationBridge/VoxRpfPack/Cargo.toml --release
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          sudo apt-get update
+          sudo apt-get install -y gcc-mingw-w64-x86-64
+          rustup target add x86_64-pc-windows-gnu
+
+      - name: Build Windows RPF7 DLC packer
+        shell: bash
+        run: |
+          cargo build --manifest-path tools/RDR2AnimationBridge/VoxRpfPack/Cargo.toml \
+            --release --target x86_64-pc-windows-gnu
 
       - name: Fetch ScriptHookVDotNet Enhanced reference
-        shell: pwsh
+        shell: bash
         run: |
-          $url = 'https://github.com/Chiheb-Bacha/ScriptHookVDotNetEnhanced/releases/download/v1.1.0.6/ScriptHookVDotNetEnhanced-v1.1.0.6.zip'
-          Invoke-WebRequest -Uri $url -OutFile shvdne.zip
-          Expand-Archive shvdne.zip -DestinationPath shvdne
-          $ref = Get-ChildItem shvdne -Recurse -Filter ScriptHookVDotNet3.dll | Select-Object -First 1
-          if (-not $ref) { throw 'ScriptHookVDotNet3.dll not found.' }
-          New-Item -ItemType Directory -Force modules/RDR2AnimationBridgeVI/refs | Out-Null
-          Copy-Item $ref.FullName modules/RDR2AnimationBridgeVI/refs/ScriptHookVDotNet3.dll
+          curl -L --fail -o shvdne.zip 'https://github.com/Chiheb-Bacha/ScriptHookVDotNetEnhanced/releases/download/v1.1.0.6/ScriptHookVDotNetEnhanced-v1.1.0.6.zip'
+          mkdir -p shvdne modules/RDR2AnimationBridgeVI/refs
+          unzip -q shvdne.zip -d shvdne
+          REF=$(find shvdne -type f -name ScriptHookVDotNet3.dll | head -n 1)
+          test -n "$REF"
+          cp "$REF" modules/RDR2AnimationBridgeVI/refs/ScriptHookVDotNet3.dll
 
       - name: Build GTA V Enhanced playback runtime
-        shell: pwsh
+        shell: bash
         run: |
           dotnet build modules/RDR2AnimationBridgeVI/RDR2AnimationBridgeVI.csproj -c Release
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Assemble direct bridge package
-        shell: pwsh
+        shell: bash
         run: |
-          $ErrorActionPreference = 'Stop'
-          $dist = 'dist/VOX-RDR2-to-GTAV-Direct-Bridge'
-          New-Item -ItemType Directory -Force -Path "$dist/helper", "$dist/bridge", "$dist/runtime" | Out-Null
+          set -euxo pipefail
+          DIST='dist/VOX-RDR2-to-GTAV-Direct-Bridge'
+          mkdir -p "$DIST/helper" "$DIST/bridge" "$DIST/runtime"
 
-          $archiveExplorer = Get-ChildItem _build/Swage -Recurse -Filter ArchiveExplorer.exe | Select-Object -First 1
-          if (-not $archiveExplorer) { throw 'ArchiveExplorer.exe was not produced.' }
-          Copy-Item $archiveExplorer.FullName "$dist/helper/ArchiveExplorer.exe"
-          Get-ChildItem $archiveExplorer.Directory.FullName -Filter *.dll -File | ForEach-Object {
-            Copy-Item $_.FullName "$dist/helper/$($_.Name)"
-          }
+          test -f _helper_artifact/helper/ArchiveExplorer.exe
+          cp _helper_artifact/helper/ArchiveExplorer.exe "$DIST/helper/"
+          cp _helper_artifact/helper/*.dll "$DIST/helper/"
 
-          Copy-Item _build/Rdr2YcdCompat/* "$dist/bridge/" -Recurse
-          $packer = Get-ChildItem tools/RDR2AnimationBridge/VoxRpfPack/target/release -Filter vox-rpf-pack.exe | Select-Object -First 1
-          if (-not $packer) { throw 'vox-rpf-pack.exe was not produced.' }
-          Copy-Item $packer.FullName "$dist/bridge/vox-rpf-pack.exe"
+          cp -r _build/Rdr2YcdCompat/. "$DIST/bridge/"
+          PACKER='tools/RDR2AnimationBridge/VoxRpfPack/target/x86_64-pc-windows-gnu/release/vox-rpf-pack.exe'
+          test -f "$PACKER"
+          cp "$PACKER" "$DIST/bridge/vox-rpf-pack.exe"
 
-          $runtime = 'modules/RDR2AnimationBridgeVI/bin/Release/net48/RDR2AnimationBridgeVI.dll'
-          if (-not (Test-Path $runtime)) { throw 'RDR2AnimationBridgeVI.dll was not produced.' }
-          Copy-Item $runtime "$dist/runtime/RDR2AnimationBridgeVI.dll"
+          RUNTIME='modules/RDR2AnimationBridgeVI/bin/Release/net48/RDR2AnimationBridgeVI.dll'
+          test -f "$RUNTIME"
+          cp "$RUNTIME" "$DIST/runtime/RDR2AnimationBridgeVI.dll"
 
-          Copy-Item tools/RDR2AnimationBridge/RUN_DIRECT_GTA_BRIDGE.ps1 "$dist/RUN_DIRECT_GTA_BRIDGE.ps1"
-          Copy-Item tools/RDR2AnimationBridge/RUN_DIRECT_GTA_BRIDGE.bat "$dist/RUN_DIRECT_GTA_BRIDGE.bat"
+          cp tools/RDR2AnimationBridge/RUN_DIRECT_GTA_BRIDGE.ps1 "$DIST/"
+          cp tools/RDR2AnimationBridge/RUN_DIRECT_GTA_BRIDGE.bat "$DIST/"
 
-          @"
+          cat > "$DIST/BUILD.txt" <<'EOF'
           VOX RDR2 -> GTA V Direct Animation Bridge v0.1
-          Purpose: one real end-to-end RDR2 animation -> GTA V Enhanced attempt.
-          Source animation is read from the user's own RDR2 installation and is never bundled.
-          Swage source is fetched at build time and patched with the exact-quantum Oodle fix proven by 3755/3755 YCD decodes.
-          CodeWalker source is fetched at build time and used as the YCD ClipDictionary compatibility/rebuild layer.
-          RPF7 DLC packaging uses rpf-rs pinned at 3526dde8b15570f76caa1433278e31a564506c8d.
-          Runtime targets ScriptHookVDotNet Enhanced v1.1.0.6.
-          "@ | Set-Content -Encoding UTF8 "$dist/BUILD.txt"
+          End-to-end target: one local RDR2 YCD -> CodeWalker ClipDictionary -> GTA V RSC7 YCD -> RPF7 DLC -> Enhanced F8 playback runtime.
+          The source RDR2 animation, encryption keys and Oodle DLL are never bundled.
+          ArchiveExplorer helper is the already validated patched build that achieved 3755/3755 YCD decodes.
+          CodeWalker is pinned at 485d56bec00262ed7fa472261cce7bbc6202b96e.
+          rpf-rs is pinned at 3526dde8b15570f76caa1433278e31a564506c8d.
+          ScriptHookVDotNet Enhanced reference is v1.1.0.6.
+          EOF
 
-          Get-ChildItem $dist -Recurse | Select-Object FullName,Length
+          find "$DIST" -maxdepth 3 -type f -printf '%p %s bytes\n'
 
       - name: Upload direct bridge
         uses: actions/upload-artifact@v4
