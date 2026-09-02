@@ -1,0 +1,86 @@
+name: Build VOX RDR2 RPF8 Research Profiler
+
+on:
+  push:
+    branches:
+      - rc3-runtime-repair
+    paths:
+      - 'tools/rdr2-profiler/**'
+      - '.github/workflows/build-rdr2-rpf8-profiler.yml'
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build standalone EXE
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller
+          pyinstaller --clean --onefile --console --name VOX-RDR2-RPF8-Research-Profiler tools/rdr2-profiler/vox_rdr2_rpf8_profiler.py
+          if (-not (Test-Path dist/VOX-RDR2-RPF8-Research-Profiler.exe)) { throw 'EXE not built' }
+
+      - name: Deterministic profiler self-test
+        shell: pwsh
+        run: |
+          & .\dist\VOX-RDR2-RPF8-Research-Profiler.exe --self-test
+          if ($LASTEXITCODE -ne 0) { throw 'Profiler self-test failed' }
+
+      - name: Validate pinned public source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $ProgressPreference='SilentlyContinue'
+          Invoke-WebRequest -UseBasicParsing -Headers @{'User-Agent'='VOX-RDR2-Profiler-CI'} -Uri 'https://raw.githubusercontent.com/femga/rdr3_discoveries/49087fb2756594d2364e4abf79ee1df44d6ef3b4/animations/scenarios/scenario_types_with_conditional_anims.lua' -OutFile public-smoke.lua
+          $t = Get-Content public-smoke.lua -Raw
+          if ($t -notmatch 'WORLD_HUMAN_LEAN_BACK_WALL') { throw 'Pinned public source validation failed' }
+
+      - name: Synthetic end-to-end CSV test
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force smoke/knowledge | Out-Null
+          @'
+          local dict = "test/path/interaction_greet.ycd"
+          '@ | Set-Content smoke/knowledge/test.lua -Encoding UTF8
+          @'
+          def h(s):
+              v=0
+              for ch in s.lower().replace('\\','/'):
+                  v=(v+ord(ch))&0xffffffff; v=(v+(v<<10))&0xffffffff; v^=v>>6
+              v=(v+(v<<3))&0xffffffff; v^=v>>11; v=(v+(v<<15))&0xffffffff
+              return v&0xffffffff
+          x=h('test/path/interaction_greet')
+          fields='archive,index,hash_hex,extension,generated_name,enc_config,enc_key_id,entry_encrypted,is_resource,signature_protected,is_directory,compressor,byte_offset,on_disk_size,end_offset,logical_size,virtual_flags_hex,physical_flags_hex,offset_in_bounds,range_in_bounds,raw_magic_at_offset'
+          row=f'common_0.rpf,0,0x{x:08X},ycd,{x:08X}.ycd,0,255,false,true,false,false,0,512,4096,4608,4096,0x0,0x0,true,true,RSC8'
+          open('smoke/entries.csv','w',encoding='utf-8').write(fields+'\n'+row+'\n')
+          '@ | Set-Content smoke/make.py -Encoding UTF8
+          python smoke/make.py
+          & .\dist\VOX-RDR2-RPF8-Research-Profiler.exe --entries smoke/entries.csv --knowledge smoke/knowledge --out smoke/out
+          if ($LASTEXITCODE -ne 0) { throw 'Synthetic profiler run failed' }
+          $m = Import-Csv smoke/out/PROFILE-resolved-names.csv | Select-Object -First 1
+          if (-not $m -or $m.resolved_candidate -ne 'test/path/interaction_greet.ycd' -or [int]$m.confidence -lt 100) { throw 'Exact dehash assertion failed' }
+          $p = Import-Csv smoke/out/PROFILE-priority-candidates.csv | Select-Object -First 1
+          if (-not $p -or $p.archive -ne 'common_0.rpf' -or $p.extension -ne 'ycd') { throw 'Priority output assertion failed' }
+
+      - name: Assemble package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force package | Out-Null
+          Copy-Item dist/VOX-RDR2-RPF8-Research-Profiler.exe package/
+          Copy-Item tools/rdr2-profiler/Run-VOX-RDR2-RPF8-Research-Profiler.bat package/
+          Copy-Item tools/rdr2-profiler/README.txt package/
+          Compress-Archive -Path package/* -DestinationPath VOX-RDR2-RPF8-Research-Profiler-v0.5.0.zip -Force
+          Get-FileHash VOX-RDR2-RPF8-Research-Profiler-v0.5.0.zip -Algorithm SHA256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VOX-RDR2-RPF8-Research-Profiler-v0.5.0
+          path: VOX-RDR2-RPF8-Research-Profiler-v0.5.0.zip
+          if-no-files-found: error
