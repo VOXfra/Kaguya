@@ -17,7 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Generate anim_0 exact-TOC probe source
+      - name: Generate anim_0 dual-TOC probe source
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
@@ -28,7 +28,7 @@ jobs:
           $matches=([regex]::Matches($text,[regex]::Escape($needle))).Count
           if($matches -ne 1){throw "Expected exactly one default-target loop, got $matches"}
           $text=$text.Replace($needle,'std::vector<std::string> voxAnimTargets={"anim_0.rpf"};for(auto&rel:voxAnimTargets)')
-          $text=$text.Replace('VOX RDR2 RPF8 Recursive Content Probe','VOX RDR2 anim_0 Exact TOC Probe').Replace('0.6.0','0.8.0')
+          $text=$text.Replace('VOX RDR2 RPF8 Recursive Content Probe','VOX RDR2 anim_0 Dual TOC Probe').Replace('0.6.0','0.8.1')
 
           $shaHelper=@'
           #include <bcrypt.h>
@@ -56,12 +56,12 @@ jobs:
 
           $oldStream='std::ofstream nested(out/"CONTENT-nested-entries.csv",std::ios::binary),direct(out/"CONTENT-direct-probes.csv",std::ios::binary),hits(out/"CONTENT-keyword-hits.csv",std::ios::binary),prio(out/"CONTENT-priority-candidates.csv",std::ios::binary);nested<<"outer_archive,outer_index,outer_name,nested_index,hash_hex,extension,generated_name,enc_key,enc_config,compressor,logical_size,on_disk_size,is_resource\n";'
           if(-not $text.Contains($oldStream)){throw 'Nested output stream marker missing'}
-          $newStream='std::ofstream nested(out/"CONTENT-nested-entries.csv",std::ios::binary),nestedArc(out/"CONTENT-nested-archives.csv",std::ios::binary),direct(out/"CONTENT-direct-probes.csv",std::ios::binary),hits(out/"CONTENT-keyword-hits.csv",std::ios::binary),prio(out/"CONTENT-priority-candidates.csv",std::ios::binary);nested<<"outer_archive,outer_index,outer_name,nested_index,hash_hex,extension,generated_name,enc_key,enc_config,compressor,logical_size,on_disk_size,is_resource\n";nestedArc<<"outer_index,outer_hash,outer_generated_name,toc_sha256,nested_entries,decryption_tag,platform_id\n";'
+          $newStream='std::ofstream nested(out/"CONTENT-nested-entries.csv",std::ios::binary),nestedArc(out/"CONTENT-nested-archives.csv",std::ios::binary),direct(out/"CONTENT-direct-probes.csv",std::ios::binary),hits(out/"CONTENT-keyword-hits.csv",std::ios::binary),prio(out/"CONTENT-priority-candidates.csv",std::ios::binary);nested<<"outer_archive,outer_index,outer_name,nested_index,hash_hex,extension,generated_name,enc_key,enc_config,compressor,logical_size,on_disk_size,is_resource\n";nestedArc<<"outer_index,outer_hash,outer_generated_name,toc_sha256_raw,toc_sha256_decrypted,nested_entries,decryption_tag,platform_id\n";'
           $text=$text.Replace($oldStream,$newStream)
 
           $oldParse='if(ParseRpfTocPrefix(pref,ctx,keys,iv,np,nt,ne,ps)){nestedArchives++;char nplat='
           if(-not $text.Contains($oldParse)){throw 'Nested parse marker missing'}
-          $newParse='if(ParseRpfTocPrefix(pref,ctx,keys,iv,np,nt,ne,ps)){nestedArchives++;uint32_t voxTocN=U32LE(pref.data()+4);uint64_t voxTocNeed=TOC_OFFSET+(uint64_t)voxTocN*24;std::vector<uint8_t> voxToc(pref.begin()+TOC_OFFSET,pref.begin()+voxTocNeed);if(nt!=0xFF)DecryptCbc(ctx,keys.at(nt),iv,voxToc);std::string voxTocSha=VoxSha256Hex(voxToc);nestedArc<<i<<","<<Hex(e.hash,8)<<","<<Csv(name)<<","<<voxTocSha<<","<<ne.size()<<","<<Hex(nt,4)<<","<<Hex(np,4)<<"\n";char nplat='
+          $newParse='if(ParseRpfTocPrefix(pref,ctx,keys,iv,np,nt,ne,ps)){nestedArchives++;uint32_t voxTocN=U32LE(pref.data()+4);uint64_t voxTocNeed=TOC_OFFSET+(uint64_t)voxTocN*24;std::vector<uint8_t> voxTocRaw(pref.begin()+TOC_OFFSET,pref.begin()+voxTocNeed);std::string voxTocRawSha=VoxSha256Hex(voxTocRaw);std::vector<uint8_t> voxTocDec=voxTocRaw;if(nt!=0xFF)DecryptCbc(ctx,keys.at(nt),iv,voxTocDec);std::string voxTocDecSha=VoxSha256Hex(voxTocDec);nestedArc<<i<<","<<Hex(e.hash,8)<<","<<Csv(name)<<","<<voxTocRawSha<<","<<voxTocDecSha<<","<<ne.size()<<","<<Hex(nt,4)<<","<<Hex(np,4)<<"\n";char nplat='
           $text=$text.Replace($oldParse,$newParse)
           $text=$text.Replace('nested.close();direct.close();','nested.close();nestedArc.close();direct.close();')
 
@@ -69,7 +69,7 @@ jobs:
           Set-Content -LiteralPath $generated -Value $text -Encoding UTF8
           $check=Get-Content $generated -Raw
           if($check -notmatch 'voxAnimTargets=\{\"anim_0\.rpf\"\}') { throw 'anim_0 target patch missing' }
-          if($check -notmatch 'CONTENT-nested-archives\.csv' -or $check -notmatch 'VoxSha256Hex') { throw 'TOC SHA output patch missing' }
+          if($check -notmatch 'toc_sha256_raw' -or $check -notmatch 'toc_sha256_decrypted' -or $check -notmatch 'VoxSha256Hex') { throw 'Dual TOC SHA output patch missing' }
           if($check -match 'for\(auto&rel:DefaultTargets\(\)\)') { throw 'Default target loop survived specialization' }
 
       - name: Build native probe
@@ -89,7 +89,7 @@ jobs:
           dist\VOX-RDR2-Anim0-Probe.exe --self-test
           if errorlevel 1 exit /b 1
 
-      - name: Validate pinned public sources and exact mapper
+      - name: Validate pinned public sources and dual mapper
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
@@ -105,19 +105,22 @@ jobs:
           Invoke-WebRequest -UseBasicParsing -Headers @{'User-Agent'='VOX-RDR2-Anim0-CI'} -Uri $cfx -OutFile smoke/BaseGameRpfHeaderHashes_RDR3.h
           @'
           outer_archive,outer_index,outer_name,nested_index,hash_hex,extension,generated_name,enc_key,enc_config,compressor,logical_size,on_disk_size,is_resource
-          anim_0.rpf,0,01091736.rpf,0,12345678,ycd,12345678.ycd,7,1,2,4096,2048,true
+          anim_0.rpf,0,00111111.rpf,0,12345678,ycd,12345678.ycd,7,1,2,4096,2048,true
+          anim_0.rpf,1,00222222.rpf,0,87654321,ycd,87654321.ycd,8,1,2,8192,4096,true
           '@ | Set-Content smoke/CONTENT-nested-entries.csv -Encoding ASCII
           @'
-          outer_index,outer_hash,outer_generated_name,toc_sha256,nested_entries,decryption_tag,platform_id
-          0,01091736,01091736.rpf,be7a76fd1e0442016d07b4121c3f00e48b4b994904820fbb955726a8492818c5,1,0001,0079
+          outer_index,outer_hash,outer_generated_name,toc_sha256_raw,toc_sha256_decrypted,nested_entries,decryption_tag,platform_id
+          0,00111111,00111111.rpf,5b34d3de70b5922f153622e6e7265473c9f7321ab2d763e4f0ed0730877cdcd1,aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,1,006e,0079
+          1,00222222,00222222.rpf,bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb,7adf67ee01ff10d48041dd80d6fc3a8e9f6a9859fe9eadc1aec791d89250f004,1,004f,0079
           '@ | Set-Content smoke/CONTENT-nested-archives.csv -Encoding ASCII
-          & .\tools\rdr2-anim0\Map-VOX-RDR2-Anim0-v080.ps1 -NestedCsv smoke/CONTENT-nested-entries.csv -NestedArchivesCsv smoke/CONTENT-nested-archives.csv -CitizenFxHeader smoke/BaseGameRpfHeaderHashes_RDR3.h -OutDir smoke/out
-          if($LASTEXITCODE -ne 0){throw 'Exact anim_0 mapper smoke test failed'}
-          $m=Import-Csv smoke/out/ANIM0-exact-archive-map.csv | Select-Object -First 1
-          if(-not $m){throw 'Exact archive map missing'}
-          if($m.public_archive_name -ne 'clip_mech_animal_interaction.rpf' -or $m.confidence -ne 'exact_toc_sha256'){throw "Unexpected exact mapping: $($m|ConvertTo-Json -Compress)"}
-          $s=Get-Content smoke/out/ANIM0-exact-summary.json -Raw | ConvertFrom-Json
-          if($s.exact_toc_sha256_matches -ne 1 -or $s.ycd_entries -ne 1){throw 'Exact mapper summary assertions failed'}
+          & .\tools\rdr2-anim0\Map-VOX-RDR2-Anim0-v081.ps1 -NestedCsv smoke/CONTENT-nested-entries.csv -NestedArchivesCsv smoke/CONTENT-nested-archives.csv -CitizenFxHeader smoke/BaseGameRpfHeaderHashes_RDR3.h -OutDir smoke/out
+          if($LASTEXITCODE -ne 0){throw 'Dual anim_0 mapper smoke test failed'}
+          $m=@(Import-Csv smoke/out/ANIM0-dual-archive-map.csv | Sort-Object {[int]$_.outer_index})
+          if($m.Count -ne 2){throw 'Dual archive map row count mismatch'}
+          if($m[0].public_archive_name -ne 'clip_mega_creatures_ambphibian.rpf' -or $m[0].confidence -ne 'exact_raw_toc_sha256'){throw "Unexpected RAW mapping: $($m[0]|ConvertTo-Json -Compress)"}
+          if($m[1].public_archive_name -ne 'clip_mech_skin.rpf' -or $m[1].confidence -ne 'exact_decrypted_toc_sha256'){throw "Unexpected decrypted mapping: $($m[1]|ConvertTo-Json -Compress)"}
+          $s=Get-Content smoke/out/ANIM0-dual-summary.json -Raw | ConvertFrom-Json
+          if($s.exact_raw_toc_sha256_matches -ne 1 -or $s.exact_decrypted_toc_sha256_matches -ne 1 -or $s.exact_total -ne 2 -or $s.order_consistent_exact -ne 2){throw 'Dual mapper summary assertions failed'}
 
       - name: Assemble and verify package
         shell: pwsh
@@ -126,20 +129,20 @@ jobs:
           New-Item -ItemType Directory -Force package | Out-Null
           Copy-Item dist/VOX-RDR2-Anim0-Probe.exe package/
           Copy-Item tools/rdr2-anim0/Run-VOX-RDR2-Anim0-Research.bat package/
-          Copy-Item tools/rdr2-anim0/Map-VOX-RDR2-Anim0-v080.ps1 package/
+          Copy-Item tools/rdr2-anim0/Map-VOX-RDR2-Anim0-v081.ps1 package/
           Copy-Item tools/rdr2-anim0/README.txt package/
           $bat=Get-Content package/Run-VOX-RDR2-Anim0-Research.bat -Raw
-          if($bat -notmatch 'anim_0\.rpf' -or $bat -notmatch 'TOC SHA-256' -or $bat -notmatch 'No Rockstar asset'){throw 'Launcher safety/exact-hash markers missing'}
-          Compress-Archive -Path package/* -DestinationPath VOX-RDR2-Anim0-Research-v0.8.0.zip -Force
-          Expand-Archive VOX-RDR2-Anim0-Research-v0.8.0.zip verify -Force
+          if($bat -notmatch 'anim_0\.rpf' -or $bat -notmatch 'RAW and decrypted TOC SHA-256' -or $bat -notmatch 'No Rockstar asset'){throw 'Launcher safety/dual-hash markers missing'}
+          Compress-Archive -Path package/* -DestinationPath VOX-RDR2-Anim0-Research-v0.8.1.zip -Force
+          Expand-Archive VOX-RDR2-Anim0-Research-v0.8.1.zip verify -Force
           $names=@(Get-ChildItem verify -File | Select-Object -ExpandProperty Name | Sort-Object)
           if($names.Count -ne 4){throw "Unexpected package file count: $($names.Count)"}
           if(-not (Test-Path verify/VOX-RDR2-Anim0-Probe.exe)){throw 'EXE missing from package'}
-          if(-not (Test-Path verify/Map-VOX-RDR2-Anim0-v080.ps1)){throw 'Exact mapper missing from package'}
-          Get-FileHash VOX-RDR2-Anim0-Research-v0.8.0.zip -Algorithm SHA256
+          if(-not (Test-Path verify/Map-VOX-RDR2-Anim0-v081.ps1)){throw 'Dual mapper missing from package'}
+          Get-FileHash VOX-RDR2-Anim0-Research-v0.8.1.zip -Algorithm SHA256
 
       - uses: actions/upload-artifact@v4
         with:
-          name: VOX-RDR2-Anim0-Research-v0.8.0
-          path: VOX-RDR2-Anim0-Research-v0.8.0.zip
+          name: VOX-RDR2-Anim0-Research-v0.8.1
+          path: VOX-RDR2-Anim0-Research-v0.8.1.zip
           if-no-files-found: error
