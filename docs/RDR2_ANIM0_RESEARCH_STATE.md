@@ -18,58 +18,65 @@ Resume from **anim_0.rpf-focused research** using `tools/rdr2-anim0`.
 - Recursive content probe v0.6: 732/732 full local PC secret blocks found.
 - Oodle loaded from local `oo2core_5_win64.dll`.
 - Generic v0.6 pass: 2947 outer entries, 795 nested RPF8 archives opened, 33816 nested entries, 5044 YCD, 1757 YAS, 225 YMT, 8239 keyword hits.
+- Real focused anim_0 v0.7 pass: 582/582 outer entries opened, 582/582 nested RPF8 archives opened, 41827 nested entries enumerated, 25646 YCD, 9927 YAS, 6 YMT, 3524 keyword hits.
+- Real v0.7 public-name mapper saw 582 CitizenFX names for 582 local nested archives but obtained **0 exact RAGE name-hash matches**. All v0.7 archive names were therefore order candidates only and must not be treated as authoritative.
 - No raw Rockstar asset, key bytes or process-memory dump was written by these tools.
 
-## Important older real anim_0 result recovered from project history
+## Exact archive-name shortcut discovered after v0.7
 
-A prior VOX RAGE Extractor v0.5 run on 2026-08-29 targeted root-level `anim_0.rpf` directly and reached:
+CitizenFX RDR3 pure-mode does not SHA-256 the full nested RPF. In `HookInitialMount.cpp`, the validation routine receives the decrypted RPF8 entry table at `headerData + 0x110` with length `EntryCount * 24`; `PurePackfile.cpp` SHA-256 hashes those bytes.
 
-- top-level entries: 582
-- top-level TOC plausibility: 582/582
-- top-level nested RPF candidates: 582
-- nested RPF8 headers valid: 582/582
-- nested RPF TOCs decoded: 582 OK / 0 failed
-- nested YCD entries found: 25646
-- old final barrier: 3 nested entry encryption keys still required live memory
+Therefore the hashes in the pinned `BaseGameRpfHeaderHashes_RDR3.h` can be matched directly against SHA-256 of each **decrypted nested TOC** already available in memory. No large RPF extraction or whole-file hashing is required.
 
-That old three-key barrier should not be assumed to remain: the current v0.6 pipeline has since proven full 732/732 local secret discovery. A current anim_0 run is required to prove this end-to-end.
-
-## Public name source
-
-CitizenFX/FiveM publishes a base-game RDR3 RPF hash header containing the `anim_0.rpf` section and real nested archive names. The v0.7 mapper pins commit:
+Pinned CitizenFX commit:
 
 `03dcc562ca175e24eb018569ecb919b4b7a56824`
 
-Examples include:
-
-- `clip_mech_animal_interaction.rpf`
-- `clip_ai_gestures.rpf`
-- `clip_mech_doors.rpf`
-- `clip_ai_react.rpf`
-- `clip_ai_getup.rpf`
-- `clip_mech_busted.rpf`
-- `clip_mech_revive.rpf`
-- `clip_mech_ledge.rpf`
-- `clip_ai_avoids.rpf`
-- `scenario@code.rpf`
-- `script@common.rpf`
-- `script@ambient.rpf`
-- locomotion/strafe/ambient/vehicle/creature archives
-
-The mapper distinguishes exact RAGE-hash matches from order-only candidates. Do not report order-only candidates as authoritative names.
+This exact-TOC approach is implemented by anim_0 Research **v0.8.0**. Confidence label for a successful public match is `exact_toc_sha256`.
 
 ## Current focused tool
 
-`VOX RDR2 anim_0 Research v0.7.0`
+`VOX RDR2 anim_0 Research v0.8.0`
 
 Purpose:
 
 1. target only root `anim_0.rpf`;
-2. reuse the proven v0.6 TFIT2/RPF8/Oodle engine;
-3. enumerate nested archive metadata and YCD/YAS/YMT entries;
-4. map nested RPF names against the pinned CitizenFX public list;
-5. rank archives for interactions, melee, locomotion, doors, reactions, weapons, wildlife and vehicle systems;
-6. output metadata only.
+2. reuse the proven TFIT2/RPF8/Oodle engine;
+3. open all nested RPF8 archives in memory;
+4. compute SHA-256 of each decrypted nested entry table only;
+5. map that SHA against the pinned CitizenFX RDR3 table;
+6. export exact archive names where matched;
+7. rank exact archives/YCD/YAS candidates for interactions, melee, locomotion, doors, reactions, weapons, wildlife and vehicles;
+8. output metadata only.
+
+CI status for v0.8.0:
+
+- native Windows x64 compilation: passed
+- deterministic TFIT2 test: passed
+- recursive RPF8 TOC self-test: passed
+- SHA-256 standard vector: passed
+- exact CitizenFX mapper synthetic test: passed
+- package validation: passed
+
+A real v0.8 run is still required to measure how many of the user's 582 current local nested archives match the pinned CitizenFX TOC hashes.
+
+## Public archive examples worth prioritizing once exact
+
+- `clip_ai_gestures.rpf`
+- `clip_script_common.rpf`
+- `clip_mech_animal_interaction.rpf`
+- `clip_ai_combat.rpf`
+- `clip_mech_melee.rpf`
+- `clip_mech_grapple.rpf`
+- `clip_mech_loco_m.rpf`
+- `clip_mech_loco_f.rpf`
+- `clip_ai_getup.rpf`
+- `clip_ai_react.rpf`
+- `clip_ai_ragdoll.rpf`
+- `clip_mech_doors.rpf`
+- `clip_mech_busted.rpf`
+- `clip_mech_revive.rpf`
+- scenario/script/ambient packs
 
 ## Do not repeat these dead ends
 
@@ -79,7 +86,8 @@ Purpose:
 - Do not keep brute-forcing outer hashes using generic public strings: v0.5 tested 206686 candidates and resolved 0/2947 outer entries.
 - Do not prioritize audio PEDS archives as gameplay-AI evidence; their names are audio banks.
 - Do not redo generic 8-archive recursion when the research goal is animations; `anim_0.rpf` is the proven high-yield target.
+- Do not use v0.7 `citizenfx_order_candidate` names as proof. Exact archive identity should come from v0.8 `exact_toc_sha256` matches.
 
-## Next decision after a successful v0.7 real run
+## Next decision after the real v0.8 run
 
-Use `ANIM0-priority-archives.csv` and `ANIM0-ycd-candidates.csv` to select a small set of system archives (interaction/melee/loco/doors/reactions). Only then add targeted in-memory YCD/RSC8 structure inspection. Avoid extracting or decoding tens of thousands of animation resources blindly.
+Use `ANIM0-exact-priority-archives.csv`, `ANIM0-exact-ycd-candidates.csv` and `ANIM0-exact-yas-candidates.csv` to select a small exact set of system archives. Then inspect only those YCD/RSC8 resources in memory. Avoid decoding tens of thousands of animation resources blindly.
