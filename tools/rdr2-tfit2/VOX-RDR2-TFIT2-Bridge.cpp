@@ -12,6 +12,7 @@
 #include <iomanip>
 #include <iostream>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <regex>
@@ -362,7 +363,7 @@ static void DecryptCbc(const Tfit2Context& c,const Tfit2Key& k,const uint8_t iv0
 
 static uint64_t Xs64(uint64_t& x){x^=x<<13;x^=x>>7;x^=x<<17;return x;}
 static bool SelfTest() {
-    Tfit2Context c{}; Tfit2Key k{}; uint64_t s=0x123456789ABCDEF0ull;
+    auto cp=std::make_unique<Tfit2Context>(); Tfit2Context& c=*cp; Tfit2Key k{}; uint64_t s=0x123456789ABCDEF0ull;
     for(auto& row:c.init)for(auto& v:row)v=Xs64(s);
     for(auto& r:c.rounds){for(auto& v:r.lookup)v=Xs64(s);for(auto& b:r.blocks){for(auto& m:b.masks)m=Xs64(s);b.xorr=(uint32_t)(Xs64(s)&0xFFF);}}
     for(auto& row:c.endMasks)for(auto& v:row)v=Xs64(s);
@@ -408,7 +409,6 @@ static void CopyExact(void* dst,size_t n,const SecretSpec& s) {
 static std::vector<std::string> DefaultTargets(){
     return {"common_0.rpf","x64/dlcpacks/dlc_content_extra/dlc.rpf","x64/dlcpacks/mp004/dlc.rpf","x64/dlcpacks/mp005/dlc.rpf","x64/dlcpacks/mp006/dlc.rpf","x64/dlcpacks/mp008/dlc.rpf","x64/dlcpacks/patchpack001/dlc.rpf","x64/audio/sfx/S_MISC.rpf"};
 }
-
 
 static bool FingerprintSelfTest(const fs::path& hashes,const fs::path& rpf8src) {
     std::string htxt=ReadText(hashes), ctxt=ReadText(rpf8src);
@@ -510,7 +510,7 @@ int wmain(int argc,wchar_t** argv) {
             return 3;
         }
 
-        Tfit2Context ctx{}; size_t si=ctxStart;
+        auto ctxp=std::make_unique<Tfit2Context>(); Tfit2Context& ctx=*ctxp; size_t si=ctxStart;
         CopyExact(ctx.init,sizeof(ctx.init),specs[si++]);
         for(int r=0;r<17;r++){
             CopyExact(ctx.rounds[r].lookup,sizeof(ctx.rounds[r].lookup),specs[si++]);
