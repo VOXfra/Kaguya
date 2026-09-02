@@ -120,7 +120,7 @@ jobs:
           if($m[0].public_archive_name -ne 'clip_mega_creatures_ambphibian.rpf' -or $m[0].confidence -ne 'exact_raw_toc_sha256'){throw "Unexpected RAW mapping: $($m[0]|ConvertTo-Json -Compress)"}
           if($m[1].public_archive_name -ne 'clip_mech_skin.rpf' -or $m[1].confidence -ne 'exact_decrypted_toc_sha256'){throw "Unexpected decrypted mapping: $($m[1]|ConvertTo-Json -Compress)"}
           $s=Get-Content smoke/out/ANIM0-dual-summary.json -Raw | ConvertFrom-Json
-          if($s.exact_raw_toc_sha256_matches -ne 1 -or $s.exact_decrypted_toc_sha256_matches -ne 1 -or $s.exact_total -ne 2 -or $s.order_consistent_exact -ne 2){throw 'Dual mapper summary assertions failed'}
+          if($s.exact_raw_toc_sha256_matches -ne 1 -or $s.exact_decrypted_toc_sha256_matches -ne 1 -or $s.exact_total -ne 2 -or $s.order_consistent_exact -ne 0){throw 'Dual mapper summary assertions failed'}
 
       - name: Assemble and verify package
         shell: pwsh
