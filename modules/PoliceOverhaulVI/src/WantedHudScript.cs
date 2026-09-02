@@ -14,8 +14,15 @@ namespace VOX.PoliceOverhaulVI
 
     public sealed class PoliceOverhaulVIWantedHudScript : Script
     {
-        private const string CommonMenu="commonmenu";
-        private const string RockstarStar="shop_new_star";
+        // Rockstar's real HUD component. The HUD_WANTED_STARS Scaleform already
+        // contains star1..star6 even though normal GTA V gameplay caps wanted at 5.
+        private const int HudWantedStars=1;
+        private static readonly Hash RequestScaleformScriptHudMovie=(Hash)0x9304881D6F6537EAUL;
+        private static readonly Hash HasScaleformScriptHudMovieLoaded=(Hash)0xDF6E5987D2B4D140UL;
+        private static readonly Hash BeginScaleformScriptHudMovieMethod=(Hash)0x98C494FD5BDFBFD5UL;
+        private static readonly Hash AddParamInt=(Hash)0xC3D0841A0CC546A6UL;
+        private static readonly Hash EndScaleformMovieMethod=(Hash)0xC6796A8FFA375E53UL;
+        private int _nextRequest;
 
         public PoliceOverhaulVIWantedHudScript(){Interval=0;Tick+=OnTick;Aborted+=OnAborted;}
 
@@ -26,19 +33,22 @@ namespace VOX.PoliceOverhaulVI
             int nativeWanted=0;try{nativeWanted=Function.Call<int>(Hash.GET_PLAYER_WANTED_LEVEL,Game.Player.Handle);}catch{}
             if(nativeWanted<=0)return;
 
-            // Keep GTA V's real HUD_WANTED_STARS component untouched. The previous
-            // implementation hid it and redrew the whole row, which is why even the
-            // first five stars no longer looked like GTA. At tier six we add only the
-            // missing sixth Rockstar star beside the native five-star row.
+            // Never hide or redraw the native wanted row. We call the public method
+            // on Rockstar's own HUD_WANTED_STARS movie, asking that movie to reveal
+            // its built-in sixth star. This keeps the exact same artwork, spacing,
+            // flashing and aspect-ratio behaviour as the first five stars.
             try
             {
-                Function.Call(Hash.REQUEST_STREAMED_TEXTURE_DICT,CommonMenu,false);
-                if(!Function.Call<bool>(Hash.HAS_STREAMED_TEXTURE_DICT_LOADED,CommonMenu))return;
-                const float x=0.8525f;
-                const float y=0.0425f;
-                const float width=0.0185f;
-                const float height=0.0330f;
-                Function.Call(Hash.DRAW_SPRITE,CommonMenu,RockstarStar,x,y,width,height,0f,255,255,255,255,false);
+                if(Game.GameTime>=_nextRequest)
+                {
+                    _nextRequest=Game.GameTime+1000;
+                    Function.Call(RequestScaleformScriptHudMovie,HudWantedStars);
+                }
+                if(!Function.Call<bool>(HasScaleformScriptHudMovieLoaded,HudWantedStars))return;
+                bool begun=Function.Call<bool>(BeginScaleformScriptHudMovieMethod,HudWantedStars,"SET_PLAYER_WANTED_LEVEL");
+                if(!begun)return;
+                Function.Call(AddParamInt,6);
+                Function.Call(EndScaleformMovieMethod);
             }
             catch{}
         }
