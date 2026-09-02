@@ -1,0 +1,22 @@
+VOX GTA V Enhanced -> VI - AIO RC4 Runtime Repair
+
+INSTALL
+1. Close GTA V Enhanced.
+2. Copy the contents of this archive into the GTA V Enhanced main folder.
+3. Allow replacement of the previous VOX DLL/config files.
+4. If scripts/VehicleCameraVI.dll or scripts/VehicleCameraVI.ini exists from an old package, delete it. CameraRuntimeVI is the only active camera owner.
+5. Keep ScriptHookV Enhanced / ScriptHookVDotNet Enhanced installed as before.
+
+IMPORTANT MIGRATION
+- InventoryRuntimeVI automatically renames an old scripts/InventoryRuntimeVI/SatchelWeapons.txt to SatchelWeapons.txt.disabled. Its entries are not granted to the player.
+- The RC4 WorldLifeVI config intentionally disables Online civilian donor swapping. This is a safety rollback to restore moving ambient traffic while that subsystem is redesigned.
+- No Sound Pack RPF or third-party ASI is included.
+
+REFERENCE SCANNERS
+TOOLS/Scan-RDR2-Install.bat
+TOOLS/Scan-SoundPack.bat
+
+Use the BAT launchers. They invoke the PS1 engine with ExecutionPolicy Bypass, display the exit result and pause so the console cannot disappear immediately.
+
+BUILD VALIDATION VS GAME VALIDATION
+GitHub Actions compilation/package verification only proves that the DLLs/native bridge and archive were produced correctly. The test in GTA V Enhanced remains the authority for runtime behavior.
