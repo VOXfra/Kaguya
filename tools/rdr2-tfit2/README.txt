@@ -1,9 +1,18 @@
-VOX RDR2 TFIT2 Metadata Bridge v0.4.0
+VOX RDR2 TFIT2 Metadata Bridge v0.4.1
 ========================================
 
 Purpose
 -------
 Read-only local bridge for the GTA V Enhanced -> GTA VI reference workflow.
+
+v0.4.1 launcher hotfix
+---------------------
+The native bridge core remains the CI-tested v0.4.0 binary. The v0.4.1 launcher fixes process startup/UX:
+- if RDR2.exe is not running, it starts the selected local RDR2.exe automatically;
+- it waits until the real RDR2.exe process is visible before scanning;
+- after an automatic launch it allows the game runtime to initialize;
+- if TFIT2 discovery is incomplete because the required data is not resident yet, it retries up to three times;
+- if Windows sees RDR2.exe but read access fails, it can relaunch the same read-only bridge elevated once.
 
 It targets these RDR2 archives by default:
 - common_0.rpf
@@ -17,13 +26,14 @@ It targets these RDR2 archives by default:
 
 What it does
 ------------
-1. The BAT fetches only public fingerprint definitions from a pinned Swage commit.
-2. The EXE validates the fingerprint schema.
-3. The EXE opens the already-running RDR2.exe process with read-only memory access.
-4. It resolves only the TFIT2 blocks needed by the target archive tags.
-5. Secret bytes remain in memory only. They are never written to reports.
-6. RPF8 TOCs are decrypted in memory.
-7. Only metadata is exported: hashes, extensions, offsets, sizes, flags and validation results.
+1. The BAT makes sure RDR2.exe is running, starting the selected local installation when needed.
+2. The BAT fetches only public fingerprint definitions from a pinned Swage commit.
+3. The EXE validates the fingerprint schema.
+4. The EXE opens RDR2.exe with read-only memory access.
+5. It resolves only the TFIT2 blocks needed by the target archive tags.
+6. Secret bytes remain in memory only. They are never written to reports.
+7. RPF8 TOCs are decrypted in memory.
+8. Only metadata is exported: hashes, extensions, offsets, sizes, flags and validation results.
 
 What it does NOT do
 -------------------
@@ -37,15 +47,14 @@ What it does NOT do
 
 Usage
 -----
-1. Launch RDR2 and leave it at the main menu or in Story Mode.
-2. Double-click Run-VOX-RDR2-TFIT2-Bridge.bat.
-3. Paste the folder that contains RDR2.exe.
+1. Double-click Run-VOX-RDR2-TFIT2-Bridge.bat.
+2. Paste the folder that contains RDR2.exe.
    You can also drag the RDR2 folder onto the BAT.
-4. Let the read-only memory discovery finish.
-5. Reports are written to:
+3. If RDR2 is not running, the launcher attempts to start it automatically.
+4. If Rockstar Games Launcher requires interaction, complete it normally and leave RDR2 open.
+5. The bridge continues once RDR2.exe is detected and retries incomplete TFIT2 discovery automatically.
+6. Reports are written to:
    VOX-RDR2-TFIT2-Catalog\
-
-If process access is denied, close the bridge and run the BAT as administrator.
 
 Reports to send back
 --------------------
