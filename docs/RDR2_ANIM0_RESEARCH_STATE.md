@@ -4,7 +4,7 @@ Last updated: 2026-09-02
 
 ## Rule for the next session
 
-Do **not** restart the generic RDR2 scanner chain. The v0.2 -> v0.6 stages have already established the format, local TFIT2 discovery, Oodle availability and recursive RPF8 opening on the user's current RDR2 install.
+Do **not** restart the generic RDR2 scanner chain. The v0.2 -> v0.6 stages already established the format, local TFIT2 discovery, Oodle availability and recursive RPF8 opening on the user's current RDR2 install.
 
 Resume from **anim_0.rpf-focused research** using `tools/rdr2-anim0`.
 
@@ -18,47 +18,51 @@ Resume from **anim_0.rpf-focused research** using `tools/rdr2-anim0`.
 - Recursive content probe v0.6: 732/732 full local PC secret blocks found.
 - Oodle loaded from local `oo2core_5_win64.dll`.
 - Generic v0.6 pass: 2947 outer entries, 795 nested RPF8 archives opened, 33816 nested entries, 5044 YCD, 1757 YAS, 225 YMT, 8239 keyword hits.
-- Real focused anim_0 v0.7 pass: 582/582 outer entries opened, 582/582 nested RPF8 archives opened, 41827 nested entries enumerated, 25646 YCD, 9927 YAS, 6 YMT, 3524 keyword hits.
-- Real v0.7 public-name mapper saw 582 CitizenFX names for 582 local nested archives but obtained **0 exact RAGE name-hash matches**. All v0.7 archive names were therefore order candidates only and must not be treated as authoritative.
+- Real focused anim_0 v0.7/v0.8 pass: 582/582 outer entries opened, 582/582 nested RPF8 archives opened, 41827 nested entries enumerated, 25646 YCD, 9927 YAS, 6 YMT, 3524 keyword hits.
+- All 582 nested anim_0 RPF8 TOCs in the real v0.8 report have a non-`0x00FF` decryption tag; none is plaintext at the nested-TOC layer.
+- Real v0.7 public-name mapper saw 582 CitizenFX names for 582 local nested archives but obtained **0 exact RAGE name-hash matches**. All v0.7 names were order candidates only.
+- Real v0.8 decrypted-TOC SHA mapper saw 582 CitizenFX names for 582 local nested archives but obtained **0/582 exact SHA-256 matches**. Therefore the hypothesis that CitizenFX hashes the identical decrypted byte representation produced by our reader is disproven by the real run.
 - No raw Rockstar asset, key bytes or process-memory dump was written by these tools.
 
-## Exact archive-name shortcut discovered after v0.7
+## What CitizenFX actually proves
 
-CitizenFX RDR3 pure-mode does not SHA-256 the full nested RPF. In `HookInitialMount.cpp`, the validation routine receives the decrypted RPF8 entry table at `headerData + 0x110` with length `EntryCount * 24`; `PurePackfile.cpp` SHA-256 hashes those bytes.
+CitizenFX RDR3 pure-mode `HookInitialMount.cpp` passes `EntryCount * 24` bytes beginning at `headerData + 0x110` to the validation routine. `PurePackfile.cpp` SHA-256 hashes exactly the bytes supplied to that callback.
 
-Therefore the hashes in the pinned `BaseGameRpfHeaderHashes_RDR3.h` can be matched directly against SHA-256 of each **decrypted nested TOC** already available in memory. No large RPF extraction or whole-file hashing is required.
+This proves the byte range and length, but the real v0.8 result shows that our locally decrypted nested TOC byte sequence is not identical to the representation seen by that hook.
 
 Pinned CitizenFX commit:
 
 `03dcc562ca175e24eb018569ecb919b4b7a56824`
 
-This exact-TOC approach is implemented by anim_0 Research **v0.8.0**. Confidence label for a successful public match is `exact_toc_sha256`.
-
 ## Current focused tool
 
-`VOX RDR2 anim_0 Research v0.8.0`
+`VOX RDR2 anim_0 Research v0.8.1`
 
 Purpose:
 
 1. target only root `anim_0.rpf`;
 2. reuse the proven TFIT2/RPF8/Oodle engine;
-3. open all nested RPF8 archives in memory;
-4. compute SHA-256 of each decrypted nested entry table only;
-5. map that SHA against the pinned CitizenFX RDR3 table;
-6. export exact archive names where matched;
-7. rank exact archives/YCD/YAS candidates for interactions, melee, locomotion, doors, reactions, weapons, wildlife and vehicles;
-8. output metadata only.
+3. open all 582 nested RPF8 archives in memory;
+4. compute SHA-256 of the nested entry table **before** nested TOC decryption (`toc_sha256_raw`);
+5. compute SHA-256 of the same entry table **after** our proven nested TOC decryption (`toc_sha256_decrypted`);
+6. compare both representations independently against the pinned CitizenFX table;
+7. label only successful SHA matches as authoritative (`exact_raw_toc_sha256`, `exact_decrypted_toc_sha256`, `exact_both_toc_sha256`);
+8. export the 582-vs-582 CitizenFX order as a separate diagnostic `ANIM0-order-audit.csv`, explicitly never as proof by itself;
+9. output metadata only.
 
-CI status for v0.8.0:
+## v0.8.1 validation boundary
 
-- native Windows x64 compilation: passed
-- deterministic TFIT2 test: passed
-- recursive RPF8 TOC self-test: passed
-- SHA-256 standard vector: passed
-- exact CitizenFX mapper synthetic test: passed
-- package validation: passed
+CI must pass:
 
-A real v0.8 run is still required to measure how many of the user's 582 current local nested archives match the pinned CitizenFX TOC hashes.
+- native Windows x64 compilation
+- deterministic TFIT2 test
+- recursive RPF8 TOC self-test
+- SHA-256 standard `abc` vector
+- one synthetic CitizenFX exact match through the RAW hash column
+- one synthetic CitizenFX exact match through the DECRYPTED hash column
+- package validation
+
+Only the user's real RDR2 run can establish which representation, if either, matches the current 582 nested archives.
 
 ## Public archive examples worth prioritizing once exact
 
@@ -86,8 +90,13 @@ A real v0.8 run is still required to measure how many of the user's 582 current 
 - Do not keep brute-forcing outer hashes using generic public strings: v0.5 tested 206686 candidates and resolved 0/2947 outer entries.
 - Do not prioritize audio PEDS archives as gameplay-AI evidence; their names are audio banks.
 - Do not redo generic 8-archive recursion when the research goal is animations; `anim_0.rpf` is the proven high-yield target.
-- Do not use v0.7 `citizenfx_order_candidate` names as proof. Exact archive identity should come from v0.8 `exact_toc_sha256` matches.
+- Do not use v0.7 `citizenfx_order_candidate` names as proof.
+- Do not use v0.8 decrypted `toc_sha256` as proof: the real pass produced 0/582 CitizenFX matches.
 
-## Next decision after the real v0.8 run
+## Next decision after the real v0.8.1 run
 
-Use `ANIM0-exact-priority-archives.csv`, `ANIM0-exact-ycd-candidates.csv` and `ANIM0-exact-yas-candidates.csv` to select a small exact set of system archives. Then inspect only those YCD/RSC8 resources in memory. Avoid decoding tens of thousands of animation resources blindly.
+If RAW hashes match, use those exact archive names and immediately select the interaction/melee/loco/doors/reaction packs for targeted YCD/YAS inspection.
+
+If DECRYPTED hashes unexpectedly match after the dual implementation, use those exact names the same way.
+
+If both remain at zero, stop iterating archive scanners. Use `ANIM0-order-audit.csv` only as a diagnostic and move to reproducing/capturing the `fiPackfile::ReInit` in-memory 24-byte entry representation that CitizenFX hashes, rather than inventing another hash transformation.
