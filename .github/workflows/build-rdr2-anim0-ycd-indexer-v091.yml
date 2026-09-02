@@ -1,0 +1,73 @@
+name: Build VOX RDR2 anim_0 YCD Indexer v0.9.1
+
+on:
+  push:
+    branches:
+      - rc3-runtime-repair
+    paths:
+      - 'tools/rdr2-anim0-ycd/VOX-RDR2-Anim0-YCD-Indexer-v091.cpp'
+      - 'tools/rdr2-anim0-ycd/Run-VOX-RDR2-Anim0-YCD-Indexer-v091.bat'
+      - 'tools/rdr2-anim0-ycd/README-v091.txt'
+      - 'tools/rdr2-tfit2/**'
+      - '.github/workflows/build-rdr2-anim0-ycd-indexer-v091.yml'
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build corrected native YCD indexer
+        shell: cmd
+        run: |
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSROOT=%%i"
+          if not defined VSROOT exit /b 1
+          call "%VSROOT%\VC\Auxiliary\Build\vcvars64.bat"
+          if not exist dist mkdir dist
+          cl /nologo /EHsc /std:c++17 /O2 /MT /W4 /DUNICODE /D_UNICODE /Fe:dist\VOX-RDR2-Anim0-YCD-Indexer-v091.exe tools\rdr2-anim0-ycd\VOX-RDR2-Anim0-YCD-Indexer-v091.cpp
+          if errorlevel 1 exit /b 1
+          if not exist dist\VOX-RDR2-Anim0-YCD-Indexer-v091.exe exit /b 1
+
+      - name: Deterministic TFIT2 and v0.9.1 self-test
+        shell: cmd
+        run: |
+          dist\VOX-RDR2-Anim0-YCD-Indexer-v091.exe --self-test
+          if errorlevel 1 exit /b 1
+
+      - name: Validate pinned public fingerprint schema
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $ProgressPreference='SilentlyContinue'
+          New-Item -ItemType Directory -Force smoke | Out-Null
+          $swage='https://raw.githubusercontent.com/0x1F9F1/Swage/201320d61ae04909f01af247c41f864a9174b691'
+          Invoke-WebRequest -UseBasicParsing -Headers @{'User-Agent'='VOX-RDR2-Anim0-YCD091-CI'} -Uri "$swage/src/games/rage/hashes/RDR2.h" -OutFile smoke/RDR2.h
+          Invoke-WebRequest -UseBasicParsing -Headers @{'User-Agent'='VOX-RDR2-Anim0-YCD091-CI'} -Uri "$swage/src/games/rage/rpf8.cpp" -OutFile smoke/rpf8.cpp
+          & .\dist\VOX-RDR2-Anim0-YCD-Indexer-v091.exe --fingerprint-self-test --fingerprints smoke/RDR2.h --rpf8-source smoke/rpf8.cpp
+          if($LASTEXITCODE -ne 0){throw 'Pinned fingerprint schema failed'}
+
+      - name: Assemble and verify package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force package | Out-Null
+          Copy-Item dist/VOX-RDR2-Anim0-YCD-Indexer-v091.exe package/
+          Copy-Item tools/rdr2-anim0-ycd/Run-VOX-RDR2-Anim0-YCD-Indexer-v091.bat package/
+          Copy-Item tools/rdr2-anim0-ycd/README-v091.txt package/README.txt
+          $bat=Get-Content package/Run-VOX-RDR2-Anim0-YCD-Indexer-v091.bat -Raw
+          if($bat -notmatch 'v0.9.1' -or $bat -notmatch 'READ-ONLY' -or $bat -notmatch 'YCD-Index-v091'){throw 'Launcher validation failed'}
+          $readme=Get-Content package/README.txt -Raw
+          if($readme -notmatch 'final partially-filled' -or $readme -notmatch '3,755'){throw 'README correction markers missing'}
+          Compress-Archive -Path package/* -DestinationPath VOX-RDR2-Anim0-YCD-String-Indexer-v0.9.1.zip -Force
+          Expand-Archive VOX-RDR2-Anim0-YCD-String-Indexer-v0.9.1.zip verify -Force
+          $names=@(Get-ChildItem verify -File | Select-Object -ExpandProperty Name | Sort-Object)
+          if($names.Count -ne 3){throw "Unexpected package file count: $($names.Count)"}
+          if(-not (Test-Path verify/VOX-RDR2-Anim0-YCD-Indexer-v091.exe)){throw 'EXE missing'}
+          Get-FileHash VOX-RDR2-Anim0-YCD-String-Indexer-v0.9.1.zip -Algorithm SHA256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VOX-RDR2-Anim0-YCD-String-Indexer-v0.9.1
+          path: VOX-RDR2-Anim0-YCD-String-Indexer-v0.9.1.zip
+          if-no-files-found: error
