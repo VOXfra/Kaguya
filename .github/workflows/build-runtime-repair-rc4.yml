@@ -1,0 +1,138 @@
+name: Build GTA V to VI Runtime Repair RC4
+
+on:
+  push:
+    branches:
+      - rc3-runtime-repair
+    paths:
+      - 'modules/**'
+      - 'tools/**'
+      - 'docs/AIO_RC4_*.txt'
+      - '.github/workflows/build-runtime-repair-rc4.yml'
+  workflow_dispatch:
+
+jobs:
+  build-aio:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch shared SHVDNE reference
+        shell: pwsh
+        run: |
+          $url = 'https://github.com/Chiheb-Bacha/ScriptHookVDotNetEnhanced/releases/download/v1.1.0.6/ScriptHookVDotNetEnhanced-v1.1.0.6.zip'
+          Invoke-WebRequest -Uri $url -OutFile shvdne.zip
+          Expand-Archive shvdne.zip -DestinationPath shvdne
+          $ref = Get-ChildItem shvdne -Recurse -Filter ScriptHookVDotNet3.dll | Select-Object -First 1
+          if (-not $ref) { throw 'ScriptHookVDotNet3.dll not found.' }
+          $mods = @(
+            'VOXCoreVI','CameraRuntimeVI','CharacterRuntimeVI','PhysicalCharacterVI','AnimationRuntimeVI',
+            'InteractionRuntimeVI','InventoryRuntimeVI','PedOverhaulVI','MeleeRuntimeVI','PoliceOverhaulVI',
+            'VehicleRuntimeVI','VehicleOccupantVI','WorldLifeVI','FireRuntimeVI','WildlifeRuntimeVI',
+            'InteriorRuntimeVI','AcousticRuntimeVI'
+          )
+          foreach ($m in $mods) {
+            New-Item -ItemType Directory -Force "modules/$m/refs" | Out-Null
+            Copy-Item $ref.FullName "modules/$m/refs/ScriptHookVDotNet3.dll" -Force
+          }
+
+      - name: Build all managed modules
+        shell: pwsh
+        run: |
+          $projects = @(
+            'modules/VOXCoreVI/VOXCoreVI.csproj',
+            'modules/CameraRuntimeVI/CameraRuntimeVI.csproj',
+            'modules/CharacterRuntimeVI/CharacterRuntimeVI.csproj',
+            'modules/PhysicalCharacterVI/PhysicalCharacterVI.csproj',
+            'modules/AnimationRuntimeVI/AnimationRuntimeVI.csproj',
+            'modules/InteractionRuntimeVI/InteractionRuntimeVI.csproj',
+            'modules/InventoryRuntimeVI/InventoryRuntimeVI.csproj',
+            'modules/PedOverhaulVI/PedOverhaulVI.csproj',
+            'modules/MeleeRuntimeVI/MeleeRuntimeVI.csproj',
+            'modules/PoliceOverhaulVI/PoliceOverhaulVI.csproj',
+            'modules/VehicleRuntimeVI/VehicleRuntimeVI.csproj',
+            'modules/VehicleOccupantVI/VehicleOccupantVI.csproj',
+            'modules/WorldLifeVI/WorldLifeVI.csproj',
+            'modules/FireRuntimeVI/FireRuntimeVI.csproj',
+            'modules/WildlifeRuntimeVI/WildlifeRuntimeVI.csproj',
+            'modules/InteriorRuntimeVI/InteriorRuntimeVI.csproj',
+            'modules/AcousticRuntimeVI/AcousticRuntimeVI.csproj'
+          )
+          foreach ($p in $projects) {
+            Write-Host "=== BUILD $p ==="
+            dotnet build $p -c Release --nologo
+            if ($LASTEXITCODE -ne 0) { throw "Build failed: $p" }
+          }
+
+      - name: Build Character native compatibility bridge
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat" 2>nul || call "%ProgramFiles%\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" 2>nul || call "%ProgramFiles%\Microsoft Visual Studio\18\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          cl /nologo /LD /EHsc /O2 /std:c++17 /W4 /WX modules\CharacterRuntimeVI\native\VOXBodyMorphVI.cpp /link /OUT:VOXBodyMorphVI.asi
+          if errorlevel 1 exit /b 1
+
+      - name: Assemble RC4 package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist/scripts/PoliceOverhaulVI/UI | Out-Null
+          New-Item -ItemType Directory -Force dist/TOOLS | Out-Null
+          $managed = @(
+            'VOXCoreVI','CameraRuntimeVI','CharacterRuntimeVI','PhysicalCharacterVI','AnimationRuntimeVI',
+            'InteractionRuntimeVI','InventoryRuntimeVI','PedOverhaulVI','MeleeRuntimeVI','PoliceOverhaulVI',
+            'VehicleRuntimeVI','VehicleOccupantVI','WorldLifeVI','FireRuntimeVI','WildlifeRuntimeVI',
+            'InteriorRuntimeVI','AcousticRuntimeVI'
+          )
+          foreach ($m in $managed) {
+            $dll = "modules/$m/bin/Release/net48/$m.dll"
+            if (-not (Test-Path $dll)) { throw "Missing $dll" }
+            Copy-Item $dll "dist/scripts/$m.dll"
+          }
+          $configs = @(
+            'CameraRuntimeVI/config/CameraRuntimeVI.ini',
+            'InteractionRuntimeVI/config/InteractionRuntimeVI.ini',
+            'PedOverhaulVI/config/PedOverhaulVI.ini',
+            'PoliceOverhaulVI/config/PoliceOverhaulVI.ini',
+            'WorldLifeVI/config/WorldLifeVI.ini'
+          )
+          foreach ($c in $configs) { Copy-Item "modules/$c" dist/scripts/ }
+          Copy-Item modules/PoliceOverhaulVI/UI/*.png dist/scripts/PoliceOverhaulVI/UI/
+          Copy-Item VOXBodyMorphVI.asi dist/VOXBodyMorphVI.asi
+          Copy-Item tools/Scan-SoundPack.ps1 dist/TOOLS/Scan-SoundPack.ps1
+          Copy-Item tools/Scan-SoundPack.bat dist/TOOLS/Scan-SoundPack.bat
+          Copy-Item tools/Scan-RDR2-Install.ps1 dist/TOOLS/Scan-RDR2-Install.ps1
+          Copy-Item tools/Scan-RDR2-Install.bat dist/TOOLS/Scan-RDR2-Install.bat
+          Copy-Item docs/AIO_RC4_INSTALL.txt dist/INSTALL-AIO.txt
+          Copy-Item docs/AIO_RC4_TESTING.txt dist/TEST-AIO.txt
+          Copy-Item docs/AIO_RC4_CHANGELOG.txt dist/CHANGELOG-AIO.txt
+
+          if (Test-Path dist/scripts/VehicleCameraVI.dll) { throw 'Deprecated VehicleCameraVI must not be packaged.' }
+          $count = (Get-ChildItem dist/scripts -Filter *.dll).Count
+          if ($count -ne 17) { throw "Expected 17 active managed DLLs, found $count" }
+          Compress-Archive -Path dist/* -DestinationPath VOX-GTA-V-Enhanced-to-VI-AIO-RC4.zip -Force
+
+      - name: Verify install archive
+        shell: pwsh
+        run: |
+          Remove-Item verify -Recurse -Force -ErrorAction SilentlyContinue
+          Expand-Archive VOX-GTA-V-Enhanced-to-VI-AIO-RC4.zip verify
+          $required = @(
+            'VOXCoreVI','CameraRuntimeVI','CharacterRuntimeVI','PhysicalCharacterVI','AnimationRuntimeVI',
+            'InteractionRuntimeVI','InventoryRuntimeVI','PedOverhaulVI','MeleeRuntimeVI','PoliceOverhaulVI',
+            'VehicleRuntimeVI','VehicleOccupantVI','WorldLifeVI','FireRuntimeVI','WildlifeRuntimeVI',
+            'InteriorRuntimeVI','AcousticRuntimeVI'
+          )
+          foreach ($m in $required) { if (-not (Test-Path "verify/scripts/$m.dll")) { throw "Archive missing $m.dll" } }
+          if (Test-Path verify/scripts/VehicleCameraVI.dll) { throw 'Archive contains deprecated VehicleCameraVI.dll' }
+          if (-not (Test-Path verify/VOXBodyMorphVI.asi)) { throw 'Archive missing compatibility bridge' }
+          if (-not (Test-Path verify/TOOLS/Scan-RDR2-Install.bat)) { throw 'Archive missing RDR2 BAT launcher' }
+          if (-not (Test-Path verify/TOOLS/Scan-SoundPack.bat)) { throw 'Archive missing Sound Pack BAT launcher' }
+          $zip = Get-Item VOX-GTA-V-Enhanced-to-VI-AIO-RC4.zip
+          Write-Host "ZIP_SIZE=$($zip.Length)"
+          Get-FileHash VOX-GTA-V-Enhanced-to-VI-AIO-RC4.zip -Algorithm SHA256
+
+      - name: Upload AIO RC4
+        uses: actions/upload-artifact@v4
+        with:
+          name: VOX-GTA-V-Enhanced-to-VI-AIO-RC4
+          path: VOX-GTA-V-Enhanced-to-VI-AIO-RC4.zip
+          if-no-files-found: error
