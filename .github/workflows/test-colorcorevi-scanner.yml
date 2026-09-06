@@ -1,0 +1,57 @@
+name: Test ColorCoreVI Scanner
+
+on:
+  push:
+    paths:
+      - 'modules/GraphicOverhaulVI/**'
+      - '.github/workflows/test-colorcorevi-scanner.yml'
+  workflow_dispatch:
+
+jobs:
+  windows-powershell-51:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          Write-Host "PowerShell: $($PSVersionTable.PSVersion)"
+          if ($PSVersionTable.PSEdition -ne 'Desktop') { throw 'Expected Windows PowerShell Desktop edition.' }
+          if ($PSVersionTable.PSVersion.Major -ne 5) { throw 'Expected Windows PowerShell 5.x.' }
+
+      - name: Create deterministic fixture game folders
+        shell: powershell
+        run: |
+          $fh6 = Join-Path $env:RUNNER_TEMP 'FH6 Fixture'
+          $gta = Join-Path $env:RUNNER_TEMP 'GTAV Enhanced Fixture'
+          New-Item -ItemType Directory -Force -Path $fh6, $gta | Out-Null
+          Set-Content -LiteralPath (Join-Path $fh6 'tonemap_hdr_bt2020.txt') -Value 'tonemap HDR10 ST.2084 BT.2020 exposure gamut LUT scene-linear 1000 nits' -Encoding UTF8
+          Set-Content -LiteralPath (Join-Path $gta 'postprocess_color.txt') -Value 'post-process color HDR exposure bloom gamma sRGB display' -Encoding UTF8
+          Set-Content -LiteralPath (Join-Path $gta 'visualsettings.dat') -Value 'HDR exposure color' -Encoding UTF8
+          "FH6_FIXTURE=$fh6" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "GTA_FIXTURE=$gta" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Run the exact CMD entrypoint
+        shell: cmd
+        env:
+          COLORCORE_NO_PAUSE: '1'
+        run: call modules\GraphicOverhaulVI\RUN-COLORCORE-SCAN.cmd "%FH6_FIXTURE%" "%GTA_FIXTURE%"
+
+      - name: Validate scanner outputs
+        shell: powershell
+        run: |
+          $out = Join-Path $env:GITHUB_WORKSPACE 'modules\GraphicOverhaulVI\scan-output'
+          $required = @('scan_summary.json','color_candidates.csv','extension_summary.csv','scan_errors.csv','file_inventory.csv','README.txt')
+          foreach ($name in $required) {
+            $path = Join-Path $out $name
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Missing output: $name" }
+          }
+          $summary = Get-Content -LiteralPath (Join-Path $out 'scan_summary.json') -Raw | ConvertFrom-Json
+          if ([int]$summary.inventoryCount -lt 3) { throw "Expected at least 3 inventoried files, got $($summary.inventoryCount)" }
+          if ([int]$summary.candidateCount -lt 3) { throw "Expected at least 3 candidates, got $($summary.candidateCount)" }
+          if ([int]$summary.scanErrorCount -ne 0) { throw "Expected zero scan errors, got $($summary.scanErrorCount)" }
+          $candidates = Import-Csv -LiteralPath (Join-Path $out 'color_candidates.csv')
+          if (-not ($candidates | Where-Object { $_.ContentHits -match 'hdr' })) { throw 'HDR keyword was not detected in fixture content.' }
+          Write-Host "ColorCoreVI scanner end-to-end Windows test PASSED."
