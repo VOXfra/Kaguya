@@ -54,22 +54,48 @@ This is the detailed historical ledger behind the compact patch table in `README
 - **Detailed record:** `ColorCoreVI/FH6_FINDINGS.md`.
 - **Files:** `tools/Collect-FH6ColorEvidence.ps1`, `tools/Test-FH6ColorEvidence.ps1`, `RUN-FH6-COLOR-EVIDENCE.cmd`, `.github/workflows/test-colorcorevi-p0003.yml`.
 
-## P0004 — GTA V Enhanced Color Pipeline Evidence Collector v0.1.x
+## P0004 — GTA V Enhanced Color Pipeline Evidence Collector v0.1.1
 
 - **Date:** 2026-09-06
-- **Status:** `TEST`
+- **Status:** `APPLIED`
 - **Area:** ColorCoreVI / GTA V Enhanced baseline mapping
-- **Purpose:** extract only GTA V Enhanced's relevant color/timecycle/weather/post-processing configuration from encrypted RPF7 archives so it can be compared directly with the confirmed FH6 architecture.
-- **Primary archives:** `common.rpf`, `update\update.rpf`, `update\update2.rpf` from the original game install; `mods` overrides are intentionally excluded from the vanilla baseline pass.
-- **Target evidence:** `visualsettings.dat`, timecycle XML/DAT resources, `weather.xml`, atmosphere configs and small filename-confirmed postprocess/tonemap/exposure/HDR/color-correction resources.
-- **RPF reader:** pinned `wjy000/gtav-enhanced-rpf` revision `c09f1f1b15f7a0ebe77f852c44f8aca3c9e358a7`; upstream is MIT licensed and reports real Enhanced validation on `common.rpf`/`update2.rpf`.
-- **Dependency:** isolated `pycryptodome==3.23.0` runtime.
-- **Integrity:** pinned upstream `magic.dat` SHA-256 must equal `dc35981f822e892ced3aa81d31e7a96927d573ee28f67417592b5afeaf330832` before use.
-- **Key hygiene:** Enhanced AES/NG material is derived from the local `GTA5_Enhanced.exe` in memory only. P0004 never calls the upstream key-save path. `stage3-output` has a second hard guard against `gtav_aes_key.dat`, `gtav_ng_key.dat` and `gtav_ng_decrypt_tables.dat`; if any appears, output is deleted and the run fails.
-- **Source safety:** read-only on GTA files; output is written only beside the P0004 tool.
-- **CI scope:** validates Windows PowerShell 5.1 launcher/bootstrap, Python 3.11 runtime, pinned upstream download/integrity, crypto import, Python collector syntax, anti-false-success behavior and secret guard. A CI fixture cannot prove extraction from Rockstar's real encrypted archives; that gate is completed by the user's real install run.
+- **Purpose:** extract GTA V Enhanced's relevant color/timecycle/weather/post-processing configuration from encrypted RPF7 archives and compare it against the confirmed FH6 architecture.
+- **Primary archives:** `common.rpf`, `update\update.rpf`, `update\update2.rpf`; `mods` overrides intentionally excluded from the vanilla baseline pass.
+- **RPF reader:** pinned MIT `wjy000/gtav-enhanced-rpf` revision `c09f1f1b15f7a0ebe77f852c44f8aca3c9e358a7` with pinned `pycryptodome==3.23.0` runtime and `magic.dat` integrity check.
+- **Key hygiene:** Enhanced AES/NG material derived from local `GTA5_Enhanced.exe` in memory only; no key-save path used; a second hard guard rejects/deletes output if known GTA key filenames appear.
+- **Windows validation:** exact zero-argument CMD bootstrap, Windows PowerShell 5.1, Python 3.11, pinned reader download/integrity, dependency install/import, anti-false-success and key guards all PASS before release.
+- **User-machine validation:**
+  - GTA root `E:\Jeux Epic\GTAVEnhanced`;
+  - 3/3 RPFs opened with NG encryption;
+  - 2,913 files indexed;
+  - 98 selected candidates;
+  - 98 extracted files / 7,448,342 bytes;
+  - 0 collector errors;
+  - key derivation in memory only;
+  - key files written: false;
+  - source files modified: false.
+- **Confirmed findings:**
+  - separate bright/dark filmic A–F/W parameter families already exist;
+  - GTA has explicit exposure and adaptation configuration;
+  - Enhanced changes `Adaptation.min.step.size` from `0.15` to `0.0001` and adds an `Adaptation.hdr.*` family;
+  - Enhanced adds HDR10/dynamic dithering plus `hdr.game.useITMBlend` and dedicated game/UI HDR color-control blocks;
+  - weather files expose 58 distinct `postfx_*` controls, usually as 13-value time-of-day tables, including exposure/min/max, independent bright/dark filmic overrides, RGB correction/shift/gradient shaping, bloom and optical post-FX;
+  - `timecycle_mods_*` can override the same stack contextually.
+- **Architecture result:** preserve Rockstar weather/timecycle/mission orchestration; add/replace the final technical mapping stage instead of replacing the entire ColorCore stack.
+- **Important unknowns:** exact meaning of `ITM`, final SDR/HDR transfer, PQ/BT.2020/scRGB semantics, final output shader and the location where a 3D display mapper can be inserted.
+- **Detailed record:** `ColorCoreVI/GTA_ENHANCED_FINDINGS.md`.
 - **Files:** `tools/Collect-GTAVColorEvidence.ps1`, `tools/Collect-GTAVColorEvidence.py`, `tools/Test-GTAVColorEvidence.ps1`, `RUN-GTAV-COLOR-EVIDENCE.cmd`, `.github/workflows/test-colorcorevi-p0004.yml`.
-- **Validation gate before APPLIED:** open at least one real target RPF, extract the expected baseline resources, confirm zero key artifacts and return a usable `stage3-output` for analysis.
+
+## P0005 — GTA V Enhanced DX12 Color Output Probe
+
+- **Date:** 2026-09-06
+- **Status:** `IN PROGRESS`
+- **Area:** ColorCoreVI / runtime output-stage mapping
+- **Purpose:** observe GTA V Enhanced's real DX12 presentation path before any 3D display-mapper injection is attempted.
+- **Required observations:** swapchain format, width/height, buffer count, Present/resize behavior, `SetColorSpace1` calls, `SetHDRMetaData` calls and HDR10 metadata, plus enough lifecycle information to distinguish SDR and HDR paths.
+- **Implementation direction:** native x64 ASI/DXGI probe, logging only. No shader replacement or image modification in P0005.
+- **Safety rule:** P0005 must not alter output pixels. Its only purpose is to identify the correct insertion point for the later ColorCoreVI mapper.
+- **Validation gate:** build passes Windows CI; the user's GTA V Enhanced run produces a log that identifies the active swapchain/output color path in SDR and, ideally, HDR.
 
 ## Patch template
 
