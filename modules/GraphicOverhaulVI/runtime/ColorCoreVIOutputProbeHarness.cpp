@@ -35,21 +35,9 @@ int wmain(int argc, wchar_t** argv)
     }
 
     DeleteFileA("ColorCoreVI_OutputProbe.log");
-    HMODULE probe = LoadLibraryW(argv[1]);
-    if (!probe)
-    {
-        std::wcerr << L"LoadLibrary failed: " << GetLastError() << L"\n";
-        return 3;
-    }
 
-    for (int i = 0; i < 50; ++i)
-    {
-        std::ifstream in("ColorCoreVI_OutputProbe.log");
-        std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-        if (Contains(text, "HOOKS_READY")) break;
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    }
-
+    // Intentionally create the factory/device BEFORE loading the ASI. This
+    // simulates a game where DXGI already exists when the ASI loader runs.
     ComPtr<IDXGIFactory4> factory;
     if (FAILED(CreateDXGIFactory2(0, IID_PPV_ARGS(&factory)))) return 4;
 
@@ -76,6 +64,21 @@ int wmain(int argc, wchar_t** argv)
         0, 0, 320, 180, nullptr, nullptr, wc.hInstance, nullptr);
     if (!hwnd) return 9;
 
+    HMODULE probe = LoadLibraryW(argv[1]);
+    if (!probe)
+    {
+        std::wcerr << L"LoadLibrary failed: " << GetLastError() << L"\n";
+        return 3;
+    }
+
+    for (int i = 0; i < 80; ++i)
+    {
+        std::ifstream in("ColorCoreVI_OutputProbe.log");
+        std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        if (Contains(text, "HOOKS_READY")) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+
     DXGI_SWAP_CHAIN_DESC1 desc{};
     desc.Width = 320;
     desc.Height = 180;
@@ -90,6 +93,10 @@ int wmain(int argc, wchar_t** argv)
 
     ComPtr<IDXGISwapChain4> swapchain4;
     if (FAILED(swapchain1.As(&swapchain4))) return 11;
+
+    // Also create a factory after probe load so the export-hook path is exercised.
+    ComPtr<IDXGIFactory4> postProbeFactory;
+    if (FAILED(CreateDXGIFactory2(0, IID_PPV_ARGS(&postProbeFactory)))) return 13;
 
     (void)swapchain4->SetColorSpace1(DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709);
 
@@ -119,7 +126,10 @@ int wmain(int argc, wchar_t** argv)
     std::ifstream in("ColorCoreVI_OutputProbe.log");
     std::string log((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
 
-    const bool ok = Contains(log, "HOOKS_READY") &&
+    const bool ok = Contains(log, "ColorCoreVI Output Probe P0005 v0.1.2") &&
+                    Contains(log, "FACTORY_HOOKS_READY | source=probe factory") &&
+                    Contains(log, "REAL_SWAPCHAIN_CREATED | source=CreateSwapChainForHwnd") &&
+                    Contains(log, "REAL_SWAPCHAIN_HOOKS_READY | source=CreateSwapChainForHwnd") &&
                     Contains(log, "SetColorSpace1") &&
                     Contains(log, "SetHDRMetaData") &&
                     Contains(log, "Present1 first-seen") &&
