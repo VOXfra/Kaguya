@@ -27,7 +27,7 @@ This is the detailed historical ledger behind the compact patch table in `README
 - **Status:** `IN PROGRESS`
 - **Area:** ColorCoreVI / reverse mapping
 - **Purpose:** build a reproducible, read-only map of likely color/HDR/tonemap resources in local Forza Horizon 6 and GTA V Enhanced installations before implementing visual changes.
-- **Current version:** `0.1.2`
+- **Current version:** `0.1.3`
 - **Changes:**
   - optional FH6 and GTA V Enhanced root auto-detection;
   - Steam library discovery;
@@ -43,6 +43,10 @@ This is the detailed historical ledger behind the compact patch table in `README
   - deliberate avoidance of blind hashing for huge `.rpf`/texture archives;
   - CSV/JSON reports and scan-error log;
   - no modification of either game.
+- **v0.1.3 correction:**
+  - fixes the Windows PowerShell parser error caused by interpolated `"$Game: ..."` strings by using explicit `${Game}` delimiters;
+  - rewrites the extension-summary conditional into syntax safe for Windows PowerShell 5.1;
+  - adds a parser preflight in `RUN-COLORCORE-SCAN.cmd` so syntax errors are detected before the scan starts.
 - **Files:**
   - `tools/Scan-ColorCoreVI.ps1`
   - `RUN-COLORCORE-SCAN.cmd`
@@ -53,6 +57,7 @@ This is the detailed historical ledger behind the compact patch table in `README
   - `scan_errors.csv`
   - `file_inventory.csv`
 - **Validation required before APPLIED:**
+  - launcher preflight reports `Syntax OK` on the target Windows machine;
   - scanner completes against the local FH6 installation;
   - scanner completes against the local GTA V Enhanced installation;
   - no source game file is modified;
