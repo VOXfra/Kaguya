@@ -70,3 +70,39 @@ jobs:
           $cmd = Get-Content -LiteralPath 'modules\GraphicOverhaulVI\RUN-GTAV-COLOR-EVIDENCE.cmd' -Raw
           if ($cmd -notmatch 'stage3_summary\.json') { throw 'Launcher does not require stage3_summary.json.' }
           if ($cmd -notmatch 'missing_output') { throw 'Launcher hard-failure path missing.' }
+
+      - name: Prepare validated release payload
+        shell: powershell
+        run: |
+          $src = Join-Path $env:GITHUB_WORKSPACE 'modules\GraphicOverhaulVI'
+          $dst = Join-Path $env:GITHUB_WORKSPACE 'p0004-release'
+          if (Test-Path $dst) { Remove-Item $dst -Recurse -Force }
+          New-Item -ItemType Directory -Force -Path (Join-Path $dst 'tools') | Out-Null
+          Copy-Item (Join-Path $src 'RUN-GTAV-COLOR-EVIDENCE.cmd') $dst
+          Copy-Item (Join-Path $src 'tools\Collect-GTAVColorEvidence.ps1') (Join-Path $dst 'tools')
+          Copy-Item (Join-Path $src 'tools\Collect-GTAVColorEvidence.py') (Join-Path $dst 'tools')
+          Copy-Item (Join-Path $src 'tools\Test-GTAVColorEvidence.ps1') (Join-Path $dst 'tools')
+          @'
+          GraphicOverhaulVI — P0004 GTA V Enhanced Color Evidence v0.1.1
+
+          ANALYSIS / TOOL PATCH ONLY. This does NOT replace a complete GraphicOverhaulVI release.
+
+          Run RUN-GTAV-COLOR-EVIDENCE.cmd, then ZIP stage3-output and send it back in ChatGPT.
+
+          The tool reads common.rpf, update/update.rpf and update/update2.rpf only.
+          GTA source files are not modified. Enhanced RPF keys are derived in memory only.
+          No GTA key file is intentionally written; output has an additional key-artifact guard.
+
+          Pinned upstream reader: wjy000/gtav-enhanced-rpf
+          Commit: c09f1f1b15f7a0ebe77f852c44f8aca3c9e358a7
+          License: MIT
+          PyCryptodome: 3.23.0
+          '@ | Set-Content -LiteralPath (Join-Path $dst 'README-P0004.txt') -Encoding UTF8
+
+      - name: Upload exact validated P0004 package
+        uses: actions/upload-artifact@v4
+        with:
+          name: GraphicOverhaulVI-P0004-GTAV-ColorEvidence-v0.1.1
+          path: p0004-release/
+          if-no-files-found: error
+          compression-level: 9
