@@ -27,12 +27,13 @@ This is the detailed historical ledger behind the compact patch table in `README
 - **Status:** `IN PROGRESS`
 - **Area:** ColorCoreVI / reverse mapping
 - **Purpose:** build a reproducible, read-only map of likely color/HDR/tonemap resources in local Forza Horizon 6 and GTA V Enhanced installations before implementing visual changes.
-- **Current version:** `0.1.1`
+- **Current version:** `0.1.2`
 - **Changes:**
   - optional FH6 and GTA V Enhanced root auto-detection;
   - Steam library discovery;
   - Epic GTA V manifest discovery;
   - common XboxGames path discovery;
+  - interactive folder prompt when auto-detection fails;
   - recursive file metadata inventory;
   - extension summary;
   - keyword detection for tonemap, HDR/HDR10, PQ/ST.2084, BT/Rec.2020, gamut, scRGB, linear, white point, exposure, bloom, color, LUT, gamma/sRGB, display, post-process, ACES and nits;
