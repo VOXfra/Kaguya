@@ -9,7 +9,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$BootstrapVersion = "0.1.0"
+$BootstrapVersion = "0.1.1"
 $UpstreamCommit = "c09f1f1b15f7a0ebe77f852c44f8aca3c9e358a7"
 $UpstreamUrl = "https://codeload.github.com/wjy000/gtav-enhanced-rpf/zip/$UpstreamCommit"
 $ExpectedMagicSha256 = "dc35981f822e892ced3aa81d31e7a96927d573ee28f67417592b5afeaf330832"
@@ -28,6 +28,26 @@ function Write-Step {
     Write-Host ("[ColorCoreVI/P0004] {0}" -f $Message) -ForegroundColor Cyan
 }
 
+function Invoke-NativeChecked {
+    param(
+        [Parameter(Mandatory = $true)][string]$Exe,
+        [Parameter(Mandatory = $true)][string[]]$Arguments,
+        [Parameter(Mandatory = $true)][string]$FailureMessage
+    )
+    $oldPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        & $Exe @Arguments
+        $code = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $oldPreference
+    }
+    if ($code -ne 0) {
+        throw ("{0} Exit code: {1}" -f $FailureMessage, $code)
+    }
+}
+
 function Get-PythonExecutable {
     $attempts = @(
         @{ Command = "py.exe"; Prefix = @("-3.11") },
@@ -41,8 +61,16 @@ function Get-PythonExecutable {
         $prefix = @($attempt.Prefix)
         try {
             $resolved = Get-Command $command -ErrorAction Stop
-            $result = & $resolved.Source @prefix -c "import sys; print(sys.executable); print('%d.%d' % sys.version_info[:2])" 2>$null
-            if (($LASTEXITCODE -eq 0) -and (@($result).Count -ge 2)) {
+            $oldPreference = $ErrorActionPreference
+            $ErrorActionPreference = "Continue"
+            try {
+                $result = & $resolved.Source @prefix -c "import sys; print(sys.executable); print('%d.%d' % sys.version_info[:2])" 2>$null
+                $code = $LASTEXITCODE
+            }
+            finally {
+                $ErrorActionPreference = $oldPreference
+            }
+            if (($code -eq 0) -and (@($result).Count -ge 2)) {
                 $exe = [string]$result[0]
                 $versionText = [string]$result[1]
                 $parts = $versionText.Trim().Split('.')
@@ -230,21 +258,27 @@ function Ensure-UpstreamRuntime {
     $venvPython = Join-Path $venvRoot "Scripts\python.exe"
     if (-not (Test-Path -LiteralPath $venvPython -PathType Leaf)) {
         Write-Step "Creating isolated Python runtime..."
-        & $PythonExe -m venv $venvRoot
-        if ($LASTEXITCODE -ne 0) { throw "Failed to create Python virtual environment." }
+        Invoke-NativeChecked -Exe $PythonExe -Arguments @("-m", "venv", $venvRoot) -FailureMessage "Failed to create Python virtual environment."
     }
 
-    $cryptoOk = $false
-    & $venvPython -c "import Crypto; import sys; sys.exit(0)" 2>$null
-    if ($LASTEXITCODE -eq 0) { $cryptoOk = $true }
-    if (-not $cryptoOk) {
+    $cryptoMarker = Join-Path $venvRoot "pycryptodome.version"
+    $installCrypto = $true
+    if (Test-Path -LiteralPath $cryptoMarker -PathType Leaf) {
+        if ((Get-Content -LiteralPath $cryptoMarker -Raw).Trim() -eq $PyCryptodomeVersion) {
+            $installCrypto = $false
+        }
+    }
+    if ($installCrypto) {
         Write-Step ("Installing pinned pycryptodome {0}..." -f $PyCryptodomeVersion)
-        & $venvPython -m pip install --disable-pip-version-check --quiet ("pycryptodome=={0}" -f $PyCryptodomeVersion)
-        if ($LASTEXITCODE -ne 0) { throw "Failed to install pycryptodome $PyCryptodomeVersion." }
+        Invoke-NativeChecked -Exe $venvPython -Arguments @(
+            "-m", "pip", "install", "--disable-pip-version-check", "--quiet",
+            ("pycryptodome=={0}" -f $PyCryptodomeVersion)
+        ) -FailureMessage ("Failed to install pycryptodome {0}." -f $PyCryptodomeVersion)
+        Set-Content -LiteralPath $cryptoMarker -Value $PyCryptodomeVersion -Encoding ASCII
     }
 
-    & $venvPython -m py_compile $PythonCollector
-    if ($LASTEXITCODE -ne 0) { throw "Python collector syntax validation failed." }
+    Invoke-NativeChecked -Exe $venvPython -Arguments @("-c", "import Crypto") -FailureMessage "pycryptodome import validation failed."
+    Invoke-NativeChecked -Exe $venvPython -Arguments @("-m", "py_compile", $PythonCollector) -FailureMessage "Python collector syntax validation failed."
 
     return [pscustomobject]@{
         PackageRoot = $packageRoot
@@ -272,7 +306,9 @@ try {
 
     if ($env:COLORCORE_P0004_SELFTEST -eq "1") {
         Write-Step "Running P0004 runtime self-test..."
-        & $runtime.Python $PythonCollector --self-test --output $OutputRoot
+        Invoke-NativeChecked -Exe $runtime.Python -Arguments @(
+            $PythonCollector, "--self-test", "--output", $OutputRoot
+        ) -FailureMessage "P0004 Python self-test failed."
     }
     else {
         $GTAVRoot = Resolve-GTARoot -Provided $GTAVRoot
@@ -281,16 +317,13 @@ try {
             exit 2
         }
         Write-Step ("Collecting from: {0}" -f $GTAVRoot)
-        & $runtime.Python $PythonCollector --game-root $GTAVRoot --output $OutputRoot
+        Invoke-NativeChecked -Exe $runtime.Python -Arguments @(
+            $PythonCollector, "--game-root", $GTAVRoot, "--output", $OutputRoot
+        ) -FailureMessage "P0004 GTA RPF collector failed."
     }
-    $collectorExit = $LASTEXITCODE
 }
 finally {
     $env:PYTHONPATH = $oldPythonPath
-}
-
-if ($collectorExit -ne 0) {
-    throw "Python collector stopped with exit code $collectorExit."
 }
 
 $summaryPath = Join-Path $OutputRoot "stage3_summary.json"
