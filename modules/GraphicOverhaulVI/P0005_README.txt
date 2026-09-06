@@ -1,69 +1,75 @@
-GraphicOverhaulVI — P0005 ColorCoreVI Presentation Chain Probe v0.1.3
+GraphicOverhaulVI — P0005 ColorCoreVI Presentation Chain Probe v0.1.4
 
 THIS IS AN EXPERIMENTAL / DIAGNOSTIC PATCH.
 It does NOT replace a complete GraphicOverhaulVI release.
 It does NOT modify the rendered image.
 
-Why v0.1.3 exists
+Why v0.1.4 exists
 -----------------
-v0.1.0 and v0.1.1 proved that the ASI loads but public DXGI Present/Present1
-implementation addresses obtained from a dummy swapchain do not observe GTA's
-real presentation path.
+v0.1.0/v0.1.1 loaded successfully but saw no GTA Present/Present1 traffic.
+v0.1.2 added global DXGI factory/export hooks and crashed the user's actual
+GTA V Enhanced before the first rendered image. v0.1.2 is REJECTED.
 
-v0.1.2 then added global DXGI factory/export hooks to capture the real swapchain.
-On the user's actual GTA V Enhanced installation that version crashed the game
-before the first rendered image. The log proved the crash happened only after
-those factory/export hooks became active. v0.1.2 is therefore REJECTED.
+v0.1.3 removed all hooks and switched to passive in-process observation. It was
+stable enough to initialize, but the user's log ended at t5 and contained zero
+interesting modules / zero relevant IAT entries. The v0.1.3 CI was also found to
+be too weak: it required only generic MODULE_SCAN/IAT markers, not proof that
+DXGI/D3D12 were actually detected.
 
-NVIDIA Streamline documentation warns that DXGI factories/swapchains may be SL
-proxy interfaces and that third-party tools should avoid using those proxies as
-native DXGI objects. GTA V Enhanced also supports NVIDIA DLSS/Frame Generation,
-so P0005 now identifies the real presentation/interposer chain before any more
-swapchain interception is attempted.
+P0005 v0.1.4 therefore removes the probe from the GTA process entirely.
 
-v0.1.3 safety model
+v0.1.4 safety model
 -------------------
+- STANDALONE EXE, not an ASI
+- NO DLL/ASI injection
 - NO MinHook
 - NO API hooks
-- NO DXGI factory interception
+- NO DXGI/D3D12 interception
 - NO vtable patching
-- NO Present interception
+- NO WriteProcessMemory
+- NO VirtualAllocEx / CreateRemoteThread
 - NO shader replacement
 - NO pixel writes
 - NO GTA game-file changes
 
-What v0.1.3 observes
+The only process access requested is read/query access so the tool can inspect
+module lists and PE import/IAT metadata from outside GTA.
+
+What v0.1.4 observes
 --------------------
-For up to 60 seconds after ASI load it passively records:
-- interesting loaded modules (DXGI, D3D12, Streamline, NVIDIA, DLSS, ReShade,
-  overlays and related presentation components);
-- whether sl.interposer.dll / sl.common.dll / sl.dlss_g.dll are loaded;
-- selected Streamline exports if sl.interposer.dll is present;
-- system DXGI/D3D12 export addresses;
-- the GTA executable's relevant import-address-table entries and the module
-  currently owning each resolved target.
+The standalone monitor waits for `GTA5_Enhanced.exe`, then records:
+- all relevant loaded presentation modules (DXGI, D3D12, Streamline, NVIDIA,
+  DLSS, ReShade, overlays, FSR/XeSS and related components);
+- module base addresses, sizes and paths;
+- GTA5_Enhanced.exe's import DLLs relevant to DXGI/D3D12/Streamline/DLSS;
+- relevant IAT symbols and the loaded module that owns each resolved target;
+- whether the process exits before the requested observation window finishes.
 
-This is intended to answer whether GTA calls native DXGI directly or whether its
-presentation path is already redirected/proxied before the ASI loader runs.
+Usage
+-----
+1. DELETE `ColorCoreVIOutputProbe.asi` from the GTA V Enhanced folder. v0.1.4
+   does not use any ASI.
+2. Extract this P0005 v0.1.4 package to any normal writable folder.
+3. Double-click `RUN-COLORCORE-PRESENTATION-PROBE.cmd`.
+4. Leave the console open and launch GTA V Enhanced normally through your usual
+   Epic/Rockstar path.
+5. Load Story Mode if possible and leave the game running. The monitor samples
+   for up to 60 seconds.
+6. Send back `ColorCoreVI_ExternalProbe.log` from the probe folder.
 
-Installation
-------------
-1. Remove the v0.1.2 ASI first.
-2. Copy only the v0.1.3 `ColorCoreVIOutputProbe.asi` beside `GTA5_Enhanced.exe`.
-3. Delete the previous `ColorCoreVI_OutputProbe.log`.
-4. Launch GTA V Enhanced normally and load Story Mode.
-5. Stay in game for at least 20 seconds if possible. 60 seconds gives the most
-   complete sample, but quitting earlier is fine.
-6. Quit normally and send back `ColorCoreVI_OutputProbe.log`.
+If GTA exits/crashes early, send the external log anyway. It will explicitly
+record PROCESS_EXITED and the last module snapshot seen before exit.
 
-Removal
--------
-Delete `ColorCoreVIOutputProbe.asi` and optionally the log. No persistent game
-file is edited.
+Validation gate
+---------------
+The Windows x64 CI creates a fixture process named `GTA5_Enhanced.exe` that
+really loads DXGI, D3D12 and a fake `sl.interposer.dll`. The external probe must:
+- find that already-running process;
+- detect dxgi.dll;
+- detect d3d12.dll;
+- detect sl.interposer.dll;
+- parse relevant DXGI/D3D12 import/IAT entries;
+- run without any injection or process-write API.
 
-Validation
-----------
-The release is built as an x64 ASI on Windows CI. The harness deliberately
-creates a DXGI factory before loading the ASI, then performs normal D3D12 work.
-The build only passes if passive module/IAT/system-export observations are
-written and if no active-hook marker exists in the log.
+The workflow fails if any required module/evidence marker is missing. This fixes
+the weak validation used for v0.1.3.
