@@ -43,10 +43,20 @@ Do not rewrite historical checkpoints to make later work look cleaner. If a deci
 ## CP-0005 — Evidence before imitation
 
 - **Date:** 2026-09-06
+- **State:** `VALIDATED`
+- **Decision:** The FH6/GT reference phase starts with read-only evidence collection. Confirmed files/containers are separated from hypotheses before implementing a GTA V replacement.
+- **Evidence:** `P0002` completed on the user's real installations with 16,688 files indexed, 3,367 candidates and 0 scan errors.
+- **Result:** the inventory was sufficient to select a targeted second-stage inspection instead of continuing broad scans.
+
+## CP-0006 — FH6 exposes explicit ColorCore container families
+
+- **Date:** 2026-09-06
 - **State:** `LOCKED`
-- **Decision:** The FH6/GT reference phase starts with a read-only inventory and evidence collection. We distinguish confirmed file/shader/config evidence from hypotheses before implementing a GTA V replacement.
-- **Evidence:** `P0002`.
-- **Current action:** run the ColorCoreVI scanner against local FH6 and GTA V Enhanced installations and feed the generated report back into the project.
+- **Decision/result:** P0002 identified native FH6 resources whose names directly map to the ColorCoreVI problem: `media\colourgrades.zip`, `media\displaymappers.zip`, `media\postEffects.zip`, `media\_library\Shaders.zip`, plus `media\timeofday\TimeOfDay*.xml`, weather presets and supporting camera/sky resources.
+- **Important caveat:** the broad P0002 keyword score is not itself evidence quality. The FH6 install also contains a `reshade-shaders` folder and the v0.1.x keyword matcher produced substring noise. P0003 therefore targets native paths explicitly and does not treat ReShade hits as FH6 engine evidence.
+- **Evidence / patch IDs:** `P0002`, `P0003`.
+- **Validation gate:** inspect the actual contents/entry names of the selected FH6 containers and isolate confirmed display mapping, grading, tonemapping/HDR and post-effect structures.
+- **Next allowed action:** P0003 FH6 Color Pipeline Evidence Collector. GTA V RPF mapping follows once the FH6 reference pipeline is concrete enough to know exactly what equivalents we need.
 
 ---
 
