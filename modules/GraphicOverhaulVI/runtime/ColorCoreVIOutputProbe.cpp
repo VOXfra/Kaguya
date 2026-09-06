@@ -7,6 +7,7 @@
 #include <cctype>
 #include <cstdint>
 #include <fstream>
+#include <iterator>
 #include <mutex>
 #include <set>
 #include <sstream>
@@ -45,8 +46,10 @@ namespace
         if (value.empty()) return {};
         const int needed = WideCharToMultiByte(CP_UTF8, 0, value.c_str(), -1, nullptr, 0, nullptr, nullptr);
         if (needed <= 1) return {};
-        std::string result(static_cast<size_t>(needed - 1), '\0');
-        WideCharToMultiByte(CP_UTF8, 0, value.c_str(), -1, result.data(), needed, nullptr, nullptr);
+        std::string result(static_cast<size_t>(needed), '\0');
+        const int written = WideCharToMultiByte(CP_UTF8, 0, value.c_str(), -1, result.data(), needed, nullptr, nullptr);
+        if (written <= 0) return {};
+        if (!result.empty() && result.back() == '\0') result.pop_back();
         return result;
     }
 
