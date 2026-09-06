@@ -1,0 +1,112 @@
+name: Test ColorCoreVI P0003
+
+on:
+  push:
+    paths:
+      - 'modules/GraphicOverhaulVI/RUN-FH6-COLOR-EVIDENCE.cmd'
+      - 'modules/GraphicOverhaulVI/tools/Collect-FH6ColorEvidence.ps1'
+      - 'modules/GraphicOverhaulVI/tools/Test-FH6ColorEvidence.ps1'
+      - '.github/workflows/test-colorcorevi-p0003.yml'
+  workflow_dispatch:
+
+jobs:
+  windows-powershell-51:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          Write-Host "PowerShell: $($PSVersionTable.PSVersion)"
+          if ($PSVersionTable.PSEdition -ne 'Desktop') { throw 'Expected Windows PowerShell Desktop edition.' }
+          if ($PSVersionTable.PSVersion.Major -ne 5) { throw 'Expected Windows PowerShell 5.x.' }
+
+      - name: Create deterministic FH6 fixture
+        shell: powershell
+        run: |
+          Add-Type -AssemblyName System.IO.Compression
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+
+          $root = 'C:\XboxGames\Forza Horizon 6\Content'
+          if (Test-Path -LiteralPath $root) { Remove-Item -LiteralPath $root -Recurse -Force }
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+
+          $loose = @{
+            'media\timeofday\TimeOfDay.xml' = '<TimeOfDay><Tonemap Exposure="1.0" /></TimeOfDay>'
+            'media\timeofday\TimeOfDayA.xml' = '<TimeOfDayA><PostProcess Color="wide" /></TimeOfDayA>'
+            'media\tracks\DefaultTrackSettings.xml' = '<Track><Gamma>2.2</Gamma></Track>'
+            'media\weather\Presets.xml' = '<Weather><HDR>true</HDR></Weather>'
+            'media\weather\Presets_Island.xml' = '<Weather><Bloom>1</Bloom></Weather>'
+            'media\weather\SkyZonesEffectsDefinitions.xml' = '<Sky><Exposure>1</Exposure></Sky>'
+            'media\weather\StormEffects.xml' = '<Storm><Color>1</Color></Storm>'
+            'media\PhotoModeEffectPresets.xml' = '<Photo><LUT>neutral</LUT></Photo>'
+            'media\THPConfig.xml' = '<Config><DisplayMapper>PQ</DisplayMapper></Config>'
+          }
+          foreach ($kv in $loose.GetEnumerator()) {
+            $path = Join-Path $root $kv.Key
+            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $path) | Out-Null
+            Set-Content -LiteralPath $path -Value $kv.Value -Encoding UTF8
+          }
+
+          function New-TestZip([string]$relative,[hashtable]$entries) {
+            $path = Join-Path $root $relative
+            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $path) | Out-Null
+            if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force }
+            $zip = [System.IO.Compression.ZipFile]::Open($path,[System.IO.Compression.ZipArchiveMode]::Create)
+            try {
+              foreach ($kv in $entries.GetEnumerator()) {
+                $entry = $zip.CreateEntry($kv.Key)
+                $stream = $entry.Open()
+                try {
+                  $writer = New-Object System.IO.StreamWriter($stream)
+                  try { $writer.Write($kv.Value) } finally { $writer.Dispose() }
+                } finally { $stream.Dispose() }
+              }
+            } finally { $zip.Dispose() }
+          }
+
+          New-TestZip 'media\colourgrades.zip' @{'grades\Neutral.xml'='<Grade><ColorSpace>BT.2020</ColorSpace></Grade>'}
+          New-TestZip 'media\displaymappers.zip' @{'display\DisplayMapper.xml'='<DisplayMapper><PQ>ST2084</PQ><Nits>1000</Nits></DisplayMapper>'}
+          New-TestZip 'media\postEffects.zip' @{'post\Tonemap.hlsl'='float3 Tonemap(float3 c) { return c; } // HDR exposure'}
+          New-TestZip 'media\Camera.zip' @{'camera\Exposure.xml'='<Exposure><EyeAdaptation>true</EyeAdaptation></Exposure>'}
+          New-TestZip 'media\Sky.zip' @{'sky\Sky.xml'='<Sky><Color>scene-linear</Color></Sky>'}
+          New-TestZip 'media\_library\Shaders.zip' @{'postprocess\Tonemap.hlsl'='// HDR10 PQ ST2084 BT2020 gamut tonemap displaymapper'}
+
+      - name: Run exact no-argument launcher
+        shell: cmd
+        env:
+          COLORCORE_NO_PAUSE: '1'
+        run: call modules\GraphicOverhaulVI\RUN-FH6-COLOR-EVIDENCE.cmd
+
+      - name: Validate P0003 outputs
+        shell: powershell
+        run: |
+          $out = Join-Path $env:GITHUB_WORKSPACE 'modules\GraphicOverhaulVI\stage2-output'
+          $required = @('stage2_summary.json','source_manifest.csv','archive_entries.csv','evidence_hits.csv','collector_errors.csv','README.txt')
+          foreach ($name in $required) {
+            $path = Join-Path $out $name
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Missing output: $name" }
+          }
+          $summary = Get-Content -LiteralPath (Join-Path $out 'stage2_summary.json') -Raw | ConvertFrom-Json
+          if ($summary.collectorVersion -ne '0.1.0') { throw "Unexpected collector version: $($summary.collectorVersion)" }
+          if ([int]$summary.collectorErrorCount -ne 0) { throw "Collector errors: $($summary.collectorErrorCount)" }
+          if ([int]$summary.archiveEntryCount -lt 6) { throw "Expected archive entries, got $($summary.archiveEntryCount)" }
+          if ([int]$summary.evidenceHitCount -lt 5) { throw "Expected evidence hits, got $($summary.evidenceHitCount)" }
+          if ([int]$summary.copiedSmallArchiveCount -ne 5) { throw "Expected 5 copied small archives, got $($summary.copiedSmallArchiveCount)" }
+          if ([int]$summary.extractedFileCount -lt 6) { throw "Expected extracted files, got $($summary.extractedFileCount)" }
+          if ($summary.sourceFilesModified -ne $false) { throw 'Source modification flag is not false.' }
+
+          $hits = Import-Csv -LiteralPath (Join-Path $out 'evidence_hits.csv')
+          if (-not ($hits | Where-Object { $_.Entry -match 'Tonemap\.hlsl' })) { throw 'Tonemap shader evidence missing.' }
+          if (-not ($hits | Where-Object { $_.Entry -match 'DisplayMapper\.xml' })) { throw 'Display mapper evidence missing.' }
+          if (-not (Test-Path -LiteralPath (Join-Path $out 'archives\media_colourgrades.zip.zip'))) { throw 'colourgrades archive copy missing.' }
+          Write-Host 'ColorCoreVI P0003 end-to-end Windows test PASSED.'
+
+      - name: Cleanup fixture
+        if: always()
+        shell: powershell
+        run: |
+          $root = 'C:\XboxGames\Forza Horizon 6\Content'
+          if (Test-Path -LiteralPath $root) { Remove-Item -LiteralPath $root -Recurse -Force }
