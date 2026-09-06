@@ -14,7 +14,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$ScannerVersion = "0.1.0"
+$ScannerVersion = "0.1.1"
 $ScanStartedUtc = [DateTime]::UtcNow
 
 function Write-Step {
@@ -162,12 +162,20 @@ $shaderBinaryExtensions = @(
     ".cso", ".dxbc", ".dxil", ".spv", ".shaderbin", ".shbin", ".cache"
 )
 
-$binaryProbeExtensions = @(
-    ".exe", ".dll", ".cso", ".dxbc", ".dxil", ".spv", ".shaderbin", ".shbin", ".bin", ".dat", ".cache"
+$binaryProbeAlwaysExtensions = @(
+    ".exe", ".dll", ".cso", ".dxbc", ".dxil", ".spv", ".shaderbin", ".shbin"
 )
 
-$assetExtensions = @(
-    ".cube", ".lut", ".dds", ".hdr", ".exr", ".rpf"
+$binaryProbeByNameExtensions = @(
+    ".bin", ".dat", ".cache"
+)
+
+$directCandidateAssetExtensions = @(
+    ".cube", ".lut", ".hdr", ".exr"
+)
+
+$inventoryOnlyAssetExtensions = @(
+    ".dds", ".rpf"
 )
 
 $keywordRegex = [regex]::new(
@@ -204,7 +212,7 @@ function Probe-CandidateContent {
             $text = Get-Content -LiteralPath $File.FullName -Raw -ErrorAction Stop
             foreach ($hit in (Get-KeywordHits $text)) { $hits.Add($hit) }
         }
-        elseif (-not $SkipBinaryStringProbe -and ($binaryProbeExtensions -contains $ext) -and $File.Length -le 67108864) {
+        elseif (-not $SkipBinaryStringProbe -and (($binaryProbeAlwaysExtensions -contains $ext) -or ($binaryProbeByNameExtensions -contains $ext)) -and $File.Length -le 67108864) {
             $probeType = "binary-ascii+utf16"
             $bytes = [IO.File]::ReadAllBytes($File.FullName)
             $ascii = [Text.Encoding]::ASCII.GetString($bytes)
@@ -252,8 +260,22 @@ function Scan-Game {
             $ext = $file.Extension.ToLowerInvariant()
             $relative = Get-RelativePathCompat -Root $Root -FullPath $file.FullName
             $nameHits = @(Get-KeywordHits ($file.Name + ' ' + $relative))
-            $interestingExt = ($textExtensions -contains $ext) -or ($shaderBinaryExtensions -contains $ext) -or ($assetExtensions -contains $ext)
-            $isCandidate = ($nameHits.Count -gt 0) -or $interestingExt -or (($binaryProbeExtensions -contains $ext) -and $file.Length -le 67108864)
+
+            $isKnownVisualAsset = ($directCandidateAssetExtensions -contains $ext) -or ($inventoryOnlyAssetExtensions -contains $ext)
+            $interestingExt = ($textExtensions -contains $ext) -or ($shaderBinaryExtensions -contains $ext) -or $isKnownVisualAsset
+
+            $binaryAlwaysCandidate = ($binaryProbeAlwaysExtensions -contains $ext) -and $file.Length -le 67108864
+            $binaryNamedCandidate = ($binaryProbeByNameExtensions -contains $ext) -and ($nameHits.Count -gt 0) -and $file.Length -le 67108864
+
+            # Large archives/textures such as .rpf/.dds are inventoried, but are only promoted
+            # to candidates when their path/name contains a relevant keyword. This avoids
+            # hashing tens of gigabytes for no evidence gain.
+            $isCandidate = ($nameHits.Count -gt 0) -or
+                           ($textExtensions -contains $ext) -or
+                           ($shaderBinaryExtensions -contains $ext) -or
+                           ($directCandidateAssetExtensions -contains $ext) -or
+                           $binaryAlwaysCandidate -or
+                           $binaryNamedCandidate
 
             $row = [pscustomobject]@{
                 Game                 = $Game
@@ -269,15 +291,25 @@ function Scan-Game {
             if ($isCandidate) {
                 $probe = Probe-CandidateContent -File $file
                 $sha256 = $null
-                try {
-                    $sha256 = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256 -ErrorAction Stop).Hash
+                $hashState = "SKIPPED"
+
+                if ($file.Length -le 268435456) {
+                    try {
+                        $sha256 = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256 -ErrorAction Stop).Hash
+                        $hashState = "SHA256"
+                    }
+                    catch {
+                        $hashState = "ERROR"
+                    }
                 }
-                catch { }
+                else {
+                    $hashState = "SKIPPED_GT_256MB"
+                }
 
                 $priority = "LOW"
                 if ($nameHits.Count -gt 0 -and $probe.Hits) { $priority = "HIGH" }
                 elseif ($nameHits.Count -gt 0 -or $probe.Hits) { $priority = "MEDIUM" }
-                elseif ($shaderBinaryExtensions -contains $ext -or $ext -in @('.cube', '.lut')) { $priority = "MEDIUM" }
+                elseif (($shaderBinaryExtensions -contains $ext) -or ($directCandidateAssetExtensions -contains $ext)) { $priority = "MEDIUM" }
 
                 $candidates.Add([pscustomobject]@{
                     Game             = $Game
@@ -289,6 +321,7 @@ function Scan-Game {
                     ContentHits      = $probe.Hits
                     ProbeType        = $probe.ProbeType
                     ProbeError       = $probe.ProbeError
+                    HashState        = $hashState
                     SHA256           = $sha256
                 })
             }
@@ -318,7 +351,7 @@ $summaryPath = Join-Path $resolvedOutput "scan_summary.json"
 $readmePath = Join-Path $resolvedOutput "README.txt"
 
 $inventory | Sort-Object Game, RelativePath | Export-Csv -LiteralPath $inventoryPath -NoTypeInformation -Encoding UTF8
-$candidates | Sort-Object Priority, Game, RelativePath | Export-Csv -LiteralPath $candidatePath -NoTypeInformation -Encoding UTF8
+$candidates | Sort-Object Game, Priority, RelativePath | Export-Csv -LiteralPath $candidatePath -NoTypeInformation -Encoding UTF8
 
 $extensionSummary = $inventory |
     Group-Object Game, Extension |
@@ -348,6 +381,7 @@ $summary = [ordered]@{
     mediumPriorityCandidateCount = @($candidates | Where-Object Priority -eq 'MEDIUM').Count
     scanErrorCount = $scanErrors.Count
     binaryStringProbeEnabled = (-not $SkipBinaryStringProbe.IsPresent)
+    largeCandidateHashLimitBytes = 268435456
     keywordFamilies = @(
         'tonemap', 'HDR/HDR10', 'PQ/ST.2084', 'BT/Rec.2020', 'gamut', 'scRGB', 'scene-linear',
         'white point', 'exposure', 'bloom', 'color/colour', 'LUT', 'gamma/sRGB', 'display',
@@ -380,6 +414,7 @@ Most useful files to return for analysis:
 file_inventory.csv can be large; include it when practical because it gives us the complete file map.
 
 The scanner identifies candidates. A keyword hit is evidence that a file deserves inspection, NOT proof of the exact rendering implementation.
+Large .rpf/.dds assets are inventoried without blindly hashing all of them.
 "@ | Set-Content -LiteralPath $readmePath -Encoding UTF8
 
 Write-Host ""
