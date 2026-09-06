@@ -27,7 +27,7 @@ This is the detailed historical ledger behind the compact patch table in `README
 - **Status:** `IN PROGRESS`
 - **Area:** ColorCoreVI / reverse mapping
 - **Purpose:** build a reproducible, read-only map of likely color/HDR/tonemap resources in local Forza Horizon 6 and GTA V Enhanced installations before implementing visual changes.
-- **Current version:** `0.1.4`
+- **Current version:** `0.1.5`
 - **Changes:**
   - optional FH6 and GTA V Enhanced root auto-detection;
   - Steam library discovery;
@@ -50,20 +50,34 @@ This is the detailed historical ledger behind the compact patch table in `README
   - rewrote an extension-summary conditional for Windows PowerShell 5.1;
   - attempted to add a parser preflight directly in the `.cmd` launcher;
   - that embedded preflight was invalid because `cmd.exe` escaping left a literal `^` before a PowerShell pipeline.
-- **v0.1.4 corrections:**
+- **v0.1.4 corrections and issue:**
   - moved parser validation into the standalone `tools/Test-ColorCoreVI.ps1` script rather than embedding PowerShell syntax inside CMD quoting;
-  - removed the `$PSScriptRoot`-dependent default expression from the parameter declaration and resolves the default output path only after parameter binding;
+  - removed the `$PSScriptRoot`-dependent default expression from the parameter declaration and resolved the default output path only after parameter binding;
   - simplified the scanner around Windows PowerShell 5.1-safe syntax;
   - added deterministic GitHub Actions validation on a real Windows runner using Windows PowerShell 5.1;
-  - CI runs the exact `RUN-COLORCORE-SCAN.cmd` entry point against fixture FH6/GTA directories and validates all six generated reports.
-- **Windows validation:**
-  - environment: Windows Server 2025 runner, Windows PowerShell `5.1.26100.33296`;
+  - the CI test originally supplied FH6/GTA paths as command-line arguments;
+  - the released `.cmd` contained a nested `if ... if ... (...) else (...)` structure which behaved differently when double-clicked with zero arguments: the first false IF skipped both the scanner call and the ELSE branch;
+  - the preflight had returned exit code 0, so the launcher then falsely printed `Scan finished` even though the main scanner had never run.
+- **v0.1.5 corrections:**
+  - replaced the fragile nested IF launcher logic with explicit labels/branches;
+  - added an actual zero-argument/double-click CI path;
+  - added auto-detection fixtures so CI exercises the same launch route used by the user;
+  - deletes stale `scan-output` before each run;
+  - refuses to report success unless a fresh `scan-output/scan_summary.json` exists;
+  - added a regression check forbidding the broken v0.1.4 nested-IF pattern;
+  - aligned the scanner engine version and report version to `0.1.5`.
+- **Windows validation for v0.1.5:**
+  - workflow run: `34041346603`;
+  - job: `101508557706`;
+  - Windows PowerShell 5.1: PASS;
   - standalone parser preflight: PASS;
-  - exact CMD launcher: PASS;
-  - full fixture scan: PASS;
-  - required output files: PASS;
+  - exact CMD launcher with ZERO arguments: PASS;
+  - automatic fixture install discovery: PASS;
+  - full FH6/GTA fixture scan: PASS;
+  - all six required output files: PASS;
   - output content/count/error checks: PASS;
-  - the first CI pass also caught a `$PSScriptRoot` runtime bug before v0.1.4 was released to the user.
+  - anti-false-success guard: PASS;
+  - regression guard: PASS.
 - **Files:**
   - `tools/Scan-ColorCoreVI.ps1`
   - `tools/Test-ColorCoreVI.ps1`
