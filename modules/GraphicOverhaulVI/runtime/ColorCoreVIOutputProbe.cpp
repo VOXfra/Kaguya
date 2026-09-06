@@ -1,56 +1,24 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
-#include <d3d12.h>
-#include <dxgi1_6.h>
-#include <wrl/client.h>
-#include <MinHook.h>
+#include <tlhelp32.h>
 
-#include <atomic>
+#include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <fstream>
 #include <mutex>
 #include <set>
 #include <sstream>
 #include <string>
-#include <unordered_map>
-
-using Microsoft::WRL::ComPtr;
+#include <vector>
 
 namespace
 {
-    constexpr const wchar_t* kWindowClass = L"ColorCoreVIOutputProbeDummyWindow";
     constexpr const char* kLogPath = "ColorCoreVI_OutputProbe.log";
-    constexpr const char* kVersion = "0.1.2";
-
+    constexpr const char* kVersion = "0.1.3";
     std::mutex g_logMutex;
-    std::mutex g_hookMutex;
-    std::mutex g_seenMutex;
-    std::unordered_map<void*, void*> g_trampolines;
-    std::set<void*> g_seenPresent;
-    std::set<void*> g_seenPresent1;
-    std::atomic<uint64_t> g_presentCount{0};
-    std::atomic<uint64_t> g_present1Count{0};
-    std::atomic<bool> g_hooksActive{false};
-
-    using PresentFn = HRESULT(STDMETHODCALLTYPE*)(IDXGISwapChain*, UINT, UINT);
-    using Present1Fn = HRESULT(STDMETHODCALLTYPE*)(IDXGISwapChain1*, UINT, UINT, const DXGI_PRESENT_PARAMETERS*);
-    using ResizeBuffersFn = HRESULT(STDMETHODCALLTYPE*)(IDXGISwapChain*, UINT, UINT, UINT, DXGI_FORMAT, UINT);
-    using ResizeBuffers1Fn = HRESULT(STDMETHODCALLTYPE*)(IDXGISwapChain3*, UINT, UINT, UINT, DXGI_FORMAT, UINT, const UINT*, IUnknown* const*);
-    using SetColorSpace1Fn = HRESULT(STDMETHODCALLTYPE*)(IDXGISwapChain3*, DXGI_COLOR_SPACE_TYPE);
-    using SetHDRMetaDataFn = HRESULT(STDMETHODCALLTYPE*)(IDXGISwapChain4*, DXGI_HDR_METADATA_TYPE, UINT, void*);
-
-    using FactoryCreateSwapChainFn = HRESULT(STDMETHODCALLTYPE*)(IDXGIFactory*, IUnknown*, DXGI_SWAP_CHAIN_DESC*, IDXGISwapChain**);
-    using FactoryCreateSwapChainForHwndFn = HRESULT(STDMETHODCALLTYPE*)(IDXGIFactory2*, IUnknown*, HWND, const DXGI_SWAP_CHAIN_DESC1*, const DXGI_SWAP_CHAIN_FULLSCREEN_DESC*, IDXGIOutput*, IDXGISwapChain1**);
-    using FactoryCreateSwapChainForCoreWindowFn = HRESULT(STDMETHODCALLTYPE*)(IDXGIFactory2*, IUnknown*, IUnknown*, const DXGI_SWAP_CHAIN_DESC1*, IDXGIOutput*, IDXGISwapChain1**);
-    using FactoryCreateSwapChainForCompositionFn = HRESULT(STDMETHODCALLTYPE*)(IDXGIFactory2*, IUnknown*, const DXGI_SWAP_CHAIN_DESC1*, IDXGIOutput*, IDXGISwapChain1**);
-
-    using CreateDXGIFactoryFn = HRESULT(WINAPI*)(REFIID, void**);
-    using CreateDXGIFactory2Fn = HRESULT(WINAPI*)(UINT, REFIID, void**);
-
-    CreateDXGIFactoryFn g_createDXGIFactory = nullptr;
-    CreateDXGIFactoryFn g_createDXGIFactory1 = nullptr;
-    CreateDXGIFactory2Fn g_createDXGIFactory2 = nullptr;
+    std::set<std::wstring> g_seenInterestingModules;
 
     std::string Timestamp()
     {
@@ -72,6 +40,33 @@ namespace
         out.flush();
     }
 
+    std::string Narrow(const std::wstring& value)
+    {
+        if (value.empty()) return {};
+        const int needed = WideCharToMultiByte(CP_UTF8, 0, value.c_str(), -1, nullptr, 0, nullptr, nullptr);
+        if (needed <= 1) return {};
+        std::string result(static_cast<size_t>(needed - 1), '\0');
+        WideCharToMultiByte(CP_UTF8, 0, value.c_str(), -1, result.data(), needed, nullptr, nullptr);
+        return result;
+    }
+
+    std::string LowerAscii(std::string value)
+    {
+        std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+            return static_cast<char>(std::tolower(c));
+        });
+        return value;
+    }
+
+    std::wstring LowerWide(std::wstring value)
+    {
+        std::transform(value.begin(), value.end(), value.begin(), [](wchar_t c) {
+            if (c >= L'A' && c <= L'Z') return static_cast<wchar_t>(c - L'A' + L'a');
+            return c;
+        });
+        return value;
+    }
+
     std::string PtrText(const void* p)
     {
         std::ostringstream ss;
@@ -79,695 +74,287 @@ namespace
         return ss.str();
     }
 
-    const char* FormatName(DXGI_FORMAT format)
+    std::wstring ModulePathFromAddress(const void* address)
     {
-        switch (format)
-        {
-        case DXGI_FORMAT_UNKNOWN: return "DXGI_FORMAT_UNKNOWN";
-        case DXGI_FORMAT_R8G8B8A8_UNORM: return "DXGI_FORMAT_R8G8B8A8_UNORM";
-        case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB: return "DXGI_FORMAT_R8G8B8A8_UNORM_SRGB";
-        case DXGI_FORMAT_B8G8R8A8_UNORM: return "DXGI_FORMAT_B8G8R8A8_UNORM";
-        case DXGI_FORMAT_B8G8R8A8_UNORM_SRGB: return "DXGI_FORMAT_B8G8R8A8_UNORM_SRGB";
-        case DXGI_FORMAT_R10G10B10A2_UNORM: return "DXGI_FORMAT_R10G10B10A2_UNORM";
-        case DXGI_FORMAT_R16G16B16A16_FLOAT: return "DXGI_FORMAT_R16G16B16A16_FLOAT";
-        case DXGI_FORMAT_R11G11B10_FLOAT: return "DXGI_FORMAT_R11G11B10_FLOAT";
-        case DXGI_FORMAT_R32G32B32A32_FLOAT: return "DXGI_FORMAT_R32G32B32A32_FLOAT";
-        default: return "DXGI_FORMAT_OTHER";
-        }
+        if (!address) return L"<null>";
+        HMODULE module = nullptr;
+        if (!GetModuleHandleExW(
+                GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                reinterpret_cast<LPCWSTR>(address), &module) || !module)
+            return L"<unmapped>";
+
+        wchar_t path[MAX_PATH * 4]{};
+        const DWORD count = GetModuleFileNameW(module, path, static_cast<DWORD>(std::size(path)));
+        if (count == 0) return L"<unknown>";
+        return std::wstring(path, path + count);
     }
 
-    const char* ColorSpaceName(DXGI_COLOR_SPACE_TYPE colorSpace)
+    std::wstring FileNameOnly(const std::wstring& path)
     {
-        switch (colorSpace)
-        {
-        case DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709: return "RGB_FULL_G22_NONE_P709";
-        case DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709: return "RGB_FULL_G10_NONE_P709";
-        case DXGI_COLOR_SPACE_RGB_STUDIO_G22_NONE_P709: return "RGB_STUDIO_G22_NONE_P709";
-        case DXGI_COLOR_SPACE_RGB_STUDIO_G22_NONE_P2020: return "RGB_STUDIO_G22_NONE_P2020";
-        case DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020: return "RGB_FULL_G2084_NONE_P2020";
-        case DXGI_COLOR_SPACE_RGB_STUDIO_G2084_NONE_P2020: return "RGB_STUDIO_G2084_NONE_P2020";
-        case DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P2020: return "RGB_FULL_G22_NONE_P2020";
-        case DXGI_COLOR_SPACE_RGB_STUDIO_G24_NONE_P709: return "RGB_STUDIO_G24_NONE_P709";
-        case DXGI_COLOR_SPACE_RGB_STUDIO_G24_NONE_P2020: return "RGB_STUDIO_G24_NONE_P2020";
-        case DXGI_COLOR_SPACE_YCBCR_STUDIO_G2084_LEFT_P2020: return "YCBCR_STUDIO_G2084_LEFT_P2020";
-        case DXGI_COLOR_SPACE_YCBCR_STUDIO_G2084_TOPLEFT_P2020: return "YCBCR_STUDIO_G2084_TOPLEFT_P2020";
-        default: return "COLOR_SPACE_OTHER";
-        }
+        const size_t pos = path.find_last_of(L"\\/");
+        return pos == std::wstring::npos ? path : path.substr(pos + 1);
     }
 
-    template <typename T>
-    T OriginalFor(void* self, size_t index)
+    bool IsInterestingModuleName(const std::wstring& rawName)
     {
-        if (!self) return nullptr;
-        void** vtable = *reinterpret_cast<void***>(self);
-        if (!vtable) return nullptr;
-        void* target = vtable[index];
-        std::lock_guard<std::mutex> lock(g_hookMutex);
-        auto it = g_trampolines.find(target);
-        if (it == g_trampolines.end()) return nullptr;
-        return reinterpret_cast<T>(it->second);
-    }
-
-    bool InstallTargetHook(void* target, void* detour, const char* name)
-    {
-        if (!target || !detour) return false;
-        std::lock_guard<std::mutex> lock(g_hookMutex);
-        if (g_trampolines.find(target) != g_trampolines.end()) return true;
-
-        void* original = nullptr;
-        const MH_STATUS createStatus = MH_CreateHook(target, detour, &original);
-        if (createStatus != MH_OK)
-        {
-            std::ostringstream ss;
-            ss << "HOOK_FAIL | " << name << " target=" << PtrText(target)
-               << " createStatus=" << static_cast<int>(createStatus);
-            Log(ss.str());
-            return false;
-        }
-        g_trampolines.emplace(target, original);
-
-        if (g_hooksActive.load())
-        {
-            const MH_STATUS enableStatus = MH_EnableHook(target);
-            if (enableStatus != MH_OK && enableStatus != MH_ERROR_ENABLED)
-            {
-                std::ostringstream ss;
-                ss << "HOOK_FAIL | " << name << " target=" << PtrText(target)
-                   << " enableStatus=" << static_cast<int>(enableStatus);
-                Log(ss.str());
-                return false;
-            }
-        }
-        return true;
-    }
-
-    void DescribeOutput(IDXGISwapChain* swapchain)
-    {
-        ComPtr<IDXGIOutput> output;
-        if (FAILED(swapchain->GetContainingOutput(&output)) || !output)
-        {
-            Log("OUTPUT | GetContainingOutput unavailable");
-            return;
-        }
-
-        ComPtr<IDXGIOutput6> output6;
-        if (FAILED(output.As(&output6)) || !output6)
-        {
-            Log("OUTPUT | IDXGIOutput6 unavailable");
-            return;
-        }
-
-        DXGI_OUTPUT_DESC1 desc{};
-        if (FAILED(output6->GetDesc1(&desc)))
-        {
-            Log("OUTPUT | GetDesc1 failed");
-            return;
-        }
-
-        std::ostringstream ss;
-        ss << "OUTPUT | BitsPerColor=" << desc.BitsPerColor
-           << " ColorSpace=" << ColorSpaceName(desc.ColorSpace) << "(" << static_cast<int>(desc.ColorSpace) << ")"
-           << " MinLuminance=" << desc.MinLuminance
-           << " MaxLuminance=" << desc.MaxLuminance
-           << " MaxFullFrameLuminance=" << desc.MaxFullFrameLuminance;
-        Log(ss.str());
-    }
-
-    void DescribeSwapchain(IDXGISwapChain* swapchain, const char* reason)
-    {
-        if (!swapchain) return;
-
-        DXGI_SWAP_CHAIN_DESC desc{};
-        const HRESULT descHr = swapchain->GetDesc(&desc);
-        std::ostringstream ss;
-        ss << "SWAPCHAIN | reason=" << reason << " this=" << PtrText(swapchain);
-        if (SUCCEEDED(descHr))
-        {
-            ss << " size=" << desc.BufferDesc.Width << "x" << desc.BufferDesc.Height
-               << " format=" << FormatName(desc.BufferDesc.Format) << "(" << static_cast<int>(desc.BufferDesc.Format) << ")"
-               << " bufferCount=" << desc.BufferCount
-               << " swapEffect=" << static_cast<int>(desc.SwapEffect)
-               << " flags=0x" << std::hex << std::uppercase << desc.Flags << std::dec
-               << " windowed=" << (desc.Windowed ? 1 : 0);
-        }
-        else
-        {
-            ss << " GetDescHR=0x" << std::hex << std::uppercase << static_cast<uint32_t>(descHr);
-        }
-        Log(ss.str());
-
-        ComPtr<IDXGISwapChain1> swapchain1;
-        if (SUCCEEDED(swapchain->QueryInterface(IID_PPV_ARGS(&swapchain1))) && swapchain1)
-        {
-            DXGI_SWAP_CHAIN_DESC1 desc1{};
-            if (SUCCEEDED(swapchain1->GetDesc1(&desc1)))
-            {
-                std::ostringstream s1;
-                s1 << "SWAPCHAIN1 | width=" << desc1.Width
-                   << " height=" << desc1.Height
-                   << " format=" << FormatName(desc1.Format) << "(" << static_cast<int>(desc1.Format) << ")"
-                   << " stereo=" << (desc1.Stereo ? 1 : 0)
-                   << " sampleCount=" << desc1.SampleDesc.Count
-                   << " usage=0x" << std::hex << std::uppercase << desc1.BufferUsage
-                   << " flags=0x" << desc1.Flags << std::dec;
-                Log(s1.str());
-            }
-        }
-
-        ComPtr<IDXGISwapChain3> swapchain3;
-        if (SUCCEEDED(swapchain->QueryInterface(IID_PPV_ARGS(&swapchain3))) && swapchain3)
-        {
-            const UINT index = swapchain3->GetCurrentBackBufferIndex();
-            ComPtr<ID3D12Resource> resource;
-            if (SUCCEEDED(swapchain3->GetBuffer(index, IID_PPV_ARGS(&resource))) && resource)
-            {
-                const D3D12_RESOURCE_DESC rd = resource->GetDesc();
-                std::ostringstream rs;
-                rs << "BACKBUFFER | index=" << index
-                   << " size=" << rd.Width << "x" << rd.Height
-                   << " format=" << FormatName(rd.Format) << "(" << static_cast<int>(rd.Format) << ")"
-                   << " flags=0x" << std::hex << std::uppercase << static_cast<uint32_t>(rd.Flags) << std::dec;
-                Log(rs.str());
-            }
-        }
-
-        DescribeOutput(swapchain);
-    }
-
-    HRESULT STDMETHODCALLTYPE HookPresent(IDXGISwapChain* swapchain, UINT syncInterval, UINT flags)
-    {
-        const uint64_t count = ++g_presentCount;
-        bool first = false;
-        {
-            std::lock_guard<std::mutex> lock(g_seenMutex);
-            first = g_seenPresent.insert(swapchain).second;
-        }
-        if (first)
-        {
-            std::ostringstream ss;
-            ss << "Present first-seen | this=" << PtrText(swapchain)
-               << " syncInterval=" << syncInterval
-               << " flags=0x" << std::hex << std::uppercase << flags;
-            Log(ss.str());
-            DescribeSwapchain(swapchain, "first-present");
-        }
-        else if ((count % 600u) == 0u)
-        {
-            std::ostringstream ss;
-            ss << "Present heartbeat | count=" << count << " this=" << PtrText(swapchain);
-            Log(ss.str());
-        }
-
-        PresentFn original = OriginalFor<PresentFn>(swapchain, 8);
-        if (!original)
-        {
-            Log("CALL_FAIL | Present trampoline missing");
-            return DXGI_ERROR_INVALID_CALL;
-        }
-        return original(swapchain, syncInterval, flags);
-    }
-
-    HRESULT STDMETHODCALLTYPE HookPresent1(IDXGISwapChain1* swapchain, UINT syncInterval, UINT flags, const DXGI_PRESENT_PARAMETERS* parameters)
-    {
-        const uint64_t count = ++g_present1Count;
-        bool first = false;
-        {
-            std::lock_guard<std::mutex> lock(g_seenMutex);
-            first = g_seenPresent1.insert(swapchain).second;
-        }
-        if (first)
-        {
-            std::ostringstream ss;
-            ss << "Present1 first-seen | this=" << PtrText(swapchain)
-               << " syncInterval=" << syncInterval
-               << " flags=0x" << std::hex << std::uppercase << flags;
-            Log(ss.str());
-            DescribeSwapchain(swapchain, "first-present1");
-        }
-        else if ((count % 600u) == 0u)
-        {
-            std::ostringstream ss;
-            ss << "Present1 heartbeat | count=" << count << " this=" << PtrText(swapchain);
-            Log(ss.str());
-        }
-
-        Present1Fn original = OriginalFor<Present1Fn>(swapchain, 22);
-        if (!original)
-        {
-            Log("CALL_FAIL | Present1 trampoline missing");
-            return DXGI_ERROR_INVALID_CALL;
-        }
-        return original(swapchain, syncInterval, flags, parameters);
-    }
-
-    HRESULT STDMETHODCALLTYPE HookResizeBuffers(IDXGISwapChain* swapchain, UINT bufferCount, UINT width, UINT height, DXGI_FORMAT newFormat, UINT swapchainFlags)
-    {
-        std::ostringstream before;
-        before << "ResizeBuffers begin | this=" << PtrText(swapchain)
-               << " requested=" << width << "x" << height
-               << " format=" << FormatName(newFormat) << "(" << static_cast<int>(newFormat) << ")"
-               << " bufferCount=" << bufferCount
-               << " flags=0x" << std::hex << std::uppercase << swapchainFlags;
-        Log(before.str());
-
-        ResizeBuffersFn original = OriginalFor<ResizeBuffersFn>(swapchain, 13);
-        if (!original)
-        {
-            Log("CALL_FAIL | ResizeBuffers trampoline missing");
-            return DXGI_ERROR_INVALID_CALL;
-        }
-        const HRESULT hr = original(swapchain, bufferCount, width, height, newFormat, swapchainFlags);
-        std::ostringstream after;
-        after << "ResizeBuffers end | hr=0x" << std::hex << std::uppercase << static_cast<uint32_t>(hr);
-        Log(after.str());
-        if (SUCCEEDED(hr)) DescribeSwapchain(swapchain, "post-resize");
-        return hr;
-    }
-
-    HRESULT STDMETHODCALLTYPE HookResizeBuffers1(IDXGISwapChain3* swapchain, UINT bufferCount, UINT width, UINT height,
-        DXGI_FORMAT newFormat, UINT swapchainFlags, const UINT* creationNodeMask, IUnknown* const* presentQueue)
-    {
-        std::ostringstream before;
-        before << "ResizeBuffers1 begin | this=" << PtrText(swapchain)
-               << " requested=" << width << "x" << height
-               << " format=" << FormatName(newFormat) << "(" << static_cast<int>(newFormat) << ")"
-               << " bufferCount=" << bufferCount
-               << " flags=0x" << std::hex << std::uppercase << swapchainFlags;
-        Log(before.str());
-
-        ResizeBuffers1Fn original = OriginalFor<ResizeBuffers1Fn>(swapchain, 39);
-        if (!original)
-        {
-            Log("CALL_FAIL | ResizeBuffers1 trampoline missing");
-            return DXGI_ERROR_INVALID_CALL;
-        }
-        const HRESULT hr = original(swapchain, bufferCount, width, height, newFormat, swapchainFlags, creationNodeMask, presentQueue);
-        std::ostringstream after;
-        after << "ResizeBuffers1 end | hr=0x" << std::hex << std::uppercase << static_cast<uint32_t>(hr);
-        Log(after.str());
-        if (SUCCEEDED(hr)) DescribeSwapchain(swapchain, "post-resize1");
-        return hr;
-    }
-
-    HRESULT STDMETHODCALLTYPE HookSetColorSpace1(IDXGISwapChain3* swapchain, DXGI_COLOR_SPACE_TYPE colorSpace)
-    {
-        std::ostringstream before;
-        before << "SetColorSpace1 | this=" << PtrText(swapchain)
-               << " colorSpace=" << ColorSpaceName(colorSpace) << "(" << static_cast<int>(colorSpace) << ")";
-        Log(before.str());
-
-        SetColorSpace1Fn original = OriginalFor<SetColorSpace1Fn>(swapchain, 38);
-        if (!original)
-        {
-            Log("CALL_FAIL | SetColorSpace1 trampoline missing");
-            return DXGI_ERROR_INVALID_CALL;
-        }
-        const HRESULT hr = original(swapchain, colorSpace);
-        std::ostringstream after;
-        after << "SetColorSpace1 result | hr=0x" << std::hex << std::uppercase << static_cast<uint32_t>(hr);
-        Log(after.str());
-        return hr;
-    }
-
-    HRESULT STDMETHODCALLTYPE HookSetHDRMetaData(IDXGISwapChain4* swapchain, DXGI_HDR_METADATA_TYPE type, UINT size, void* metadata)
-    {
-        std::ostringstream ss;
-        ss << "SetHDRMetaData | this=" << PtrText(swapchain)
-           << " type=" << static_cast<int>(type)
-           << " size=" << size;
-        Log(ss.str());
-
-        if (type == DXGI_HDR_METADATA_TYPE_HDR10 && metadata && size >= sizeof(DXGI_HDR_METADATA_HDR10))
-        {
-            const auto* hdr10 = static_cast<const DXGI_HDR_METADATA_HDR10*>(metadata);
-            std::ostringstream h;
-            h << "HDR10 raw | R=(" << hdr10->RedPrimary[0] << ',' << hdr10->RedPrimary[1] << ')'
-              << " G=(" << hdr10->GreenPrimary[0] << ',' << hdr10->GreenPrimary[1] << ')'
-              << " B=(" << hdr10->BluePrimary[0] << ',' << hdr10->BluePrimary[1] << ')'
-              << " W=(" << hdr10->WhitePoint[0] << ',' << hdr10->WhitePoint[1] << ')'
-              << " MaxMasteringLuminance=" << hdr10->MaxMasteringLuminance
-              << " MinMasteringLuminance=" << hdr10->MinMasteringLuminance
-              << " MaxContentLightLevel=" << hdr10->MaxContentLightLevel
-              << " MaxFrameAverageLightLevel=" << hdr10->MaxFrameAverageLightLevel;
-            Log(h.str());
-        }
-
-        SetHDRMetaDataFn original = OriginalFor<SetHDRMetaDataFn>(swapchain, 40);
-        if (!original)
-        {
-            Log("CALL_FAIL | SetHDRMetaData trampoline missing");
-            return DXGI_ERROR_INVALID_CALL;
-        }
-        const HRESULT hr = original(swapchain, type, size, metadata);
-        std::ostringstream after;
-        after << "SetHDRMetaData result | hr=0x" << std::hex << std::uppercase << static_cast<uint32_t>(hr);
-        Log(after.str());
-        return hr;
-    }
-
-    bool InstallSwapchainHooks(IDXGISwapChain* swapchain, const char* source)
-    {
-        if (!swapchain) return false;
-        ComPtr<IDXGISwapChain4> sc4;
-        if (FAILED(swapchain->QueryInterface(IID_PPV_ARGS(&sc4))) || !sc4)
-        {
-            Log(std::string("SWAPCHAIN_HOOK_SKIP | source=") + source + " IDXGISwapChain4 unavailable");
-            return false;
-        }
-
-        void** vtable = *reinterpret_cast<void***>(sc4.Get());
-        std::ostringstream targets;
-        targets << "SWAPCHAIN_TARGETS | source=" << source
-                << " this=" << PtrText(sc4.Get())
-                << " Present=" << PtrText(vtable[8])
-                << " ResizeBuffers=" << PtrText(vtable[13])
-                << " Present1=" << PtrText(vtable[22])
-                << " SetColorSpace1=" << PtrText(vtable[38])
-                << " ResizeBuffers1=" << PtrText(vtable[39])
-                << " SetHDRMetaData=" << PtrText(vtable[40]);
-        Log(targets.str());
-
-        bool ok = true;
-        ok = InstallTargetHook(vtable[8], reinterpret_cast<void*>(&HookPresent), "Present") && ok;
-        ok = InstallTargetHook(vtable[13], reinterpret_cast<void*>(&HookResizeBuffers), "ResizeBuffers") && ok;
-        ok = InstallTargetHook(vtable[22], reinterpret_cast<void*>(&HookPresent1), "Present1") && ok;
-        ok = InstallTargetHook(vtable[38], reinterpret_cast<void*>(&HookSetColorSpace1), "SetColorSpace1") && ok;
-        ok = InstallTargetHook(vtable[39], reinterpret_cast<void*>(&HookResizeBuffers1), "ResizeBuffers1") && ok;
-        ok = InstallTargetHook(vtable[40], reinterpret_cast<void*>(&HookSetHDRMetaData), "SetHDRMetaData") && ok;
-        return ok;
-    }
-
-    void RegisterRealSwapchain(IDXGISwapChain* swapchain, const char* source)
-    {
-        if (!swapchain) return;
-        std::ostringstream ss;
-        ss << "REAL_SWAPCHAIN_CREATED | source=" << source << " this=" << PtrText(swapchain);
-        Log(ss.str());
-        DescribeSwapchain(swapchain, "creation-capture");
-        if (InstallSwapchainHooks(swapchain, source))
-            Log(std::string("REAL_SWAPCHAIN_HOOKS_READY | source=") + source);
-        else
-            Log(std::string("REAL_SWAPCHAIN_HOOKS_FAILED | source=") + source);
-    }
-
-    HRESULT STDMETHODCALLTYPE HookFactoryCreateSwapChain(IDXGIFactory* factory, IUnknown* device,
-        DXGI_SWAP_CHAIN_DESC* desc, IDXGISwapChain** swapchain)
-    {
-        FactoryCreateSwapChainFn original = OriginalFor<FactoryCreateSwapChainFn>(factory, 10);
-        if (!original) return DXGI_ERROR_INVALID_CALL;
-        const HRESULT hr = original(factory, device, desc, swapchain);
-        if (SUCCEEDED(hr) && swapchain && *swapchain) RegisterRealSwapchain(*swapchain, "CreateSwapChain");
-        return hr;
-    }
-
-    HRESULT STDMETHODCALLTYPE HookFactoryCreateSwapChainForHwnd(IDXGIFactory2* factory, IUnknown* device, HWND hwnd,
-        const DXGI_SWAP_CHAIN_DESC1* desc, const DXGI_SWAP_CHAIN_FULLSCREEN_DESC* fullscreenDesc,
-        IDXGIOutput* restrictOutput, IDXGISwapChain1** swapchain)
-    {
-        FactoryCreateSwapChainForHwndFn original = OriginalFor<FactoryCreateSwapChainForHwndFn>(factory, 15);
-        if (!original) return DXGI_ERROR_INVALID_CALL;
-        const HRESULT hr = original(factory, device, hwnd, desc, fullscreenDesc, restrictOutput, swapchain);
-        if (SUCCEEDED(hr) && swapchain && *swapchain) RegisterRealSwapchain(*swapchain, "CreateSwapChainForHwnd");
-        return hr;
-    }
-
-    HRESULT STDMETHODCALLTYPE HookFactoryCreateSwapChainForCoreWindow(IDXGIFactory2* factory, IUnknown* device, IUnknown* window,
-        const DXGI_SWAP_CHAIN_DESC1* desc, IDXGIOutput* restrictOutput, IDXGISwapChain1** swapchain)
-    {
-        FactoryCreateSwapChainForCoreWindowFn original = OriginalFor<FactoryCreateSwapChainForCoreWindowFn>(factory, 16);
-        if (!original) return DXGI_ERROR_INVALID_CALL;
-        const HRESULT hr = original(factory, device, window, desc, restrictOutput, swapchain);
-        if (SUCCEEDED(hr) && swapchain && *swapchain) RegisterRealSwapchain(*swapchain, "CreateSwapChainForCoreWindow");
-        return hr;
-    }
-
-    HRESULT STDMETHODCALLTYPE HookFactoryCreateSwapChainForComposition(IDXGIFactory2* factory, IUnknown* device,
-        const DXGI_SWAP_CHAIN_DESC1* desc, IDXGIOutput* restrictOutput, IDXGISwapChain1** swapchain)
-    {
-        FactoryCreateSwapChainForCompositionFn original = OriginalFor<FactoryCreateSwapChainForCompositionFn>(factory, 24);
-        if (!original) return DXGI_ERROR_INVALID_CALL;
-        const HRESULT hr = original(factory, device, desc, restrictOutput, swapchain);
-        if (SUCCEEDED(hr) && swapchain && *swapchain) RegisterRealSwapchain(*swapchain, "CreateSwapChainForComposition");
-        return hr;
-    }
-
-    bool InstallFactoryHooks(IDXGIFactory* factory, const char* source)
-    {
-        if (!factory) return false;
-        void** baseVtable = *reinterpret_cast<void***>(factory);
-        bool ok = InstallTargetHook(baseVtable[10], reinterpret_cast<void*>(&HookFactoryCreateSwapChain), "Factory::CreateSwapChain");
-
-        ComPtr<IDXGIFactory2> factory2;
-        if (SUCCEEDED(factory->QueryInterface(IID_PPV_ARGS(&factory2))) && factory2)
-        {
-            void** vtable = *reinterpret_cast<void***>(factory2.Get());
-            ok = InstallTargetHook(vtable[15], reinterpret_cast<void*>(&HookFactoryCreateSwapChainForHwnd), "Factory2::CreateSwapChainForHwnd") && ok;
-            ok = InstallTargetHook(vtable[16], reinterpret_cast<void*>(&HookFactoryCreateSwapChainForCoreWindow), "Factory2::CreateSwapChainForCoreWindow") && ok;
-            ok = InstallTargetHook(vtable[24], reinterpret_cast<void*>(&HookFactoryCreateSwapChainForComposition), "Factory2::CreateSwapChainForComposition") && ok;
-
-            std::ostringstream ss;
-            ss << "FACTORY_TARGETS | source=" << source
-               << " CreateSwapChain=" << PtrText(baseVtable[10])
-               << " ForHwnd=" << PtrText(vtable[15])
-               << " ForCoreWindow=" << PtrText(vtable[16])
-               << " ForComposition=" << PtrText(vtable[24]);
-            Log(ss.str());
-        }
-        if (ok) Log(std::string("FACTORY_HOOKS_READY | source=") + source);
-        return ok;
-    }
-
-    HRESULT WINAPI HookCreateDXGIFactory(REFIID riid, void** ppFactory)
-    {
-        const HRESULT hr = g_createDXGIFactory(riid, ppFactory);
-        if (SUCCEEDED(hr) && ppFactory && *ppFactory)
-        {
-            ComPtr<IDXGIFactory> factory;
-            reinterpret_cast<IUnknown*>(*ppFactory)->QueryInterface(IID_PPV_ARGS(&factory));
-            if (factory) InstallFactoryHooks(factory.Get(), "CreateDXGIFactory export");
-        }
-        return hr;
-    }
-
-    HRESULT WINAPI HookCreateDXGIFactory1(REFIID riid, void** ppFactory)
-    {
-        const HRESULT hr = g_createDXGIFactory1(riid, ppFactory);
-        if (SUCCEEDED(hr) && ppFactory && *ppFactory)
-        {
-            ComPtr<IDXGIFactory> factory;
-            reinterpret_cast<IUnknown*>(*ppFactory)->QueryInterface(IID_PPV_ARGS(&factory));
-            if (factory) InstallFactoryHooks(factory.Get(), "CreateDXGIFactory1 export");
-        }
-        return hr;
-    }
-
-    HRESULT WINAPI HookCreateDXGIFactory2(UINT flags, REFIID riid, void** ppFactory)
-    {
-        const HRESULT hr = g_createDXGIFactory2(flags, riid, ppFactory);
-        if (SUCCEEDED(hr) && ppFactory && *ppFactory)
-        {
-            ComPtr<IDXGIFactory> factory;
-            reinterpret_cast<IUnknown*>(*ppFactory)->QueryInterface(IID_PPV_ARGS(&factory));
-            if (factory) InstallFactoryHooks(factory.Get(), "CreateDXGIFactory2 export");
-        }
-        return hr;
-    }
-
-    bool InstallFactoryExportHooks()
-    {
-        HMODULE dxgi = GetModuleHandleW(L"dxgi.dll");
-        if (!dxgi) dxgi = LoadLibraryW(L"dxgi.dll");
-        if (!dxgi) return false;
-
-        bool ok = true;
-        auto install = [&](const char* exportName, void* detour, void** original) -> bool
-        {
-            void* target = reinterpret_cast<void*>(GetProcAddress(dxgi, exportName));
-            if (!target)
-            {
-                Log(std::string("EXPORT_SKIP | ") + exportName + " unavailable");
-                return true;
-            }
-            const MH_STATUS status = MH_CreateHook(target, detour, original);
-            if (status != MH_OK)
-            {
-                std::ostringstream ss;
-                ss << "EXPORT_HOOK_FAIL | " << exportName << " status=" << static_cast<int>(status);
-                Log(ss.str());
-                return false;
-            }
-            std::ostringstream ss;
-            ss << "EXPORT_HOOK_TARGET | " << exportName << '=' << PtrText(target);
-            Log(ss.str());
-            return true;
+        const std::wstring name = LowerWide(rawName);
+        const wchar_t* terms[] = {
+            L"dxgi", L"d3d12", L"streamline", L"sl.", L"interposer", L"nvngx",
+            L"dlss", L"nvidia", L"reshade", L"overlay", L"steam", L"epic",
+            L"amd", L"fsr", L"xess", L"intel", L"framegen", L"frame_generation"
         };
-
-        ok = install("CreateDXGIFactory", reinterpret_cast<void*>(&HookCreateDXGIFactory), reinterpret_cast<void**>(&g_createDXGIFactory)) && ok;
-        ok = install("CreateDXGIFactory1", reinterpret_cast<void*>(&HookCreateDXGIFactory1), reinterpret_cast<void**>(&g_createDXGIFactory1)) && ok;
-        ok = install("CreateDXGIFactory2", reinterpret_cast<void*>(&HookCreateDXGIFactory2), reinterpret_cast<void**>(&g_createDXGIFactory2)) && ok;
-        return ok;
+        for (const wchar_t* term : terms)
+            if (name.find(term) != std::wstring::npos) return true;
+        return false;
     }
 
-    LRESULT CALLBACK DummyWndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
+    void EnumerateInterestingModules(const char* sample)
     {
-        return DefWindowProcW(hwnd, message, wParam, lParam);
-    }
-
-    bool SelectProbeAdapter(IDXGIFactory6* factory, ComPtr<IDXGIAdapter1>& adapter, bool& usedWarp)
-    {
-        usedWarp = false;
-        if (factory)
+        HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, GetCurrentProcessId());
+        if (snapshot == INVALID_HANDLE_VALUE)
         {
-            for (UINT i = 0; ; ++i)
+            Log(std::string("MODULE_SCAN_FAIL | sample=") + sample + " error=" + std::to_string(GetLastError()));
+            return;
+        }
+
+        MODULEENTRY32W entry{};
+        entry.dwSize = sizeof(entry);
+        size_t total = 0;
+        size_t interesting = 0;
+        if (Module32FirstW(snapshot, &entry))
+        {
+            do
             {
-                ComPtr<IDXGIAdapter1> candidate;
-                if (factory->EnumAdapterByGpuPreference(i, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE,
-                    IID_PPV_ARGS(&candidate)) == DXGI_ERROR_NOT_FOUND)
-                    break;
-                if (!candidate) continue;
+                ++total;
+                const std::wstring name(entry.szModule);
+                if (!IsInterestingModuleName(name)) continue;
+                ++interesting;
 
-                DXGI_ADAPTER_DESC1 desc{};
-                candidate->GetDesc1(&desc);
-                if ((desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) != 0) continue;
-                if (FAILED(D3D12CreateDevice(candidate.Get(), D3D_FEATURE_LEVEL_11_0, __uuidof(ID3D12Device), nullptr))) continue;
-
-                adapter = candidate;
+                const std::wstring path(entry.szExePath);
+                const std::wstring key = LowerWide(path);
+                const bool firstSeen = g_seenInterestingModules.insert(key).second;
                 std::ostringstream ss;
-                ss << "DUMMY_ADAPTER | mode=hardware vendor=0x" << std::hex << std::uppercase << desc.VendorId
-                   << " device=0x" << desc.DeviceId << std::dec
-                   << " dedicatedVRAM=" << static_cast<unsigned long long>(desc.DedicatedVideoMemory);
+                ss << "MODULE | sample=" << sample
+                   << " firstSeen=" << (firstSeen ? 1 : 0)
+                   << " name=" << Narrow(name)
+                   << " base=" << PtrText(entry.modBaseAddr)
+                   << " size=" << entry.modBaseSize
+                   << " path=" << Narrow(path);
                 Log(ss.str());
-                return true;
+            } while (Module32NextW(snapshot, &entry));
+        }
+        CloseHandle(snapshot);
+
+        std::ostringstream summary;
+        summary << "MODULE_SCAN | sample=" << sample
+                << " total=" << total
+                << " interesting=" << interesting;
+        Log(summary.str());
+    }
+
+    bool IsInterestingImportDll(const std::string& rawDll)
+    {
+        const std::string dll = LowerAscii(rawDll);
+        return dll.find("dxgi") != std::string::npos ||
+               dll.find("d3d12") != std::string::npos ||
+               dll.find("interposer") != std::string::npos ||
+               dll.find("streamline") != std::string::npos ||
+               dll.find("nvngx") != std::string::npos;
+    }
+
+    bool RvaInImage(uint32_t rva, uint32_t bytes, uint32_t imageSize)
+    {
+        if (rva == 0 || rva >= imageSize) return false;
+        return bytes <= imageSize - rva;
+    }
+
+    void InspectMainModuleImports(const char* sample)
+    {
+        auto* base = reinterpret_cast<uint8_t*>(GetModuleHandleW(nullptr));
+        if (!base)
+        {
+            Log(std::string("IAT_FAIL | sample=") + sample + " reason=no-main-module");
+            return;
+        }
+
+        const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
+        if (dos->e_magic != IMAGE_DOS_SIGNATURE || dos->e_lfanew <= 0)
+        {
+            Log(std::string("IAT_FAIL | sample=") + sample + " reason=bad-dos-header");
+            return;
+        }
+
+        const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS64*>(base + dos->e_lfanew);
+        if (nt->Signature != IMAGE_NT_SIGNATURE || nt->OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR64_MAGIC)
+        {
+            Log(std::string("IAT_FAIL | sample=") + sample + " reason=bad-pe-header");
+            return;
+        }
+
+        const uint32_t imageSize = nt->OptionalHeader.SizeOfImage;
+        const auto& dir = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
+        if (!RvaInImage(dir.VirtualAddress, sizeof(IMAGE_IMPORT_DESCRIPTOR), imageSize))
+        {
+            Log(std::string("IAT | sample=") + sample + " state=no-import-directory");
+            return;
+        }
+
+        const auto* desc = reinterpret_cast<const IMAGE_IMPORT_DESCRIPTOR*>(base + dir.VirtualAddress);
+        size_t dllCount = 0;
+        size_t symbolCount = 0;
+
+        for (size_t di = 0; di < 512; ++di, ++desc)
+        {
+            const uintptr_t descOffset = reinterpret_cast<const uint8_t*>(desc) - base;
+            if (descOffset + sizeof(*desc) > imageSize) break;
+            if (desc->Name == 0) break;
+            if (!RvaInImage(desc->Name, 2, imageSize)) continue;
+
+            const char* dllNamePtr = reinterpret_cast<const char*>(base + desc->Name);
+            std::string dllName(dllNamePtr, strnlen_s(dllNamePtr, imageSize - desc->Name));
+            if (!IsInterestingImportDll(dllName)) continue;
+            ++dllCount;
+
+            const uint32_t lookupRva = desc->OriginalFirstThunk ? desc->OriginalFirstThunk : desc->FirstThunk;
+            if (!RvaInImage(lookupRva, sizeof(IMAGE_THUNK_DATA64), imageSize) ||
+                !RvaInImage(desc->FirstThunk, sizeof(IMAGE_THUNK_DATA64), imageSize))
+                continue;
+
+            const auto* lookup = reinterpret_cast<const IMAGE_THUNK_DATA64*>(base + lookupRva);
+            const auto* iat = reinterpret_cast<const IMAGE_THUNK_DATA64*>(base + desc->FirstThunk);
+
+            for (size_t ti = 0; ti < 4096; ++ti, ++lookup, ++iat)
+            {
+                const uintptr_t lookupOff = reinterpret_cast<const uint8_t*>(lookup) - base;
+                const uintptr_t iatOff = reinterpret_cast<const uint8_t*>(iat) - base;
+                if (lookupOff + sizeof(*lookup) > imageSize || iatOff + sizeof(*iat) > imageSize) break;
+                if (lookup->u1.AddressOfData == 0) break;
+
+                std::string symbol;
+                if (IMAGE_SNAP_BY_ORDINAL64(lookup->u1.Ordinal))
+                {
+                    symbol = std::string("ordinal#") + std::to_string(IMAGE_ORDINAL64(lookup->u1.Ordinal));
+                }
+                else
+                {
+                    const uint64_t nameRva64 = lookup->u1.AddressOfData;
+                    if (nameRva64 >= imageSize || !RvaInImage(static_cast<uint32_t>(nameRva64), sizeof(IMAGE_IMPORT_BY_NAME), imageSize))
+                        continue;
+                    const auto* byName = reinterpret_cast<const IMAGE_IMPORT_BY_NAME*>(base + static_cast<uint32_t>(nameRva64));
+                    const char* symbolPtr = reinterpret_cast<const char*>(byName->Name);
+                    const uintptr_t symbolOff = reinterpret_cast<const uint8_t*>(symbolPtr) - base;
+                    if (symbolOff >= imageSize) continue;
+                    symbol.assign(symbolPtr, strnlen_s(symbolPtr, imageSize - symbolOff));
+                }
+
+                void* target = reinterpret_cast<void*>(static_cast<uintptr_t>(iat->u1.Function));
+                const std::wstring ownerPath = ModulePathFromAddress(target);
+                std::ostringstream ss;
+                ss << "IAT | sample=" << sample
+                   << " dll=" << dllName
+                   << " symbol=" << symbol
+                   << " target=" << PtrText(target)
+                   << " owner=" << Narrow(FileNameOnly(ownerPath))
+                   << " ownerPath=" << Narrow(ownerPath);
+                Log(ss.str());
+                ++symbolCount;
             }
         }
 
-        ComPtr<IDXGIAdapter> warpBase;
-        if (FAILED(factory->EnumWarpAdapter(IID_PPV_ARGS(&warpBase))) || !warpBase) return false;
-        if (FAILED(warpBase.As(&adapter)) || !adapter) return false;
-        usedWarp = true;
-        Log("DUMMY_ADAPTER | mode=WARP fallback");
-        return true;
+        std::ostringstream summary;
+        summary << "IAT_SUMMARY | sample=" << sample
+                << " relevantDlls=" << dllCount
+                << " symbols=" << symbolCount;
+        Log(summary.str());
     }
 
-    bool CreateProbeSwapchain(ComPtr<IDXGIFactory6>& outFactory, ComPtr<IDXGISwapChain4>& outSwapchain, HWND& outHwnd)
+    void InspectStreamline(const char* sample)
     {
-        if (FAILED(CreateDXGIFactory2(0, IID_PPV_ARGS(&outFactory))) || !outFactory)
+        const wchar_t* candidates[] = { L"sl.interposer.dll", L"sl.common.dll", L"sl.dlss_g.dll", L"sl.dlss.dll" };
+        for (const wchar_t* name : candidates)
         {
-            Log("INIT_FAIL | CreateDXGIFactory2");
-            return false;
+            HMODULE module = GetModuleHandleW(name);
+            if (!module) continue;
+            wchar_t path[MAX_PATH * 4]{};
+            GetModuleFileNameW(module, path, static_cast<DWORD>(std::size(path)));
+            std::ostringstream ss;
+            ss << "STREAMLINE | sample=" << sample
+               << " module=" << Narrow(name)
+               << " base=" << PtrText(module)
+               << " path=" << Narrow(path);
+            Log(ss.str());
+
+            if (_wcsicmp(name, L"sl.interposer.dll") == 0)
+            {
+                const char* exports[] = { "slGetNativeInterface", "slUpgradeInterface", "slInit", "slShutdown" };
+                for (const char* exportName : exports)
+                {
+                    FARPROC proc = GetProcAddress(module, exportName);
+                    std::ostringstream es;
+                    es << "STREAMLINE_EXPORT | sample=" << sample
+                       << " name=" << exportName
+                       << " address=" << PtrText(reinterpret_cast<void*>(proc));
+                    Log(es.str());
+                }
+            }
         }
-
-        ComPtr<IDXGIAdapter1> adapter;
-        bool usedWarp = false;
-        if (!SelectProbeAdapter(outFactory.Get(), adapter, usedWarp))
-        {
-            Log("INIT_FAIL | SelectProbeAdapter");
-            return false;
-        }
-
-        ComPtr<ID3D12Device> device;
-        if (FAILED(D3D12CreateDevice(adapter.Get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&device))))
-        {
-            Log("INIT_FAIL | D3D12CreateDevice");
-            return false;
-        }
-
-        D3D12_COMMAND_QUEUE_DESC queueDesc{};
-        queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
-        ComPtr<ID3D12CommandQueue> queue;
-        if (FAILED(device->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&queue))))
-        {
-            Log("INIT_FAIL | CreateCommandQueue");
-            return false;
-        }
-
-        WNDCLASSEXW wc{};
-        wc.cbSize = sizeof(wc);
-        wc.lpfnWndProc = DummyWndProc;
-        wc.hInstance = GetModuleHandleW(nullptr);
-        wc.lpszClassName = kWindowClass;
-        RegisterClassExW(&wc);
-
-        HWND hwnd = CreateWindowExW(0, kWindowClass, L"ColorCoreVI Probe Dummy", WS_OVERLAPPED,
-            0, 0, 64, 64, nullptr, nullptr, wc.hInstance, nullptr);
-        if (!hwnd)
-        {
-            Log("INIT_FAIL | CreateWindowExW");
-            return false;
-        }
-
-        DXGI_SWAP_CHAIN_DESC1 desc{};
-        desc.Width = 64;
-        desc.Height = 64;
-        desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-        desc.SampleDesc.Count = 1;
-        desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-        desc.BufferCount = 2;
-        desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
-
-        ComPtr<IDXGISwapChain1> swapchain1;
-        const HRESULT hr = outFactory->CreateSwapChainForHwnd(queue.Get(), hwnd, &desc, nullptr, nullptr, &swapchain1);
-        if (FAILED(hr))
-        {
-            DestroyWindow(hwnd);
-            Log("INIT_FAIL | CreateSwapChainForHwnd");
-            return false;
-        }
-
-        if (FAILED(swapchain1.As(&outSwapchain)) || !outSwapchain)
-        {
-            DestroyWindow(hwnd);
-            Log("INIT_FAIL | Query IDXGISwapChain4");
-            return false;
-        }
-
-        outHwnd = hwnd;
-        return true;
     }
 
-    DWORD WINAPI InitializeProbe(LPVOID)
+    void InspectSystemExports(const char* sample)
+    {
+        const wchar_t* modules[] = { L"dxgi.dll", L"d3d12.dll" };
+        const char* dxgiExports[] = { "CreateDXGIFactory", "CreateDXGIFactory1", "CreateDXGIFactory2" };
+        const char* d3d12Exports[] = { "D3D12CreateDevice", "D3D12GetDebugInterface" };
+
+        for (const wchar_t* moduleName : modules)
+        {
+            HMODULE module = GetModuleHandleW(moduleName);
+            if (!module) continue;
+            const char** exports = (_wcsicmp(moduleName, L"dxgi.dll") == 0) ? dxgiExports : d3d12Exports;
+            const size_t count = (_wcsicmp(moduleName, L"dxgi.dll") == 0) ? std::size(dxgiExports) : std::size(d3d12Exports);
+            for (size_t i = 0; i < count; ++i)
+            {
+                FARPROC proc = GetProcAddress(module, exports[i]);
+                std::ostringstream ss;
+                ss << "SYSTEM_EXPORT | sample=" << sample
+                   << " module=" << Narrow(moduleName)
+                   << " name=" << exports[i]
+                   << " address=" << PtrText(reinterpret_cast<void*>(proc));
+                Log(ss.str());
+            }
+        }
+    }
+
+    void Sample(const char* name, bool inspectIat)
+    {
+        EnumerateInterestingModules(name);
+        InspectStreamline(name);
+        InspectSystemExports(name);
+        if (inspectIat) InspectMainModuleImports(name);
+    }
+
+    DWORD WINAPI ProbeThread(LPVOID)
     {
         DeleteFileA(kLogPath);
         Log(std::string("ColorCoreVI Output Probe P0005 v") + kVersion + " | START");
-        Log("MODE | passive logging only; no pixel modification");
-        Log("STRATEGY | hardware swapchain targets + factory creation capture + DXGI factory exports");
+        Log("MODE | observation only; NO API hooks; NO vtable patching; NO pixel modification");
+        Log("PURPOSE | identify GTA presentation/interposer chain before touching the real swapchain");
 
-        ComPtr<IDXGIFactory6> dummyFactory;
-        ComPtr<IDXGISwapChain4> dummySwapchain;
-        HWND hwnd = nullptr;
-        if (!CreateProbeSwapchain(dummyFactory, dummySwapchain, hwnd))
+        Sample("t0", true);
+        Log("PROBE_READY | passive presentation-chain observation active");
+
+        for (int second = 1; second <= 60; ++second)
         {
-            Log("PROBE_DISABLED | probe swapchain creation failed");
-            return 0;
+            Sleep(1000);
+            if (second == 2) Sample("t2", false);
+            else if (second == 5) Sample("t5", true);
+            else if (second == 10) Sample("t10", false);
+            else if (second == 20) Sample("t20", true);
+            else if (second == 40) Sample("t40", false);
+            else if (second == 60) Sample("t60", true);
         }
 
-        if (MH_Initialize() != MH_OK)
-        {
-            DestroyWindow(hwnd);
-            Log("PROBE_DISABLED | MH_Initialize failed");
-            return 0;
-        }
-
-        bool ok = true;
-        ok = InstallFactoryHooks(dummyFactory.Get(), "probe factory") && ok;
-        ok = InstallSwapchainHooks(dummySwapchain.Get(), "probe swapchain") && ok;
-        ok = InstallFactoryExportHooks() && ok;
-
-        if (!ok || MH_EnableHook(MH_ALL_HOOKS) != MH_OK)
-        {
-            MH_Uninitialize();
-            DestroyWindow(hwnd);
-            Log("PROBE_DISABLED | hook activation failed");
-            return 0;
-        }
-        g_hooksActive.store(true);
-
-        Log("HOOKS_READY | factory creation + Present Present1 ResizeBuffers ResizeBuffers1 SetColorSpace1 SetHDRMetaData");
-
-        dummySwapchain.Reset();
-        dummyFactory.Reset();
-        DestroyWindow(hwnd);
-        UnregisterClassW(kWindowClass, GetModuleHandleW(nullptr));
+        Log("PROBE_COMPLETE | 60-second passive observation window finished");
         return 0;
     }
 }
@@ -777,16 +364,8 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID)
     if (reason == DLL_PROCESS_ATTACH)
     {
         DisableThreadLibraryCalls(module);
-        HANDLE thread = CreateThread(nullptr, 0, InitializeProbe, nullptr, 0, nullptr);
+        HANDLE thread = CreateThread(nullptr, 0, ProbeThread, nullptr, 0, nullptr);
         if (thread) CloseHandle(thread);
-    }
-    else if (reason == DLL_PROCESS_DETACH)
-    {
-        if (g_hooksActive.load())
-        {
-            MH_DisableHook(MH_ALL_HOOKS);
-            MH_Uninitialize();
-        }
     }
     return TRUE;
 }
