@@ -1,0 +1,72 @@
+name: Test ColorCoreVI P0004
+
+on:
+  push:
+    paths:
+      - 'modules/GraphicOverhaulVI/RUN-GTAV-COLOR-EVIDENCE.cmd'
+      - 'modules/GraphicOverhaulVI/tools/Collect-GTAVColorEvidence.ps1'
+      - 'modules/GraphicOverhaulVI/tools/Collect-GTAVColorEvidence.py'
+      - 'modules/GraphicOverhaulVI/tools/Test-GTAVColorEvidence.ps1'
+      - '.github/workflows/test-colorcorevi-p0004.yml'
+  workflow_dispatch:
+
+jobs:
+  windows-powershell-51:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Verify Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          Write-Host "PowerShell: $($PSVersionTable.PSVersion)"
+          if ($PSVersionTable.PSEdition -ne 'Desktop') { throw 'Expected Windows PowerShell Desktop edition.' }
+          if ($PSVersionTable.PSVersion.Major -ne 5) { throw 'Expected Windows PowerShell 5.x.' }
+          python --version
+
+      - name: Run exact no-argument launcher in self-test mode
+        shell: cmd
+        env:
+          COLORCORE_NO_PAUSE: '1'
+          COLORCORE_P0004_SELFTEST: '1'
+        run: call modules\GraphicOverhaulVI\RUN-GTAV-COLOR-EVIDENCE.cmd
+
+      - name: Validate bootstrap, pinned upstream and secret guard
+        shell: powershell
+        run: |
+          $module = Join-Path $env:GITHUB_WORKSPACE 'modules\GraphicOverhaulVI'
+          $out = Join-Path $module 'stage3-output'
+          $summaryPath = Join-Path $out 'stage3_summary.json'
+          if (-not (Test-Path -LiteralPath $summaryPath -PathType Leaf)) { throw 'stage3_summary.json missing.' }
+          $summary = Get-Content -LiteralPath $summaryPath -Raw | ConvertFrom-Json
+          if ($summary.collectorVersion -ne '0.1.0') { throw "Unexpected collector version: $($summary.collectorVersion)" }
+          if ($summary.selfTest -ne $true) { throw 'Expected selfTest=true.' }
+          if ($summary.runtimeImports -ne $true) { throw 'Pinned reader/crypto import test failed.' }
+          if ($summary.keyFilesWritten -ne $false) { throw 'keyFilesWritten is not false.' }
+          if ($summary.sourceFilesModified -ne $false) { throw 'sourceFilesModified is not false.' }
+
+          $forbidden = @('gtav_aes_key.dat','gtav_ng_key.dat','gtav_ng_decrypt_tables.dat')
+          $bad = Get-ChildItem -LiteralPath $out -Recurse -File | Where-Object { $forbidden -contains $_.Name.ToLowerInvariant() }
+          if ($bad) { throw 'Forbidden GTA key artifact reached stage3-output.' }
+
+          $runtime = Join-Path $module 'p0004-runtime'
+          $marker = (Get-Content -LiteralPath (Join-Path $runtime 'upstream.commit') -Raw).Trim()
+          if ($marker -ne 'c09f1f1b15f7a0ebe77f852c44f8aca3c9e358a7') { throw "Wrong upstream commit: $marker" }
+          $magic = Get-ChildItem -LiteralPath (Join-Path $runtime 'upstream') -Recurse -Filter magic.dat -File | Select-Object -First 1
+          if (-not $magic) { throw 'Pinned upstream magic.dat missing.' }
+          $hash = (Get-FileHash -LiteralPath $magic.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne 'dc35981f822e892ced3aa81d31e7a96927d573ee28f67417592b5afeaf330832') { throw "magic.dat hash mismatch: $hash" }
+          Write-Host 'ColorCoreVI P0004 bootstrap/security self-test PASSED.'
+
+      - name: Validate anti-false-success launcher guard
+        shell: powershell
+        run: |
+          $cmd = Get-Content -LiteralPath 'modules\GraphicOverhaulVI\RUN-GTAV-COLOR-EVIDENCE.cmd' -Raw
+          if ($cmd -notmatch 'stage3_summary\.json') { throw 'Launcher does not require stage3_summary.json.' }
+          if ($cmd -notmatch 'missing_output') { throw 'Launcher hard-failure path missing.' }
