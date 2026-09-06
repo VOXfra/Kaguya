@@ -14,7 +14,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$ScannerVersion = "0.1.1"
+$ScannerVersion = "0.1.2"
 $ScanStartedUtc = [DateTime]::UtcNow
 
 function Write-Step {
@@ -119,6 +119,7 @@ function Resolve-GameRoot {
     )
 
     if ($Provided) {
+        $Provided = $Provided.Trim().Trim('"')
         if (-not (Test-Path -LiteralPath $Provided -PathType Container)) {
             throw "$GameName root does not exist: $Provided"
         }
@@ -133,22 +134,61 @@ function Resolve-GameRoot {
 
     if ($found.Count -gt 1) {
         Write-Host "Multiple $GameName candidates were found:" -ForegroundColor Yellow
-        $found | ForEach-Object { Write-Host "  - $_" }
-        throw "Re-run with the explicit -${GameName}Root path."
+        for ($i = 0; $i -lt $found.Count; $i++) {
+            Write-Host "  [$($i + 1)] $($found[$i])"
+        }
+
+        $choice = Read-Host "Choose the correct $GameName number, or press Enter to paste a different path"
+        if ($choice -match '^\d+$') {
+            $index = [int]$choice - 1
+            if ($index -ge 0 -and $index -lt $found.Count) {
+                return (Resolve-Path -LiteralPath $found[$index]).Path
+            }
+        }
     }
 
     return $null
 }
 
+function Request-GameRoot {
+    param([string]$GameName, [string]$FriendlyName)
+
+    while ($true) {
+        Write-Host ""
+        Write-Host "$FriendlyName was not auto-detected." -ForegroundColor Yellow
+        $manual = Read-Host "Paste the $FriendlyName install folder path (or press Enter to cancel)"
+        if ([string]::IsNullOrWhiteSpace($manual)) {
+            return $null
+        }
+
+        $manual = $manual.Trim().Trim('"')
+        if (Test-Path -LiteralPath $manual -PathType Container) {
+            return (Resolve-Path -LiteralPath $manual).Path
+        }
+
+        Write-Host "That folder does not exist. Try again." -ForegroundColor Red
+    }
+}
+
 $FH6Root = Resolve-GameRoot -Provided $FH6Root -GameName "FH6" -Finder { Find-FH6Install }
 $GTAVRoot = Resolve-GameRoot -Provided $GTAVRoot -GameName "GTAV" -Finder { Find-GTAVInstall }
 
-if (-not $FH6Root -and -not $GTAVRoot) {
-    Write-Host "Neither game could be auto-detected." -ForegroundColor Red
-    Write-Host "Example:" -ForegroundColor Yellow
-    Write-Host '.\Scan-ColorCoreVI.ps1 -FH6Root "D:\...\Forza Horizon 6" -GTAVRoot "E:\...\GTAVEnhanced"'
+if (-not $FH6Root) {
+    $FH6Root = Request-GameRoot -GameName "FH6" -FriendlyName "Forza Horizon 6"
+}
+if (-not $GTAVRoot) {
+    $GTAVRoot = Request-GameRoot -GameName "GTAV" -FriendlyName "GTA V Enhanced"
+}
+
+if (-not $FH6Root -or -not $GTAVRoot) {
+    Write-Host ""
+    Write-Host "The ColorCoreVI comparison scan requires BOTH FH6 and GTA V Enhanced." -ForegroundColor Red
+    Write-Host "No game files were modified. Re-run the launcher when both install folders are available." -ForegroundColor Yellow
     exit 2
 }
+
+Write-Step "FH6 root: $FH6Root"
+Write-Step "GTA V Enhanced root: $GTAVRoot"
 
 $resolvedOutput = [IO.Path]::GetFullPath($OutputRoot)
 New-Item -ItemType Directory -Force -Path $resolvedOutput | Out-Null
@@ -239,11 +279,6 @@ $scanErrors = New-Object System.Collections.Generic.List[object]
 
 function Scan-Game {
     param([string]$Game, [string]$Root)
-
-    if (-not $Root) {
-        Write-Step "$Game was not supplied/detected; skipping."
-        return
-    }
 
     Write-Step "Scanning $Game metadata: $Root"
 
