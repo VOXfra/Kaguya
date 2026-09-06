@@ -33,10 +33,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cmake --build minhook-build --config Release --target install
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $lib = Get-ChildItem minhook-install -Recurse -Filter minhook.lib | Select-Object -First 1
-          if (-not $lib) { throw 'minhook.lib not found after install.' }
+          $lib = Get-ChildItem minhook-install -Recurse -Filter 'minhook*.lib' | Where-Object { $_.Name -match '^minhook(\.x64)?\.lib$' } | Select-Object -First 1
+          if (-not $lib) { throw 'MinHook static library not found after install.' }
           "MINHOOK_LIB=$($lib.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "MINHOOK_INCLUDE=$((Resolve-Path minhook-install/include).Path)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "Using MinHook library: $($lib.FullName)"
 
       - name: Build passive ASI and end-to-end harness
         shell: cmd
