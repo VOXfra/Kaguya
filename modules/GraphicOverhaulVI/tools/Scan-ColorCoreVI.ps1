@@ -14,7 +14,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$ScannerVersion = "0.1.4"
+$ScannerVersion = "0.1.5"
 $ScanStartedUtc = [DateTime]::UtcNow
 
 if ([string]::IsNullOrWhiteSpace($OutputRoot)) {
