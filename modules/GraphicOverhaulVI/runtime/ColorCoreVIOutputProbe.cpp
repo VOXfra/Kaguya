@@ -9,7 +9,6 @@
 #include <atomic>
 #include <cstdint>
 #include <fstream>
-#include <iomanip>
 #include <mutex>
 #include <set>
 #include <sstream>
@@ -19,7 +18,6 @@ using Microsoft::WRL::ComPtr;
 
 namespace
 {
-    HMODULE g_self = nullptr;
     std::mutex g_logMutex;
     std::mutex g_seenMutex;
     std::set<void*> g_seenSwapchains;
@@ -28,12 +26,16 @@ namespace
     constexpr const char* kLogPath = "ColorCoreVI_OutputProbe.log";
 
     using PresentFn = HRESULT(STDMETHODCALLTYPE*)(IDXGISwapChain*, UINT, UINT);
+    using Present1Fn = HRESULT(STDMETHODCALLTYPE*)(IDXGISwapChain1*, UINT, UINT, const DXGI_PRESENT_PARAMETERS*);
     using ResizeBuffersFn = HRESULT(STDMETHODCALLTYPE*)(IDXGISwapChain*, UINT, UINT, UINT, DXGI_FORMAT, UINT);
+    using ResizeBuffers1Fn = HRESULT(STDMETHODCALLTYPE*)(IDXGISwapChain3*, UINT, UINT, UINT, DXGI_FORMAT, UINT, const UINT*, IUnknown* const*);
     using SetColorSpace1Fn = HRESULT(STDMETHODCALLTYPE*)(IDXGISwapChain3*, DXGI_COLOR_SPACE_TYPE);
     using SetHDRMetaDataFn = HRESULT(STDMETHODCALLTYPE*)(IDXGISwapChain4*, DXGI_HDR_METADATA_TYPE, UINT, void*);
 
     PresentFn g_present = nullptr;
+    Present1Fn g_present1 = nullptr;
     ResizeBuffersFn g_resizeBuffers = nullptr;
+    ResizeBuffers1Fn g_resizeBuffers1 = nullptr;
     SetColorSpace1Fn g_setColorSpace1 = nullptr;
     SetHDRMetaDataFn g_setHDRMetaData = nullptr;
 
@@ -43,8 +45,7 @@ namespace
         GetLocalTime(&st);
         char buffer[64]{};
         sprintf_s(buffer, "%04u-%02u-%02u %02u:%02u:%02u.%03u",
-            st.wYear, st.wMonth, st.wDay,
-            st.wHour, st.wMinute, st.wSecond, st.wMilliseconds);
+            st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond, st.wMilliseconds);
         return buffer;
     }
 
@@ -82,27 +83,11 @@ namespace
         case DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709: return "RGB_FULL_G10_NONE_P709";
         case DXGI_COLOR_SPACE_RGB_STUDIO_G22_NONE_P709: return "RGB_STUDIO_G22_NONE_P709";
         case DXGI_COLOR_SPACE_RGB_STUDIO_G22_NONE_P2020: return "RGB_STUDIO_G22_NONE_P2020";
-        case DXGI_COLOR_SPACE_RESERVED: return "RESERVED";
-        case DXGI_COLOR_SPACE_YCBCR_FULL_G22_NONE_P709_X601: return "YCBCR_FULL_G22_NONE_P709_X601";
-        case DXGI_COLOR_SPACE_YCBCR_STUDIO_G22_LEFT_P601: return "YCBCR_STUDIO_G22_LEFT_P601";
-        case DXGI_COLOR_SPACE_YCBCR_FULL_G22_LEFT_P601: return "YCBCR_FULL_G22_LEFT_P601";
-        case DXGI_COLOR_SPACE_YCBCR_STUDIO_G22_LEFT_P709: return "YCBCR_STUDIO_G22_LEFT_P709";
-        case DXGI_COLOR_SPACE_YCBCR_FULL_G22_LEFT_P709: return "YCBCR_FULL_G22_LEFT_P709";
-        case DXGI_COLOR_SPACE_YCBCR_STUDIO_G22_LEFT_P2020: return "YCBCR_STUDIO_G22_LEFT_P2020";
-        case DXGI_COLOR_SPACE_YCBCR_FULL_G22_LEFT_P2020: return "YCBCR_FULL_G22_LEFT_P2020";
         case DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020: return "RGB_FULL_G2084_NONE_P2020";
-        case DXGI_COLOR_SPACE_YCBCR_STUDIO_G2084_LEFT_P2020: return "YCBCR_STUDIO_G2084_LEFT_P2020";
         case DXGI_COLOR_SPACE_RGB_STUDIO_G2084_NONE_P2020: return "RGB_STUDIO_G2084_NONE_P2020";
-        case DXGI_COLOR_SPACE_YCBCR_STUDIO_G22_TOPLEFT_P2020: return "YCBCR_STUDIO_G22_TOPLEFT_P2020";
-        case DXGI_COLOR_SPACE_YCBCR_STUDIO_G2084_TOPLEFT_P2020: return "YCBCR_STUDIO_G2084_TOPLEFT_P2020";
         case DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P2020: return "RGB_FULL_G22_NONE_P2020";
-        case DXGI_COLOR_SPACE_YCBCR_STUDIO_GHLG_TOPLEFT_P2020: return "YCBCR_STUDIO_GHLG_TOPLEFT_P2020";
-        case DXGI_COLOR_SPACE_YCBCR_FULL_GHLG_TOPLEFT_P2020: return "YCBCR_FULL_GHLG_TOPLEFT_P2020";
         case DXGI_COLOR_SPACE_RGB_STUDIO_G24_NONE_P709: return "RGB_STUDIO_G24_NONE_P709";
         case DXGI_COLOR_SPACE_RGB_STUDIO_G24_NONE_P2020: return "RGB_STUDIO_G24_NONE_P2020";
-        case DXGI_COLOR_SPACE_YCBCR_STUDIO_G24_LEFT_P709: return "YCBCR_STUDIO_G24_LEFT_P709";
-        case DXGI_COLOR_SPACE_YCBCR_STUDIO_G24_LEFT_P2020: return "YCBCR_STUDIO_G24_LEFT_P2020";
-        case DXGI_COLOR_SPACE_YCBCR_STUDIO_G24_TOPLEFT_P2020: return "YCBCR_STUDIO_G24_TOPLEFT_P2020";
         default: return "COLOR_SPACE_OTHER";
         }
     }
@@ -152,10 +137,8 @@ namespace
 
         DXGI_SWAP_CHAIN_DESC desc{};
         const HRESULT descHr = swapchain->GetDesc(&desc);
-
         std::ostringstream ss;
-        ss << "SWAPCHAIN | reason=" << reason
-           << " this=" << PtrText(swapchain);
+        ss << "SWAPCHAIN | reason=" << reason << " this=" << PtrText(swapchain);
         if (SUCCEEDED(descHr))
         {
             ss << " size=" << desc.BufferDesc.Width << "x" << desc.BufferDesc.Height
@@ -209,30 +192,49 @@ namespace
         DescribeOutput(swapchain);
     }
 
+    bool MarkFirst(void* swapchain)
+    {
+        std::lock_guard<std::mutex> lock(g_seenMutex);
+        return g_seenSwapchains.insert(swapchain).second;
+    }
+
     HRESULT STDMETHODCALLTYPE HookPresent(IDXGISwapChain* swapchain, UINT syncInterval, UINT flags)
     {
         const uint64_t count = ++g_presentCount;
-        bool first = false;
-        {
-            std::lock_guard<std::mutex> lock(g_seenMutex);
-            first = g_seenSwapchains.insert(swapchain).second;
-        }
-        if (first)
+        if (MarkFirst(swapchain))
         {
             std::ostringstream ss;
             ss << "Present first-seen | this=" << PtrText(swapchain)
                << " syncInterval=" << syncInterval
                << " flags=0x" << std::hex << std::uppercase << flags;
             Log(ss.str());
-            DescribeSwapchain(swapchain, "first-present");
+            DescribeSwapchain(swapchain, "first-Present");
         }
         else if ((count % 600u) == 0u)
         {
-            std::ostringstream ss;
-            ss << "Present heartbeat | count=" << count << " this=" << PtrText(swapchain);
-            Log(ss.str());
+            Log("Present heartbeat | count=" + std::to_string(count));
         }
         return g_present(swapchain, syncInterval, flags);
+    }
+
+    HRESULT STDMETHODCALLTYPE HookPresent1(IDXGISwapChain1* swapchain, UINT syncInterval, UINT flags, const DXGI_PRESENT_PARAMETERS* params)
+    {
+        const uint64_t count = ++g_presentCount;
+        if (MarkFirst(swapchain))
+        {
+            std::ostringstream ss;
+            ss << "Present1 first-seen | this=" << PtrText(swapchain)
+               << " syncInterval=" << syncInterval
+               << " flags=0x" << std::hex << std::uppercase << flags
+               << " params=" << PtrText(params);
+            Log(ss.str());
+            DescribeSwapchain(swapchain, "first-Present1");
+        }
+        else if ((count % 600u) == 0u)
+        {
+            Log("Present1 heartbeat | count=" + std::to_string(count));
+        }
+        return g_present1(swapchain, syncInterval, flags, params);
     }
 
     HRESULT STDMETHODCALLTYPE HookResizeBuffers(IDXGISwapChain* swapchain, UINT bufferCount, UINT width, UINT height, DXGI_FORMAT newFormat, UINT swapchainFlags)
@@ -253,7 +255,29 @@ namespace
         std::ostringstream after;
         after << "ResizeBuffers end | hr=0x" << std::hex << std::uppercase << static_cast<uint32_t>(hr);
         Log(after.str());
-        if (SUCCEEDED(hr)) DescribeSwapchain(swapchain, "post-resize");
+        if (SUCCEEDED(hr)) DescribeSwapchain(swapchain, "post-ResizeBuffers");
+        return hr;
+    }
+
+    HRESULT STDMETHODCALLTYPE HookResizeBuffers1(IDXGISwapChain3* swapchain, UINT bufferCount, UINT width, UINT height, DXGI_FORMAT newFormat, UINT swapchainFlags, const UINT* creationNodeMask, IUnknown* const* presentQueue)
+    {
+        std::ostringstream before;
+        before << "ResizeBuffers1 begin | this=" << PtrText(swapchain)
+               << " requested=" << width << "x" << height
+               << " format=" << FormatName(newFormat) << "(" << static_cast<int>(newFormat) << ")"
+               << " bufferCount=" << bufferCount
+               << " flags=0x" << std::hex << std::uppercase << swapchainFlags;
+        Log(before.str());
+
+        const HRESULT hr = g_resizeBuffers1(swapchain, bufferCount, width, height, newFormat, swapchainFlags, creationNodeMask, presentQueue);
+        {
+            std::lock_guard<std::mutex> lock(g_seenMutex);
+            g_seenSwapchains.erase(swapchain);
+        }
+        std::ostringstream after;
+        after << "ResizeBuffers1 end | hr=0x" << std::hex << std::uppercase << static_cast<uint32_t>(hr);
+        Log(after.str());
+        if (SUCCEEDED(hr)) DescribeSwapchain(swapchain, "post-ResizeBuffers1");
         return hr;
     }
 
@@ -274,8 +298,7 @@ namespace
     {
         std::ostringstream ss;
         ss << "SetHDRMetaData | this=" << PtrText(swapchain)
-           << " type=" << static_cast<int>(type)
-           << " size=" << size;
+           << " type=" << static_cast<int>(type) << " size=" << size;
         Log(ss.str());
 
         if (type == DXGI_HDR_METADATA_TYPE_HDR10 && metadata && size >= sizeof(DXGI_HDR_METADATA_HDR10))
@@ -308,34 +331,18 @@ namespace
     bool CreateDummySwapchain(ComPtr<IDXGISwapChain4>& outSwapchain, HWND& outHwnd)
     {
         ComPtr<IDXGIFactory4> factory;
-        if (FAILED(CreateDXGIFactory2(0, IID_PPV_ARGS(&factory))))
-        {
-            Log("INIT_FAIL | CreateDXGIFactory2");
-            return false;
-        }
+        if (FAILED(CreateDXGIFactory2(0, IID_PPV_ARGS(&factory)))) return false;
 
         ComPtr<IDXGIAdapter> warp;
-        if (FAILED(factory->EnumWarpAdapter(IID_PPV_ARGS(&warp))))
-        {
-            Log("INIT_FAIL | EnumWarpAdapter");
-            return false;
-        }
+        if (FAILED(factory->EnumWarpAdapter(IID_PPV_ARGS(&warp)))) return false;
 
         ComPtr<ID3D12Device> device;
-        if (FAILED(D3D12CreateDevice(warp.Get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&device))))
-        {
-            Log("INIT_FAIL | D3D12CreateDevice(WARP)");
-            return false;
-        }
+        if (FAILED(D3D12CreateDevice(warp.Get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&device)))) return false;
 
         D3D12_COMMAND_QUEUE_DESC queueDesc{};
         queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
         ComPtr<ID3D12CommandQueue> queue;
-        if (FAILED(device->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&queue))))
-        {
-            Log("INIT_FAIL | CreateCommandQueue");
-            return false;
-        }
+        if (FAILED(device->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&queue)))) return false;
 
         WNDCLASSEXW wc{};
         wc.cbSize = sizeof(wc);
@@ -346,11 +353,7 @@ namespace
 
         HWND hwnd = CreateWindowExW(0, kWindowClass, L"ColorCoreVI Probe Dummy", WS_OVERLAPPED,
             0, 0, 64, 64, nullptr, nullptr, wc.hInstance, nullptr);
-        if (!hwnd)
-        {
-            Log("INIT_FAIL | CreateWindowExW");
-            return false;
-        }
+        if (!hwnd) return false;
 
         DXGI_SWAP_CHAIN_DESC1 desc{};
         desc.Width = 64;
@@ -366,14 +369,12 @@ namespace
         if (FAILED(hr))
         {
             DestroyWindow(hwnd);
-            Log("INIT_FAIL | CreateSwapChainForHwnd");
             return false;
         }
 
         if (FAILED(swapchain1.As(&outSwapchain)) || !outSwapchain)
         {
             DestroyWindow(hwnd);
-            Log("INIT_FAIL | Query IDXGISwapChain4");
             return false;
         }
 
@@ -381,23 +382,20 @@ namespace
         return true;
     }
 
-    bool CreateAndEnableHook(void* target, void* detour, void** original, const char* name)
+    bool CreateHook(void* target, void* detour, void** original, const char* name)
     {
-        const MH_STATUS createStatus = MH_CreateHook(target, detour, original);
-        if (createStatus != MH_OK)
-        {
-            std::ostringstream ss;
-            ss << "INIT_FAIL | MH_CreateHook " << name << " status=" << static_cast<int>(createStatus);
-            Log(ss.str());
-            return false;
-        }
-        return true;
+        const MH_STATUS status = MH_CreateHook(target, detour, original);
+        if (status == MH_OK) return true;
+        std::ostringstream ss;
+        ss << "INIT_FAIL | MH_CreateHook " << name << " status=" << static_cast<int>(status);
+        Log(ss.str());
+        return false;
     }
 
     DWORD WINAPI InitializeProbe(LPVOID)
     {
         DeleteFileA(kLogPath);
-        Log("ColorCoreVI Output Probe P0005 v0.1.0 | START");
+        Log("ColorCoreVI Output Probe P0005 v0.1.1 | START");
         Log("MODE | passive logging only; no pixel modification");
 
         ComPtr<IDXGISwapChain4> dummy;
@@ -411,13 +409,17 @@ namespace
         void** vtable = *reinterpret_cast<void***>(dummy.Get());
         void* presentTarget = vtable[8];
         void* resizeTarget = vtable[13];
+        void* present1Target = vtable[22];
         void* setColorSpaceTarget = vtable[38];
+        void* resize1Target = vtable[39];
         void* setHDRTarget = vtable[40];
 
         {
             std::ostringstream ss;
             ss << "TARGETS | Present=" << PtrText(presentTarget)
+               << " Present1=" << PtrText(present1Target)
                << " ResizeBuffers=" << PtrText(resizeTarget)
+               << " ResizeBuffers1=" << PtrText(resize1Target)
                << " SetColorSpace1=" << PtrText(setColorSpaceTarget)
                << " SetHDRMetaData=" << PtrText(setHDRTarget);
             Log(ss.str());
@@ -431,10 +433,12 @@ namespace
         }
 
         bool ok = true;
-        ok = CreateAndEnableHook(presentTarget, reinterpret_cast<void*>(&HookPresent), reinterpret_cast<void**>(&g_present), "Present") && ok;
-        ok = CreateAndEnableHook(resizeTarget, reinterpret_cast<void*>(&HookResizeBuffers), reinterpret_cast<void**>(&g_resizeBuffers), "ResizeBuffers") && ok;
-        ok = CreateAndEnableHook(setColorSpaceTarget, reinterpret_cast<void*>(&HookSetColorSpace1), reinterpret_cast<void**>(&g_setColorSpace1), "SetColorSpace1") && ok;
-        ok = CreateAndEnableHook(setHDRTarget, reinterpret_cast<void*>(&HookSetHDRMetaData), reinterpret_cast<void**>(&g_setHDRMetaData), "SetHDRMetaData") && ok;
+        ok = CreateHook(presentTarget, reinterpret_cast<void*>(&HookPresent), reinterpret_cast<void**>(&g_present), "Present") && ok;
+        ok = CreateHook(present1Target, reinterpret_cast<void*>(&HookPresent1), reinterpret_cast<void**>(&g_present1), "Present1") && ok;
+        ok = CreateHook(resizeTarget, reinterpret_cast<void*>(&HookResizeBuffers), reinterpret_cast<void**>(&g_resizeBuffers), "ResizeBuffers") && ok;
+        ok = CreateHook(resize1Target, reinterpret_cast<void*>(&HookResizeBuffers1), reinterpret_cast<void**>(&g_resizeBuffers1), "ResizeBuffers1") && ok;
+        ok = CreateHook(setColorSpaceTarget, reinterpret_cast<void*>(&HookSetColorSpace1), reinterpret_cast<void**>(&g_setColorSpace1), "SetColorSpace1") && ok;
+        ok = CreateHook(setHDRTarget, reinterpret_cast<void*>(&HookSetHDRMetaData), reinterpret_cast<void**>(&g_setHDRMetaData), "SetHDRMetaData") && ok;
 
         if (!ok || MH_EnableHook(MH_ALL_HOOKS) != MH_OK)
         {
@@ -444,7 +448,7 @@ namespace
             return 0;
         }
 
-        Log("HOOKS_READY | Present ResizeBuffers SetColorSpace1 SetHDRMetaData");
+        Log("HOOKS_READY | Present Present1 ResizeBuffers ResizeBuffers1 SetColorSpace1 SetHDRMetaData");
 
         dummy.Reset();
         DestroyWindow(hwnd);
@@ -453,18 +457,17 @@ namespace
     }
 }
 
-BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID)
+BOOL APIENTRY DllMain(HMODULE, DWORD reason, LPVOID)
 {
     if (reason == DLL_PROCESS_ATTACH)
     {
-        g_self = module;
-        DisableThreadLibraryCalls(module);
+        DisableThreadLibraryCalls(GetModuleHandleW(nullptr));
         HANDLE thread = CreateThread(nullptr, 0, InitializeProbe, nullptr, 0, nullptr);
         if (thread) CloseHandle(thread);
     }
     else if (reason == DLL_PROCESS_DETACH)
     {
-        if (g_present || g_resizeBuffers || g_setColorSpace1 || g_setHDRMetaData)
+        if (g_present || g_present1 || g_resizeBuffers || g_resizeBuffers1 || g_setColorSpace1 || g_setHDRMetaData)
         {
             MH_DisableHook(MH_ALL_HOOKS);
             MH_Uninitialize();
