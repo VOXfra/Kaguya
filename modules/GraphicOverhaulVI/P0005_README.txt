@@ -1,95 +1,69 @@
-GraphicOverhaulVI — P0005 ColorCoreVI DX12 Output Probe v0.1.2
+GraphicOverhaulVI — P0005 ColorCoreVI Presentation Chain Probe v0.1.3
 
 THIS IS AN EXPERIMENTAL / DIAGNOSTIC PATCH.
 It does NOT replace a complete GraphicOverhaulVI release.
 It does NOT modify the rendered image.
 
-Purpose
--------
-P0004 proved that GTA V Enhanced already contains contextual exposure,
-filmic tonemapping and a dedicated HDR branch. P0005 observes the final DX12
-presentation path so ColorCoreVI can identify the exact insertion point for the
-future FH6-style 3D SDR/HDR display mapper.
-
-Why v0.1.2 exists
+Why v0.1.3 exists
 -----------------
-The user's real GTA runs proved that v0.1.0 and v0.1.1 loaded successfully and
-installed hooks, but neither observed runtime Present/Present1 traffic.
-That strongly suggests the WARP-created dummy swapchain used by those builds
-exposed different DXGI implementation addresses than GTA's real hardware
-swapchain, or that the real DXGI factory already existed when the ASI loaded.
+v0.1.0 and v0.1.1 proved that the ASI loads but public DXGI Present/Present1
+implementation addresses obtained from a dummy swapchain do not observe GTA's
+real presentation path.
 
-v0.1.2 therefore uses three complementary passive strategies:
-1. create the probe swapchain on the highest-performance real hardware adapter
-   when available, falling back to WARP only when hardware D3D12 is unavailable;
-2. hook IDXGIFactory/IDXGIFactory2 CreateSwapChain* methods so a newly-created
-   Rockstar swapchain is captured directly and its own vtable methods are hooked;
-3. hook CreateDXGIFactory/CreateDXGIFactory1/CreateDXGIFactory2 exports so new
-   factory implementations can also be discovered dynamically.
+v0.1.2 then added global DXGI factory/export hooks to capture the real swapchain.
+On the user's actual GTA V Enhanced installation that version crashed the game
+before the first rendered image. The log proved the crash happened only after
+those factory/export hooks became active. v0.1.2 is therefore REJECTED.
 
-What the ASI observes
----------------------
-- IDXGISwapChain::Present
-- IDXGISwapChain1::Present1
-- IDXGISwapChain::ResizeBuffers
-- IDXGISwapChain3::ResizeBuffers1
-- IDXGISwapChain3::SetColorSpace1
-- IDXGISwapChain4::SetHDRMetaData
-- IDXGIFactory::CreateSwapChain
-- IDXGIFactory2::CreateSwapChainForHwnd
-- IDXGIFactory2::CreateSwapChainForCoreWindow
-- IDXGIFactory2::CreateSwapChainForComposition
-- swapchain dimensions, format, buffer count and flags
-- active D3D12 backbuffer format
-- DXGIOutput6 display color space / bits per color / luminance capabilities
-- raw HDR10 metadata when supplied
+NVIDIA Streamline documentation warns that DXGI factories/swapchains may be SL
+proxy interfaces and that third-party tools should avoid using those proxies as
+native DXGI objects. GTA V Enhanced also supports NVIDIA DLSS/Frame Generation,
+so P0005 now identifies the real presentation/interposer chain before any more
+swapchain interception is attempted.
 
-What it DOES NOT do
+v0.1.3 safety model
 -------------------
-- no shader replacement
-- no LUT
-- no color grading
-- no pixel writes
-- no GTA memory scanning
-- no gameplay changes
+- NO MinHook
+- NO API hooks
+- NO DXGI factory interception
+- NO vtable patching
+- NO Present interception
+- NO shader replacement
+- NO pixel writes
+- NO GTA game-file changes
+
+What v0.1.3 observes
+--------------------
+For up to 60 seconds after ASI load it passively records:
+- interesting loaded modules (DXGI, D3D12, Streamline, NVIDIA, DLSS, ReShade,
+  overlays and related presentation components);
+- whether sl.interposer.dll / sl.common.dll / sl.dlss_g.dll are loaded;
+- selected Streamline exports if sl.interposer.dll is present;
+- system DXGI/D3D12 export addresses;
+- the GTA executable's relevant import-address-table entries and the module
+  currently owning each resolved target.
+
+This is intended to answer whether GTA calls native DXGI directly or whether its
+presentation path is already redirected/proxied before the ASI loader runs.
 
 Installation
 ------------
-1. Delete/replace any older ColorCoreVIOutputProbe.asi.
-2. Copy ColorCoreVIOutputProbe.asi into the GTA V Enhanced root folder beside
-   GTA5_Enhanced.exe and the existing ASI loader/plugins.
-3. Delete the previous ColorCoreVI_OutputProbe.log.
+1. Remove the v0.1.2 ASI first.
+2. Copy only the v0.1.3 `ColorCoreVIOutputProbe.asi` beside `GTA5_Enhanced.exe`.
+3. Delete the previous `ColorCoreVI_OutputProbe.log`.
 4. Launch GTA V Enhanced normally and load Story Mode.
-5. Stay in-game for about 20-30 seconds and open/close the pause menu once.
-6. Quit normally.
-7. Send back ColorCoreVI_OutputProbe.log.
-
-HDR note
---------
-Use the normal current Windows/GTA display settings for the first v0.1.2 run.
-Do not enable/disable HDR merely for the probe unless requested. Once a real
-swapchain is captured, a controlled SDR/HDR comparison can be done if needed.
+5. Stay in game for at least 20 seconds if possible. 60 seconds gives the most
+   complete sample, but quitting earlier is fine.
+6. Quit normally and send back `ColorCoreVI_OutputProbe.log`.
 
 Removal
 -------
-Delete ColorCoreVIOutputProbe.asi. The probe makes no persistent game-file edit.
-The generated log can also be deleted.
-
-Third party
------------
-The probe statically links MinHook 1.3.4, pinned to commit:
-c3fcafdc10146beb5919319d0683e44e3c30d537
-MinHook is BSD-2-Clause licensed. Its license is included in the ZIP.
+Delete `ColorCoreVIOutputProbe.asi` and optionally the log. No persistent game
+file is edited.
 
 Validation
 ----------
-The v0.1.2 CI harness intentionally creates a DXGI factory/device BEFORE loading
-the ASI, then creates the swapchain after HOOKS_READY. This validates that the
-factory-method interception can capture a swapchain even when the factory
-pre-existed the probe. The harness then verifies real-object hooks for
-SetColorSpace1, SetHDRMetaData, Present1, Present and ResizeBuffers. It also
-creates a second DXGI factory after ASI load to exercise the export-hook path.
-
-CI cannot reproduce the user's RTX hardware implementation, so only the real
-GTA run can validate whether the hardware-target/factory-capture strategy finds
-Rockstar's actual presentation object.
+The release is built as an x64 ASI on Windows CI. The harness deliberately
+creates a DXGI factory before loading the ASI, then performs normal D3D12 work.
+The build only passes if passive module/IAT/system-export observations are
+written and if no active-hook marker exists in the log.
