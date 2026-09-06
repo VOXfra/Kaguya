@@ -27,7 +27,7 @@ This is the detailed historical ledger behind the compact patch table in `README
 - **Status:** `IN PROGRESS`
 - **Area:** ColorCoreVI / reverse mapping
 - **Purpose:** build a reproducible, read-only map of likely color/HDR/tonemap resources in local Forza Horizon 6 and GTA V Enhanced installations before implementing visual changes.
-- **Current version:** `0.1.3`
+- **Current version:** `0.1.4`
 - **Changes:**
   - optional FH6 and GTA V Enhanced root auto-detection;
   - Steam library discovery;
@@ -38,28 +38,47 @@ This is the detailed historical ledger behind the compact patch table in `README
   - extension summary;
   - keyword detection for tonemap, HDR/HDR10, PQ/ST.2084, BT/Rec.2020, gamut, scRGB, linear, white point, exposure, bloom, color, LUT, gamma/sRGB, display, post-process, ACES and nits;
   - text-file content probing;
-  - bounded ASCII/UTF-16 binary string probing for likely executables/shader containers;
+  - bounded ASCII/binary string probing for likely executable/shader containers;
   - SHA-256 hashing of reasonable-size candidates;
   - deliberate avoidance of blind hashing for huge `.rpf`/texture archives;
   - CSV/JSON reports and scan-error log;
   - no modification of either game.
-- **v0.1.3 correction:**
-  - fixes the Windows PowerShell parser error caused by interpolated `"$Game: ..."` strings by using explicit `${Game}` delimiters;
-  - rewrites the extension-summary conditional into syntax safe for Windows PowerShell 5.1;
-  - adds a parser preflight in `RUN-COLORCORE-SCAN.cmd` so syntax errors are detected before the scan starts.
+- **v0.1.2 issue:**
+  - Windows PowerShell rejected interpolated `"$Game: ..."` strings because the colon was parsed as part of a variable reference.
+- **v0.1.3 corrections and issue:**
+  - changed those strings to explicit `${Game}` delimiters;
+  - rewrote an extension-summary conditional for Windows PowerShell 5.1;
+  - attempted to add a parser preflight directly in the `.cmd` launcher;
+  - that embedded preflight was invalid because `cmd.exe` escaping left a literal `^` before a PowerShell pipeline.
+- **v0.1.4 corrections:**
+  - moved parser validation into the standalone `tools/Test-ColorCoreVI.ps1` script rather than embedding PowerShell syntax inside CMD quoting;
+  - removed the `$PSScriptRoot`-dependent default expression from the parameter declaration and resolves the default output path only after parameter binding;
+  - simplified the scanner around Windows PowerShell 5.1-safe syntax;
+  - added deterministic GitHub Actions validation on a real Windows runner using Windows PowerShell 5.1;
+  - CI runs the exact `RUN-COLORCORE-SCAN.cmd` entry point against fixture FH6/GTA directories and validates all six generated reports.
+- **Windows validation:**
+  - environment: Windows Server 2025 runner, Windows PowerShell `5.1.26100.33296`;
+  - standalone parser preflight: PASS;
+  - exact CMD launcher: PASS;
+  - full fixture scan: PASS;
+  - required output files: PASS;
+  - output content/count/error checks: PASS;
+  - the first CI pass also caught a `$PSScriptRoot` runtime bug before v0.1.4 was released to the user.
 - **Files:**
   - `tools/Scan-ColorCoreVI.ps1`
+  - `tools/Test-ColorCoreVI.ps1`
   - `RUN-COLORCORE-SCAN.cmd`
+  - `.github/workflows/test-colorcorevi-scanner.yml`
 - **Expected output:**
   - `scan_summary.json`
   - `color_candidates.csv`
   - `extension_summary.csv`
   - `scan_errors.csv`
   - `file_inventory.csv`
+  - `README.txt`
 - **Validation required before APPLIED:**
-  - launcher preflight reports `Syntax OK` on the target Windows machine;
-  - scanner completes against the local FH6 installation;
-  - scanner completes against the local GTA V Enhanced installation;
+  - scanner completes against the user's actual local FH6 installation;
+  - scanner completes against the user's actual local GTA V Enhanced installation;
   - no source game file is modified;
   - candidate report contains enough evidence to choose the next inspection/disassembly step.
 
