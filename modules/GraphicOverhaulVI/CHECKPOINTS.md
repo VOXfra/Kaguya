@@ -72,6 +72,19 @@ Do not rewrite historical checkpoints to make later work look cleaner. If a deci
 - **Evidence / patch IDs:** `P0003`; detailed evidence belongs in `ColorCoreVI/FH6_FINDINGS.md`.
 - **Next allowed action:** map GTA V Enhanced equivalents inside `common.rpf`, `update.rpf` and `update2.rpf`, then compare GTA's current pipeline against the confirmed FH6 reference structure.
 
+## CP-0008 — GTA Enhanced already has contextual exposure/filmic/HDR branches; ColorCoreVI should preserve orchestration and replace the final mapping layer
+
+- **Date:** 2026-09-06
+- **State:** `LOCKED`
+- **Decision/result:** P0004 opened the user's real `common.rpf`, `update.rpf` and `update2.rpf` with 0 errors and exposed GTA V Enhanced's current ColorCore data layer.
+- **Real P0004 result:** 2,913 archive files indexed; 98 selected candidates; 98 extracted; 7,448,342 extracted bytes; no source modification; no GTA key file written.
+- **Confirmed native GTA capabilities:** `visualsettings.dat` exposes separate bright/dark filmic A–F/W parameter families, a global exposure curve and adaptation system. Weather/timecycle XML drives 58 distinct `postfx_*` controls including exposure/min/max, bright/dark filmic overrides, parametric RGB correction/shift/gradients, bloom and optical post-FX. `timecycle_mods_*` can override these values contextually for missions/interiors/gameplay states.
+- **Confirmed Enhanced additions:** the update layer changes `Adaptation.min.step.size` from `0.15` to `0.0001`, adds `Adaptation.hdr.*`, HDR10 dithering, HDR-aware dynamic dithering, `hdr.game.useITMBlend`, a disabled-by-default HDR game lift/gamma/gain/levels/HSV correction block, and an enabled HDR UI correction/alpha-adjustment block.
+- **Important unknowns:** P0004 does not prove what `ITM` means, does not expose PQ/BT.2020/scRGB semantics, and does not reveal a FH6-style 3D display-mapper LUT or the final transfer shader.
+- **Architecture decision:** do not throw away Rockstar's weather/timecycle/mission orchestration. Preserve and calibrate it. GraphicOverhaulVI should add/replace the final technical mapping layer with a separate creative-grade stage where needed plus a dedicated 3D SDR/HDR display mapper with highlight/gamut compression inspired by the measured FH6 behavior.
+- **Evidence / patch IDs:** `P0004`; detailed evidence belongs in `ColorCoreVI/GTA_ENHANCED_FINDINGS.md`.
+- **Next allowed action:** `P0005` must probe GTA V Enhanced's real DX12 presentation/output path (swapchain format, color space, HDR metadata, recreation changes) before the first display-mapper injection is attempted.
+
 ---
 
 ## Checkpoint template
