@@ -62,9 +62,16 @@ jobs:
           @('HOOKS_READY','SetColorSpace1','SetHDRMetaData','Present first-seen','ResizeBuffers begin','R10G10B10A2_UNORM') | ForEach-Object {
             if ($log -notmatch [regex]::Escape($_)) { throw "Required log marker missing: $_" }
           }
-          if ((Get-Item ColorCoreVIOutputProbe.asi).Length -lt 20000) { throw 'ASI binary unexpectedly small.' }
-          dumpbin /headers ColorCoreVIOutputProbe.asi | Out-File probe_headers.txt
-          if ((Get-Content probe_headers.txt -Raw) -notmatch 'machine \(x64\)') { throw 'Probe is not x64.' }
+          $asi = Get-Item ColorCoreVIOutputProbe.asi
+          if ($asi.Length -lt 20000) { throw 'ASI binary unexpectedly small.' }
+          $bytes = [System.IO.File]::ReadAllBytes($asi.FullName)
+          if ($bytes.Length -lt 0x100) { throw 'ASI PE file is too small.' }
+          $peOffset = [BitConverter]::ToInt32($bytes, 0x3C)
+          if ($peOffset -lt 0 -or ($peOffset + 6) -gt $bytes.Length) { throw 'Invalid PE header offset.' }
+          if ($bytes[$peOffset] -ne 0x50 -or $bytes[$peOffset+1] -ne 0x45 -or $bytes[$peOffset+2] -ne 0 -or $bytes[$peOffset+3] -ne 0) { throw 'PE signature missing.' }
+          $machine = [BitConverter]::ToUInt16($bytes, $peOffset + 4)
+          if ($machine -ne 0x8664) { throw ("Probe machine is not AMD64/x64: 0x{0:X4}" -f $machine) }
+          Write-Host ('ASI x64 PE validation PASS; Machine=0x{0:X4}' -f $machine)
           Write-Host 'P0005 CI probe validation PASS.'
 
       - name: Package P0005 experimental patch
