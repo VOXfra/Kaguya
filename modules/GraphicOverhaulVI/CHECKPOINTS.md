@@ -51,12 +51,26 @@ Do not rewrite historical checkpoints to make later work look cleaner. If a deci
 ## CP-0006 — FH6 exposes explicit ColorCore container families
 
 - **Date:** 2026-09-06
-- **State:** `LOCKED`
+- **State:** `VALIDATED`
 - **Decision/result:** P0002 identified native FH6 resources whose names directly map to the ColorCoreVI problem: `media\colourgrades.zip`, `media\displaymappers.zip`, `media\postEffects.zip`, `media\_library\Shaders.zip`, plus `media\timeofday\TimeOfDay*.xml`, weather presets and supporting camera/sky resources.
 - **Important caveat:** the broad P0002 keyword score is not itself evidence quality. The FH6 install also contains a `reshade-shaders` folder and the v0.1.x keyword matcher produced substring noise. P0003 therefore targets native paths explicitly and does not treat ReShade hits as FH6 engine evidence.
 - **Evidence / patch IDs:** `P0002`, `P0003`.
-- **Validation gate:** inspect the actual contents/entry names of the selected FH6 containers and isolate confirmed display mapping, grading, tonemapping/HDR and post-effect structures.
-- **Next allowed action:** P0003 FH6 Color Pipeline Evidence Collector. GTA V RPF mapping follows once the FH6 reference pipeline is concrete enough to know exactly what equivalents we need.
+- **Validation result:** P0003 collected the native target set from the user's real FH6 install and exposed the actual LUT/display-mapper structure.
+
+## CP-0007 — FH6 separates HDR-domain artistic grading from SDR/HDR display mapping
+
+- **Date:** 2026-09-06
+- **State:** `LOCKED`
+- **Decision/result:** Real P0003 evidence shows a modular FH6 color architecture rather than a single final-screen LUT.
+- **Confirmed LUT format:** all 42 `colourgrades` LUTs and both `displaymappers` are 32×32×32 RGBA16F 3D cubes with a 12-byte header `(0, 32, 100.0)`. The sampled lattice encoded by `Default.lut` spans a very large 0→100 scene/HDR domain; alpha is zero.
+- **Confirmed separation:** `colourgrades.zip` contains artistic/creative grade families such as `Default`, `Flat`, daylight/dawn/dusk/night film-stock variants and accessibility/event grades. `displaymappers.zip` separately contains `DefaultSDR.lut` and `DefaultHDR.lut`.
+- **Display-mapper behavior:** `DefaultSDR` maps the high scene range into a 0→1 output and deliberately compresses/desaturates saturated highlights toward white. `DefaultHDR` preserves a much larger output range (observed maximum ~24.796875) and also performs chroma-dependent highlight compression rather than independent channel clipping.
+- **Exposure/filmic configuration:** FH6 loose configuration exposes adaptive-exposure ranges/keys, tonemap delays and filmic-curve parameters. `TimeOfDayA.xml` exposes time-varying day/night color-grade blend amounts.
+- **Best-supported working model, not yet runtime-order proof:** scene/HDR content + adaptive exposure/filmic shaping → artistic grade contribution(s) → separate SDR/HDR display mapper → final transfer/output encoding. The final runtime shader/order still must be located before this is called exact.
+- **Important non-claim:** this resembles the modular HDR/WCG philosophy documented by Polyphony, but there is still no evidence that FH6 copied or directly uses Gran Turismo code.
+- **P0003 caveat:** 244 collector errors all came from `Camera.zip` entries using ZIP compression method 22, unsupported by the collector runtime. Core `colourgrades`, `displaymappers`, `postEffects`, loose time-of-day/weather files and shader indexing were still recovered; camera archive decoding is deferred unless it becomes necessary.
+- **Evidence / patch IDs:** `P0003`; detailed evidence belongs in `ColorCoreVI/FH6_FINDINGS.md`.
+- **Next allowed action:** map GTA V Enhanced equivalents inside `common.rpf`, `update.rpf` and `update2.rpf`, then compare GTA's current pipeline against the confirmed FH6 reference structure.
 
 ---
 
