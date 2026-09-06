@@ -91,8 +91,6 @@ int wmain(int argc, wchar_t** argv)
     ComPtr<IDXGISwapChain4> swapchain4;
     if (FAILED(swapchain1.As(&swapchain4))) return 11;
 
-    // Exercise the exact methods P0005 needs to observe. These calls are for
-    // CI hook validation only; success of HDR activation is not required on WARP.
     (void)swapchain4->SetColorSpace1(DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709);
 
     DXGI_HDR_METADATA_HDR10 metadata{};
@@ -110,9 +108,11 @@ int wmain(int argc, wchar_t** argv)
     metadata.MaxFrameAverageLightLevel = 400;
     (void)swapchain4->SetHDRMetaData(DXGI_HDR_METADATA_TYPE_HDR10, sizeof(metadata), &metadata);
 
+    DXGI_PRESENT_PARAMETERS presentParams{};
+    (void)swapchain4->Present1(0, DXGI_PRESENT_TEST, &presentParams);
     (void)swapchain4->Present(0, DXGI_PRESENT_TEST);
     (void)swapchain4->ResizeBuffers(2, 640, 360, DXGI_FORMAT_R10G10B10A2_UNORM, 0);
-    (void)swapchain4->Present(0, DXGI_PRESENT_TEST);
+    (void)swapchain4->Present1(0, DXGI_PRESENT_TEST, &presentParams);
 
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
@@ -122,7 +122,7 @@ int wmain(int argc, wchar_t** argv)
     const bool ok = Contains(log, "HOOKS_READY") &&
                     Contains(log, "SetColorSpace1") &&
                     Contains(log, "SetHDRMetaData") &&
-                    Contains(log, "Present first-seen") &&
+                    Contains(log, "Present1 first-seen") &&
                     Contains(log, "ResizeBuffers begin") &&
                     Contains(log, "R10G10B10A2_UNORM");
 
@@ -133,7 +133,5 @@ int wmain(int argc, wchar_t** argv)
     }
 
     std::cout << log;
-    // Do not FreeLibrary the probe: process exit is the safest unload path for
-    // a DLL with active API detours.
     return 0;
 }
