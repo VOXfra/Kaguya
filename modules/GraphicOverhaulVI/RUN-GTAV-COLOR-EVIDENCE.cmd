@@ -9,7 +9,7 @@ set "OUTPUT=%~dp0stage3-output"
 echo.
 echo ==========================================
 echo   GraphicOverhaulVI - ColorCoreVI P0004
-echo       GTA Enhanced Evidence v0.1.0
+echo       GTA Enhanced Evidence v0.1.1
 echo ==========================================
 echo.
 echo [1/2] Checking PowerShell syntax...
