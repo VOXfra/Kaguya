@@ -91,21 +91,14 @@ This is the detailed historical ledger behind the compact patch table in `README
 - **Date:** 2026-09-06
 - **Status:** `IN PROGRESS`
 - **Area:** ColorCoreVI / runtime output-stage mapping
-- **Purpose:** observe GTA V Enhanced's real DX12 presentation path before any 3D display-mapper injection is attempted.
-- **Safety:** native x64 ASI/DXGI logging only; no shader replacement, no LUT, no pixel modification.
-- **v0.1.0 CI:** Windows x64 + D3D12 WARP end-to-end hook test PASS for `Present`, `ResizeBuffers`, `SetColorSpace1`, `SetHDRMetaData`.
-- **v0.1.0 user-machine result:** ASI loaded successfully and logged `TARGETS` plus `HOOKS_READY`, but no runtime call hit any of those four detours. This ruled out ASI-loading failure and showed the observed WARP method path was incomplete for Rockstar's runtime.
-- **v0.1.1 change:** added `IDXGISwapChain1::Present1` and `IDXGISwapChain3::ResizeBuffers1` while retaining v0.1.0 hooks.
-- **v0.1.1 CI:** workflow `34046700235` PASS; harness explicitly invoked and observed `Present1` plus the original hook set.
-- **v0.1.1 user-machine result:** again only initialization/target/`HOOKS_READY` lines were produced; there was no `Present`, `Present1`, resize, colorspace or HDR metadata traffic. This strongly indicates that method addresses taken from the WARP-created dummy swapchain do not match GTA's real hardware swapchain implementation, and/or that the relevant real factory/swapchain already exists before the ASI hooks are installed.
-- **v0.1.2 strategy:**
-  - create the probe swapchain on the highest-performance real D3D12 adapter when available, falling back to WARP only if required;
-  - hook `IDXGIFactory::CreateSwapChain` and `IDXGIFactory2::CreateSwapChainForHwnd/CoreWindow/Composition`;
-  - hook `CreateDXGIFactory`, `CreateDXGIFactory1` and `CreateDXGIFactory2` exports;
-  - when any real swapchain is captured, read its own vtable and install hooks on its exact `Present/Present1/Resize/ColorSpace/HDR` implementation addresses.
-- **v0.1.2 CI:** workflow `34047519771` PASS on the exact source/harness. The harness intentionally created its DXGI factory/device before loading the ASI, then created the swapchain after `HOOKS_READY`; P0005 captured the real object through `CreateSwapChainForHwnd`, installed its exact method hooks and observed `SetColorSpace1`, `SetHDRMetaData`, `Present1`, `Present` and `ResizeBuffers`. A post-load `CreateDXGIFactory2` call also exercised the export-hook discovery path.
-- **v0.1.2 final packaging:** workflow `34047566927` PASS with updated README; artifact `GraphicOverhaulVI-P0005-ColorOutputProbe-v0.1.2`; inner release ZIP SHA-256 `87e51db21cff3ce02ae49aa9263131b4db8961419d6290db4186e2f49cffddef`; ASI SHA-256 `c89ce8dbb9578104e323de0f0f281b0887a9630900653039a79a132cecd0f5b1`.
-- **Validation gate:** user's GTA V Enhanced v0.1.2 run must capture either live presentation traffic from the hardware-derived targets or `REAL_SWAPCHAIN_CREATED` from Rockstar's actual factory path. If neither occurs, the next escalation must target an already-existing swapchain/presentation object rather than adding more blind vtable guesses.
+- **Purpose:** identify GTA V Enhanced's real presentation/color-output chain before any 3D display-mapper injection.
+- **v0.1.0:** public `Present/ResizeBuffers/SetColorSpace1/SetHDRMetaData` hooks compiled and passed CI, but the user's GTA run only reached `HOOKS_READY`; no runtime traffic was intercepted.
+- **v0.1.1:** added `Present1/ResizeBuffers1`; CI explicitly exercised those methods, but the user's GTA run again stopped at `HOOKS_READY` with no runtime traffic.
+- **v0.1.2:** added hardware-derived method targets plus global `IDXGIFactory::CreateSwapChain*` and `CreateDXGIFactory*` interception. CI passed and captured a real harness swapchain. **User-machine result: REJECTED.** GTA V Enhanced crashed before the first rendered image. The probe log reached hardware adapter detection (`vendor=0x10DE`, `device=0x2783`, ~12.58 GB dedicated VRAM), factory/swapchain target discovery, export-hook targets and `HOOKS_READY`, then stopped. ASI Loader, RageOpenV and ScriptHookV all initialized normally. No `REAL_SWAPCHAIN_CREATED` line was reached. This isolates the regression to the v0.1.2 factory/export-hook strategy rather than ASI loading or the pre-existing mods.
+- **Important v0.1.2 observation:** hardware and earlier WARP dummy swapchains resolved the same public DXGI `Present/Present1` implementation addresses on the user's system. The previous lack of traffic therefore cannot be explained simply by WARP-vs-hardware method addresses.
+- **Proxy/interposer hypothesis:** NVIDIA Streamline documentation states that DLSS-G integrations can expose proxy `IDXGIFactory`/`IDXGISwapChain` interfaces and warns third-party tools not to treat SL proxies as native interfaces. GTA V Enhanced supports DLSS/Frame Generation, so a pre-existing Streamline/NVIDIA presentation proxy is now a high-priority explanation for both the missing public-DXGI traffic and the v0.1.2 startup crash. This remains a hypothesis until the user's process is inspected.
+- **v0.1.3 strategy:** remove MinHook and all API/vtable interception. Passive-only ASI records interesting loaded modules, Streamline presence/exports, system DXGI/D3D12 exports and the main GTA executable's relevant Import Address Table targets/owner modules at several points during the first 60 seconds. No API state is modified.
+- **v0.1.3 validation gate:** Windows CI must compile x64, run with a DXGI factory created before ASI load, perform normal D3D12 work, produce module/IAT/export observations and prove that no active-hook marker exists. User GTA run must launch normally and reveal whether DXGI/D3D12 imports or loaded modules are already redirected through Streamline/NVIDIA/another interposer.
 
 ## Patch template
 
