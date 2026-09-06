@@ -60,15 +60,18 @@ function Find-FH6Candidates {
         }
     }
 
-    $commonPaths = @(
-        "XboxGames\Forza Horizon 6\Content",
-        "XboxGames\Forza Horizon 6",
-        "Games\Forza Horizon 6",
-        "Forza Horizon 6"
-    )
-
     foreach ($drive in (Get-PSDrive -PSProvider FileSystem -ErrorAction SilentlyContinue)) {
-        foreach ($relative in $commonPaths) {
+        $xboxContent = Join-Path $drive.Root "XboxGames\Forza Horizon 6\Content"
+        $xboxParent = Join-Path $drive.Root "XboxGames\Forza Horizon 6"
+
+        if (Test-Path -LiteralPath $xboxContent -PathType Container) {
+            if (-not $result.Contains($xboxContent)) { $result.Add($xboxContent) }
+        }
+        elseif (Test-Path -LiteralPath $xboxParent -PathType Container) {
+            if (-not $result.Contains($xboxParent)) { $result.Add($xboxParent) }
+        }
+
+        foreach ($relative in @("Games\Forza Horizon 6", "Forza Horizon 6")) {
             $candidate = Join-Path $drive.Root $relative
             if ((Test-Path -LiteralPath $candidate -PathType Container) -and -not $result.Contains($candidate)) {
                 $result.Add($candidate)
