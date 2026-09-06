@@ -1,0 +1,93 @@
+name: Build ColorCoreVI P0005
+
+on:
+  push:
+    paths:
+      - 'modules/GraphicOverhaulVI/runtime/ColorCoreVIOutputProbe.cpp'
+      - 'modules/GraphicOverhaulVI/runtime/ColorCoreVIOutputProbeHarness.cpp'
+      - 'modules/GraphicOverhaulVI/P0005_README.txt'
+      - '.github/workflows/build-colorcorevi-p0005.yml'
+  workflow_dispatch:
+
+jobs:
+  windows-x64:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch pinned MinHook 1.3.4 source
+        shell: pwsh
+        run: |
+          $pin = 'c3fcafdc10146beb5919319d0683e44e3c30d537'
+          git init third_party/minhook
+          git -C third_party/minhook remote add origin https://github.com/TsudaKageyu/minhook.git
+          git -C third_party/minhook fetch --depth 1 origin $pin
+          git -C third_party/minhook checkout --detach FETCH_HEAD
+          $actual = (git -C third_party/minhook rev-parse HEAD).Trim()
+          if ($actual -ne $pin) { throw "MinHook pin mismatch: $actual" }
+
+      - name: Build and install pinned MinHook
+        shell: pwsh
+        run: |
+          cmake -S third_party/minhook -B minhook-build -A x64 -DCMAKE_INSTALL_PREFIX="$pwd/minhook-install"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build minhook-build --config Release --target install
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $lib = Get-ChildItem minhook-install -Recurse -Filter minhook.lib | Select-Object -First 1
+          if (-not $lib) { throw 'minhook.lib not found after install.' }
+          "MINHOOK_LIB=$($lib.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "MINHOOK_INCLUDE=$((Resolve-Path minhook-install/include).Path)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Build passive ASI and end-to-end harness
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat" 2>nul || call "%ProgramFiles%\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" 2>nul || call "%ProgramFiles%\Microsoft Visual Studio\18\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          cl /nologo /std:c++17 /EHsc /O2 /W4 /WX /LD modules\GraphicOverhaulVI\runtime\ColorCoreVIOutputProbe.cpp /I"%MINHOOK_INCLUDE%" /link "%MINHOOK_LIB%" d3d12.lib dxgi.lib user32.lib /OUT:ColorCoreVIOutputProbe.asi
+          if errorlevel 1 exit /b %errorlevel%
+          cl /nologo /std:c++17 /EHsc /O2 /W4 /WX modules\GraphicOverhaulVI\runtime\ColorCoreVIOutputProbeHarness.cpp d3d12.lib dxgi.lib user32.lib /link /OUT:ColorCoreVIOutputProbeHarness.exe
+          if errorlevel 1 exit /b %errorlevel%
+
+      - name: Execute DX12 WARP hook validation
+        shell: cmd
+        run: |
+          del /q ColorCoreVI_OutputProbe.log 2>nul
+          ColorCoreVIOutputProbeHarness.exe "%CD%\ColorCoreVIOutputProbe.asi"
+
+      - name: Validate probe log and binary
+        shell: pwsh
+        run: |
+          if (-not (Test-Path ColorCoreVI_OutputProbe.log)) { throw 'Probe log missing.' }
+          $log = Get-Content ColorCoreVI_OutputProbe.log -Raw
+          @('HOOKS_READY','SetColorSpace1','SetHDRMetaData','Present first-seen','ResizeBuffers begin','R10G10B10A2_UNORM') | ForEach-Object {
+            if ($log -notmatch [regex]::Escape($_)) { throw "Required log marker missing: $_" }
+          }
+          if ((Get-Item ColorCoreVIOutputProbe.asi).Length -lt 20000) { throw 'ASI binary unexpectedly small.' }
+          dumpbin /headers ColorCoreVIOutputProbe.asi | Out-File probe_headers.txt
+          if ((Get-Content probe_headers.txt -Raw) -notmatch 'machine \(x64\)') { throw 'Probe is not x64.' }
+          Write-Host 'P0005 CI probe validation PASS.'
+
+      - name: Package P0005 experimental patch
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item ColorCoreVIOutputProbe.asi dist/ColorCoreVIOutputProbe.asi
+          Copy-Item modules/GraphicOverhaulVI/P0005_README.txt dist/README-P0005.txt
+          Copy-Item third_party/minhook/LICENSE.txt dist/MINHOOK-LICENSE.txt
+          Copy-Item ColorCoreVI_OutputProbe.log dist/CI-VALIDATION-EXAMPLE.log
+          $sha = (Get-FileHash dist/ColorCoreVIOutputProbe.asi -Algorithm SHA256).Hash.ToLowerInvariant()
+          Set-Content dist/BUILD-INFO.txt @(
+            'GraphicOverhaulVI P0005 ColorCoreVI DX12 Output Probe',
+            'Version: 0.1.0',
+            'Mode: PASSIVE LOGGING ONLY',
+            'MinHook: 1.3.4 @ c3fcafdc10146beb5919319d0683e44e3c30d537',
+            "ASI SHA-256: $sha",
+            'CI: Windows x64 + D3D12 WARP end-to-end hook test PASS'
+          )
+          Compress-Archive -Path dist/* -DestinationPath GraphicOverhaulVI-P0005-ColorOutputProbe-v0.1.0.zip -Force
+
+      - name: Upload validated P0005 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GraphicOverhaulVI-P0005-ColorOutputProbe-v0.1.0
+          path: GraphicOverhaulVI-P0005-ColorOutputProbe-v0.1.0.zip
+          if-no-files-found: error
