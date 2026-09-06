@@ -94,11 +94,18 @@ This is the detailed historical ledger behind the compact patch table in `README
 - **Purpose:** observe GTA V Enhanced's real DX12 presentation path before any 3D display-mapper injection is attempted.
 - **Safety:** native x64 ASI/DXGI logging only; no shader replacement, no LUT, no pixel modification.
 - **v0.1.0 CI:** Windows x64 + D3D12 WARP end-to-end hook test PASS for `Present`, `ResizeBuffers`, `SetColorSpace1`, `SetHDRMetaData`.
-- **v0.1.0 user-machine result:** ASI loaded successfully and logged `TARGETS` plus `HOOKS_READY`, but no runtime call hit any of those four detours during the GTA V Enhanced capture. This rules out ASI-loading failure and shows the observed method path was incomplete for Rockstar's runtime.
-- **v0.1.1 change:** add `IDXGISwapChain1::Present1` and `IDXGISwapChain3::ResizeBuffers1` while retaining the v0.1.0 hooks.
-- **v0.1.1 CI:** workflow run `34046700235` PASS. The D3D12 WARP harness explicitly invokes `Present1`; validation requires `Present1 first-seen`, `SetColorSpace1`, `SetHDRMetaData`, `ResizeBuffers`, R10G10B10A2 output and AMD64 PE validation before packaging.
-- **v0.1.1 artifact:** `GraphicOverhaulVI-P0005-ColorOutputProbe-v0.1.1`; outer GitHub artifact digest `sha256:22823611af3ea73c38387d72bd3e4d2a41d0cebeb01915f556d72732abe7168a`.
-- **Validation gate:** user's GTA V Enhanced v0.1.1 run must now show whether Rockstar presents through `Present1`. If it still logs only initialization, P0005 will escalate to observing actual swapchain creation/factory paths instead of adding blind render changes.
+- **v0.1.0 user-machine result:** ASI loaded successfully and logged `TARGETS` plus `HOOKS_READY`, but no runtime call hit any of those four detours. This ruled out ASI-loading failure and showed the observed WARP method path was incomplete for Rockstar's runtime.
+- **v0.1.1 change:** added `IDXGISwapChain1::Present1` and `IDXGISwapChain3::ResizeBuffers1` while retaining v0.1.0 hooks.
+- **v0.1.1 CI:** workflow `34046700235` PASS; harness explicitly invoked and observed `Present1` plus the original hook set.
+- **v0.1.1 user-machine result:** again only initialization/target/`HOOKS_READY` lines were produced; there was no `Present`, `Present1`, resize, colorspace or HDR metadata traffic. This strongly indicates that method addresses taken from the WARP-created dummy swapchain do not match GTA's real hardware swapchain implementation, and/or that the relevant real factory/swapchain already exists before the ASI hooks are installed.
+- **v0.1.2 strategy:**
+  - create the probe swapchain on the highest-performance real D3D12 adapter when available, falling back to WARP only if required;
+  - hook `IDXGIFactory::CreateSwapChain` and `IDXGIFactory2::CreateSwapChainForHwnd/CoreWindow/Composition`;
+  - hook `CreateDXGIFactory`, `CreateDXGIFactory1` and `CreateDXGIFactory2` exports;
+  - when any real swapchain is captured, read its own vtable and install hooks on its exact `Present/Present1/Resize/ColorSpace/HDR` implementation addresses.
+- **v0.1.2 CI:** workflow `34047519771` PASS on the exact source/harness. The harness intentionally created its DXGI factory/device before loading the ASI, then created the swapchain after `HOOKS_READY`; P0005 captured the real object through `CreateSwapChainForHwnd`, installed its exact method hooks and observed `SetColorSpace1`, `SetHDRMetaData`, `Present1`, `Present` and `ResizeBuffers`. A post-load `CreateDXGIFactory2` call also exercised the export-hook discovery path.
+- **v0.1.2 final packaging:** workflow `34047566927` PASS with updated README; artifact `GraphicOverhaulVI-P0005-ColorOutputProbe-v0.1.2`; inner release ZIP SHA-256 `87e51db21cff3ce02ae49aa9263131b4db8961419d6290db4186e2f49cffddef`; ASI SHA-256 `c89ce8dbb9578104e323de0f0f281b0887a9630900653039a79a132cecd0f5b1`.
+- **Validation gate:** user's GTA V Enhanced v0.1.2 run must capture either live presentation traffic from the hardware-derived targets or `REAL_SWAPCHAIN_CREATED` from Rockstar's actual factory path. If neither occurs, the next escalation must target an already-existing swapchain/presentation object rather than adding more blind vtable guesses.
 
 ## Patch template
 
