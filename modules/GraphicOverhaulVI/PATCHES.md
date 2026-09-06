@@ -92,10 +92,13 @@ This is the detailed historical ledger behind the compact patch table in `README
 - **Status:** `IN PROGRESS`
 - **Area:** ColorCoreVI / runtime output-stage mapping
 - **Purpose:** observe GTA V Enhanced's real DX12 presentation path before any 3D display-mapper injection is attempted.
-- **Required observations:** swapchain format, width/height, buffer count, Present/resize behavior, `SetColorSpace1` calls, `SetHDRMetaData` calls and HDR10 metadata, plus enough lifecycle information to distinguish SDR and HDR paths.
-- **Implementation direction:** native x64 ASI/DXGI probe, logging only. No shader replacement or image modification in P0005.
-- **Safety rule:** P0005 must not alter output pixels. Its only purpose is to identify the correct insertion point for the later ColorCoreVI mapper.
-- **Validation gate:** build passes Windows CI; the user's GTA V Enhanced run produces a log that identifies the active swapchain/output color path in SDR and, ideally, HDR.
+- **Safety:** native x64 ASI/DXGI logging only; no shader replacement, no LUT, no pixel modification.
+- **v0.1.0 CI:** Windows x64 + D3D12 WARP end-to-end hook test PASS for `Present`, `ResizeBuffers`, `SetColorSpace1`, `SetHDRMetaData`.
+- **v0.1.0 user-machine result:** ASI loaded successfully and logged `TARGETS` plus `HOOKS_READY`, but no runtime call hit any of those four detours during the GTA V Enhanced capture. This rules out ASI-loading failure and shows the observed method path was incomplete for Rockstar's runtime.
+- **v0.1.1 change:** add `IDXGISwapChain1::Present1` and `IDXGISwapChain3::ResizeBuffers1` while retaining the v0.1.0 hooks.
+- **v0.1.1 CI:** workflow run `34046700235` PASS. The D3D12 WARP harness explicitly invokes `Present1`; validation requires `Present1 first-seen`, `SetColorSpace1`, `SetHDRMetaData`, `ResizeBuffers`, R10G10B10A2 output and AMD64 PE validation before packaging.
+- **v0.1.1 artifact:** `GraphicOverhaulVI-P0005-ColorOutputProbe-v0.1.1`; outer GitHub artifact digest `sha256:22823611af3ea73c38387d72bd3e4d2a41d0cebeb01915f556d72732abe7168a`.
+- **Validation gate:** user's GTA V Enhanced v0.1.1 run must now show whether Rockstar presents through `Present1`. If it still logs only initialization, P0005 will escalate to observing actual swapchain creation/factory paths instead of adding blind render changes.
 
 ## Patch template
 
