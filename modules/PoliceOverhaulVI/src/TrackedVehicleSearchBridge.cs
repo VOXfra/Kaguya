@@ -127,7 +127,9 @@ namespace VOX.PoliceOverhaulVI
             bool mission = false, control = true;
             try { mission = Function.Call<bool>(Hash.GET_MISSION_FLAG); } catch { }
             try { control = Function.Call<bool>(Hash.IS_PLAYER_CONTROL_ON, Game.Player.Handle); } catch { }
-            return mission && !control;
+            if (mission || !control) return true;
+            try { return Function.Call<bool>(Hash.IS_SCREEN_FADED_OUT) || Function.Call<bool>(Hash.IS_SCREEN_FADING_OUT) || Function.Call<bool>(Hash.IS_SCREEN_FADING_IN); }
+            catch { return true; }
         }
 
         private void OnAborted(object sender, EventArgs e)

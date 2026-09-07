@@ -1,4 +1,4 @@
-INTERACTION RUNTIME VI — V0.1.1
+INTERACTION RUNTIME VI — V0.2.0
 
 TARGET
 - GTA V Enhanced Story Mode
@@ -18,6 +18,14 @@ DEFAULT CONTROLS
 - UP ARROW = contextual/neutral intent
 - RIGHT ARROW = antagonize/threaten intent
 All controls are configurable in scripts\InteractionRuntimeVI.ini.
+
+V0.2.0
+- polls GTA native controls in addition to keyboard events, so held Focus and the
+  three directional actions work reliably on keyboard and controller.
+- replaces the vertical action list with a compact three-direction focus display.
+- yields during missions, cutscenes, character switches, disabled player control and
+  screen transitions, then waits five seconds before resuming; mission peds remain
+  ineligible as a final fail-closed safeguard.
 
 V0.1.1
 - removes the 1/2/3 bindings that conflicted with GTA V weapon slots.

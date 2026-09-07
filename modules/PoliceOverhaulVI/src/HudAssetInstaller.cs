@@ -20,6 +20,8 @@ namespace VOX.PoliceOverhaulVI
                 Ensure(Path.Combine(UiDirectory, "weapon.png"), DrawWeapon);
                 Ensure(Path.Combine(UiDirectory, "mask.png"), DrawMask);
                 Ensure(Path.Combine(UiDirectory, "starRED.png"), DrawStar);
+                EnsureSymbol(Path.Combine(UiDirectory, "wantedStarWhite.png"), g => DrawBareStar(g, Color.White));
+                EnsureSymbol(Path.Combine(UiDirectory, "wantedStarRed.png"), g => DrawBareStar(g, Color.FromArgb(220, 0, 0)));
             }
             catch { }
         }
@@ -44,6 +46,30 @@ namespace VOX.PoliceOverhaulVI
                 g.InterpolationMode = InterpolationMode.HighQualityBicubic;
                 g.Clear(Color.Transparent);
                 DrawBadge(g);
+                draw(g);
+                bmp.Save(path, System.Drawing.Imaging.ImageFormat.Png);
+            }
+        }
+
+        private static void EnsureSymbol(string path, Action<Graphics> draw)
+        {
+            try
+            {
+                if (File.Exists(path))
+                {
+                    using (Image existing = Image.FromFile(path))
+                        if (existing.Width >= 128 && existing.Height >= 128) return;
+                }
+            }
+            catch { }
+
+            using (var bmp = new Bitmap(256, 256))
+            using (Graphics g = Graphics.FromImage(bmp))
+            {
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                g.CompositingQuality = CompositingQuality.HighQuality;
+                g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                g.Clear(Color.Transparent);
                 draw(g);
                 bmp.Save(path, System.Drawing.Imaging.ImageFormat.Png);
             }
@@ -160,6 +186,11 @@ namespace VOX.PoliceOverhaulVI
 
         private static void DrawStar(Graphics g)
         {
+            DrawBareStar(g, Color.FromArgb(220, 0, 0));
+        }
+
+        private static void DrawBareStar(Graphics g, Color color)
+        {
             PointF[] points = new PointF[10];
             const double start = -Math.PI / 2.0;
             for (int i = 0; i < 10; i++)
@@ -168,7 +199,7 @@ namespace VOX.PoliceOverhaulVI
                 float r = (i & 1) == 0 ? 105f : 45f;
                 points[i] = new PointF(128f + (float)Math.Cos(a) * r, 128f + (float)Math.Sin(a) * r);
             }
-            using (Brush fill = new SolidBrush(Color.FromArgb(220, 0, 0))) g.FillPolygon(fill, points);
+            using (Brush fill = new SolidBrush(color)) g.FillPolygon(fill, points);
             using (var pen = new Pen(Color.Black, 12f) { LineJoin = LineJoin.Round }) g.DrawPolygon(pen, points);
         }
     }

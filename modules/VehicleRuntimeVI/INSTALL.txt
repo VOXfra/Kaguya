@@ -1,4 +1,4 @@
-VEHICLE RUNTIME VI — 0.1.0
+VEHICLE RUNTIME VI — 0.3.0
 
 Target: GTA V Enhanced Story Mode / free roam.
 Requires Script Hook V and Script Hook V .NET Enhanced v1.1.0.6 or compatible newer build.
@@ -7,10 +7,32 @@ Install:
 - copy scripts/VehicleRuntimeVI.dll to GTA V\scripts\
 - keep BattlEye disabled for script-modded Story Mode as usual
 
-0.1.0 EFFECTIVE SYSTEMS
+0.3.0 PHYSICAL VEHICLE INTERACTIONS
+- attempting to enter a locked vehicle opens a two-direction theft wheel
+- left chooses a quiet lock-working animation; right chooses GTA's physical
+  smash-window task
+- neither path contains a minigame, progress puzzle, text list or third-party asset
+- hold Context while seated to open a six-direction vehicle wheel
+- the wheel controls engine, seatbelt, driver window, locks, interior light and
+  headlights; releasing Context executes the selected physical state change
+- a fastened seatbelt blocks accidental exit/ejection behavior until deliberately
+  released through the vehicle wheel
+- vehicle control states persist per physical model/plate identity
+
+0.2.0 CORRECTIONS
+- merely standing beside a locked car never displays or loops a lockpick action
+- pressing the normal vehicle-enter control on the intended locked car starts one
+  bounded lockpick action
+- the action is entirely physical: turn toward the lock, play Rockstar's existing
+  parking-meter/lock-working animation sequence, unlock, then enter; there is no
+  lockpick minigame, progress puzzle or 2D overlay
+- successful access hands directly back to GTA's normal enter-vehicle task
+- personal vehicles and already-running engines retain the 0.1.1 safety corrections
+
+EFFECTIVE SYSTEMS
 - ambient free-roam vehicles receive deterministic lock profiles
 - protagonist personal-car model safety whitelist (Tailgater / Buffalo S / Bodhi)
-- hold Context near a locked vehicle to bypass its lock
+- attempt to enter a locked vehicle to begin bypassing its lock
 - higher lock tiers take longer and can trigger the vehicle alarm
 - stolen/unkeyed vehicles do not start instantly: an automatic hotwire delay is applied after entry
 - hotwired vehicles are remembered persistently
@@ -20,6 +42,9 @@ Install:
 - all persistent profiles live in scripts\VehicleRuntimeVI\VehicleProfiles.txt
 
 MISSION SAFETY
-The runtime yields completely when Rockstar's mission flag, cutscene or player-switch ownership is active. Mission entities are never lock-managed.
+The runtime yields completely when Rockstar's mission flag, cutscene, player switch,
+disabled player control or screen transition is active, then waits five seconds before
+resuming. Mission entities are never lock-managed, including a vehicle the player is
+already sitting in.
 
 This first runtime intentionally does not replace vanilla archives and does not modify RPF files.

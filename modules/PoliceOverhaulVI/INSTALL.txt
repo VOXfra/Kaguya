@@ -1,4 +1,4 @@
-POLICE OVERHAUL VI — V0.5.2 TEST BUILD
+POLICE OVERHAUL VI — V0.6.0 TEST BUILD
 
 TARGET
 - GTA V Enhanced Story Mode
@@ -10,18 +10,26 @@ REQUIRES
 INSTALL
 1. Copy the contents of this package into the GTA V root directory.
 2. PoliceOverhaulVI.dll and PoliceOverhaulVI.ini must end up in GTA V\scripts\.
-3. Copy/overwrite scripts\PoliceOverhaulVI\UI\ too: V0.5.2 restores the original high-resolution VOX face/clothes/vehicle/red-star HUD assets.
+3. The runtime creates its own high-resolution face/clothes/vehicle/wanted-star assets in scripts\PoliceOverhaulVI\UI\.
 4. Do NOT delete Cases.xml or CrimeScenes.xml unless you intentionally want to erase persistent police memory.
 5. Launch modded Story Mode with BattlEye disabled as required by Script Hook V.
 
 NO VANILLA ARCHIVE IS REPLACED.
+
+V0.6 STORY-FIRST OWNERSHIP / SIXTH STAR
+- any Rockstar mission flag, cutscene, character switch, fade, or loss of player control immediately suspends VOX police ownership
+- the same rule now applies to custom search, tracker tracking, world continuity, and wanted HUD helper scripts
+- a previous six-star case can no longer instantly force every later five-star pursuit back to tier six
+- tier six now requires one continuous five-star incident, the configured minimum duration, and enough new violent heat events in that incident
+- tier six keeps GTA's native five-star wanted state alive while adding a distinct sixth visible star and custom military response
+- the six-star/search rows use VOX-generated transparent star assets, not an uncertain commonmenu texture name that can render as white squares on Enhanced
 
 V0.5.2 HUD / IDENTIFICATION FIXES
 - low-resolution placeholder-looking HUD icons are replaced/restored with the original high-resolution VOX assets
 - a historical vehicle in a case file no longer creates a phantom current vehicle badge while the suspect is on foot
 - a genuinely tracked flagged vehicle can remain an active vehicle signal after the suspect abandons it, because the tracker follows the vehicle rather than the player
 - uncovered face recognition now accumulates during sustained direct observation instead of getting stuck forever below the FaceKnown threshold at medium distance
-- active pursuit wanted stars are drawn as one stable 1-to-6 row using GTA's internal commonmenu star texture; GTA itself only stores five native wanted slots, so VOX owns the visual row when the internal sixth tier is active
+- ordinary one-to-five star pursuits keep GTA's real native HUD; VOX draws its row only for the otherwise impossible sixth tier or its owned search phase
 - after the active wanted phase, the search HUD can switch back to the original red VOX star/evidence treatment
 - death/respawn explicitly clears the active HUD phase without erasing persistent case memory
 

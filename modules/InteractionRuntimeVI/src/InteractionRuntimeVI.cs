@@ -12,6 +12,10 @@ namespace VOX.InteractionRuntimeVI
 {
     public sealed class InteractionRuntimeVIScript : Script
     {
+        private const int InputContext = 51;
+        private const int InputFrontendUp = 172;
+        private const int InputFrontendLeft = 174;
+        private const int InputFrontendRight = 175;
         private const string ConfigPath = "scripts\\InteractionRuntimeVI.ini";
         private const string DataDirectory = "scripts\\InteractionRuntimeVI";
         private const string LogPath = DataDirectory + "\\InteractionRuntimeVI.log";
@@ -27,10 +31,14 @@ namespace VOX.InteractionRuntimeVI
         private int _candidateSince;
         private int _candidateHandle;
         private Ped _target;
+        private bool _positiveControlDown;
+        private bool _contextControlDown;
+        private bool _negativeControlDown;
         private MethodInfo _pedBridgeRegister;
         private MethodInfo _pedBridgeFear;
         private MethodInfo _pedBridgeOpinion;
         private int _lastBridgeProbe;
+        private int _storyYieldUntil;
 
         public InteractionRuntimeVIScript()
         {
@@ -42,7 +50,7 @@ namespace VOX.InteractionRuntimeVI
             KeyUp += OnKeyUp;
             Aborted += OnAborted;
             ProbePedBridge();
-            Log("Interaction Runtime VI 0.1.1 stable-focus + conflict-free controls loaded.");
+            Log("Interaction Runtime VI 0.2.0 native-input + camera-focus correction loaded.");
         }
 
         private void OnKeyDown(object sender, KeyEventArgs e)
@@ -95,6 +103,7 @@ namespace VOX.InteractionRuntimeVI
                 }
 
                 CleanupMemory();
+                SyncFocusInput();
                 if (!_focusDown) return;
 
                 SuppressConflictingControls();
@@ -108,8 +117,11 @@ namespace VOX.InteractionRuntimeVI
                     try { Function.Call(Hash.TASK_LOOK_AT_ENTITY, _target.Handle, player.Handle, 1900, 0, 2); } catch { }
                 }
 
-                if (held >= _cfg.FocusHoldMs && _cfg.ShowControls)
-                    DrawInteractionHud(player, _target);
+                if (held >= _cfg.FocusHoldMs)
+                {
+                    if (_cfg.ShowControls) DrawInteractionHud(player, _target);
+                    PollDirectionalControls();
+                }
             }
             catch (Exception ex) { Log("Tick error: " + ex); }
         }
@@ -233,13 +245,63 @@ namespace VOX.InteractionRuntimeVI
             {
                 // E is our held focus while active. Prevent vanilla context actions
                 // from repeatedly firing under the interaction overlay.
-                Function.Call(Hash.DISABLE_CONTROL_ACTION, 0, 51, true); // INPUT_CONTEXT
+                Function.Call(Hash.DISABLE_CONTROL_ACTION, 0, InputContext, true);
                 Function.Call(Hash.DISABLE_CONTROL_ACTION, 0, 37, true); // weapon wheel
                 Function.Call(Hash.DISABLE_CONTROL_ACTION, 0, 157, true);
                 Function.Call(Hash.DISABLE_CONTROL_ACTION, 0, 158, true);
                 Function.Call(Hash.DISABLE_CONTROL_ACTION, 0, 160, true);
             }
             catch { }
+        }
+
+        private void SyncFocusInput()
+        {
+            bool pressed = ReadControlPressed(InputContext);
+            if (pressed && !_focusDown)
+            {
+                _focusDown = true;
+                _focusStarted = Game.GameTime;
+                _targetLostSince = 0;
+                _candidateSince = 0;
+                _candidateHandle = 0;
+            }
+            else if (!pressed && _focusDown)
+            {
+                ResetFocus();
+            }
+        }
+
+        private void PollDirectionalControls()
+        {
+            bool positive = ReadControlPressed(InputFrontendLeft);
+            bool context = ReadControlPressed(InputFrontendUp);
+            bool negative = ReadControlPressed(InputFrontendRight);
+
+            if (positive && !_positiveControlDown) TryPerform(0);
+            else if (context && !_contextControlDown) TryPerform(1);
+            else if (negative && !_negativeControlDown) TryPerform(2);
+
+            _positiveControlDown = positive;
+            _contextControlDown = context;
+            _negativeControlDown = negative;
+        }
+
+        private void TryPerform(int slot)
+        {
+            if (_target == null || !_target.Exists()) return;
+            if (Game.GameTime - _focusStarted < _cfg.FocusHoldMs) return;
+            if (Game.GameTime - _lastInteraction < _cfg.InteractionCooldownMs) return;
+            Perform(slot);
+        }
+
+        private static bool ReadControlPressed(int control)
+        {
+            try
+            {
+                return Function.Call<bool>(Hash.IS_CONTROL_PRESSED, 0, control) ||
+                       Function.Call<bool>(Hash.IS_DISABLED_CONTROL_PRESSED, 0, control);
+            }
+            catch { return false; }
         }
 
         private void DrawInteractionHud(Ped player, Ped target)
@@ -253,12 +315,20 @@ namespace VOX.InteractionRuntimeVI
             string b = fear >= 45f ? "[UP] Laisser partir" : "[UP] Interpeller";
             string c = armed ? "[RIGHT] Menacer" : "[RIGHT] Provoquer";
 
-            DrawText(0.785f, 0.715f, "INTERACTION", 0.34f);
-            DrawText(0.785f, 0.752f, a, 0.30f);
-            DrawText(0.785f, 0.783f, b, 0.30f);
-            DrawText(0.785f, 0.814f, c, 0.30f);
+            // Deliberately not a trainer-style vertical menu: the three actions are
+            // arranged around one compact contextual focus point.
+            DrawText(0.785f, 0.720f, "^ " + StripDirection(b), 0.28f);
+            DrawText(0.710f, 0.775f, StripDirection(a) + " <", 0.28f);
+            DrawText(0.855f, 0.775f, "> " + StripDirection(c), 0.28f);
+            DrawText(0.795f, 0.775f, "+", 0.25f);
             if (Math.Abs(opinion) > 15f || fear > 20f)
-                DrawText(0.785f, 0.850f, "Memoire sociale active", 0.24f);
+                DrawText(0.765f, 0.825f, "Memoire", 0.22f);
+        }
+
+        private static string StripDirection(string value)
+        {
+            int end = value == null ? -1 : value.IndexOf(']');
+            return end >= 0 && end + 1 < value.Length ? value.Substring(end + 1).Trim() : (value ?? string.Empty);
         }
 
         private void Perform(int slot)
@@ -461,14 +531,29 @@ namespace VOX.InteractionRuntimeVI
 
         private bool ShouldYield()
         {
-            try { if (Function.Call<bool>(Hash.IS_CUTSCENE_ACTIVE) || Function.Call<bool>(Hash.IS_PLAYER_SWITCH_IN_PROGRESS)) return true; } catch { }
+            bool storyOwnsScene = false;
+            try { storyOwnsScene |= Function.Call<bool>(Hash.IS_CUTSCENE_ACTIVE) || Function.Call<bool>(Hash.IS_PLAYER_SWITCH_IN_PROGRESS); } catch { }
+            try { storyOwnsScene |= !Function.Call<bool>(Hash.IS_PLAYER_CONTROL_ON, Game.Player.Handle); } catch { }
+            try
+            {
+                storyOwnsScene |= Function.Call<bool>(Hash.IS_SCREEN_FADED_OUT) ||
+                                  Function.Call<bool>(Hash.IS_SCREEN_FADING_OUT) ||
+                                  Function.Call<bool>(Hash.IS_SCREEN_FADING_IN);
+            }
+            catch { }
+            if (_cfg.DisableDuringMissions)
+            {
+                try { storyOwnsScene |= Function.Call<bool>(Hash.GET_MISSION_FLAG); } catch { }
+            }
+            if (storyOwnsScene)
+            {
+                _storyYieldUntil = Game.GameTime + 5000;
+                return true;
+            }
+            if (Game.GameTime < _storyYieldUntil) return true;
             if (_cfg.DisableWhileWanted)
             {
                 try { if (Function.Call<int>(Hash.GET_PLAYER_WANTED_LEVEL, Game.Player.Handle) > 0) return true; } catch { }
-            }
-            if (_cfg.DisableDuringMissions)
-            {
-                try { if (Function.Call<bool>(Hash.GET_MISSION_FLAG)) return true; } catch { }
             }
             return false;
         }
@@ -481,6 +566,9 @@ namespace VOX.InteractionRuntimeVI
             _targetLostSince = 0;
             _candidateHandle = 0;
             _candidateSince = 0;
+            _positiveControlDown = false;
+            _contextControlDown = false;
+            _negativeControlDown = false;
         }
 
         private void OnAborted(object sender, EventArgs e)

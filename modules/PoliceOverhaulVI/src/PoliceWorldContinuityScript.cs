@@ -162,7 +162,10 @@ namespace VOX.PoliceOverhaulVI
         {
             try { if (Function.Call<bool>(Hash.IS_CUTSCENE_ACTIVE)) return true; } catch { }
             try { if (Function.Call<bool>(Hash.IS_PLAYER_SWITCH_IN_PROGRESS)) return true; } catch { }
-            return false;
+            try { if (Function.Call<bool>(Hash.GET_MISSION_FLAG)) return true; } catch { }
+            try { if (!Function.Call<bool>(Hash.IS_PLAYER_CONTROL_ON, Game.Player.Handle)) return true; } catch { }
+            try { return Function.Call<bool>(Hash.IS_SCREEN_FADED_OUT) || Function.Call<bool>(Hash.IS_SCREEN_FADING_OUT) || Function.Call<bool>(Hash.IS_SCREEN_FADING_IN); }
+            catch { return true; }
         }
 
         private void OnAborted(object sender, EventArgs e)

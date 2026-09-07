@@ -18,6 +18,8 @@ namespace VOX.PoliceOverhaulVI
 
         private readonly List<CustomUnit> _units = new List<CustomUnit>();
         private int _lastSupportSpawn, _lastHeavySpawn, _lastJetSpawn, _fiveStarStartedAt, _lastFiveStarHeatAt, _lastRiskLog, _lastLevel;
+        private int _fiveStarHeatEvents;
+        private bool _sixthAuthorized;
 
         private static readonly string[] Tier3Urban = { "police3", "police5", "polgauntlet", "polterminus", "poldorado", "polfaction2" };
         private static readonly string[] Tier4Urban = { "police3", "polgauntlet", "poldominator10", "polcaracara", "polcaracara2", "polcoquette4", "polbuffalo6" };
@@ -25,25 +27,33 @@ namespace VOX.PoliceOverhaulVI
 
         public int UpdateTier(Ped player, int nativeWanted, CaseMemory memory, Config cfg, Action<string> log)
         {
-            if (cfg.EnableSixthStar && nativeWanted >= 5 && memory != null && memory.ThreatLevel >= 6) return 6;
             if (nativeWanted < 5)
             {
                 _fiveStarStartedAt = 0;
                 _lastFiveStarHeatAt = 0;
+                _fiveStarHeatEvents = 0;
+                _sixthAuthorized = false;
                 return Math.Max(nativeWanted, memory == null ? 0 : Math.Min(5, memory.ThreatLevel));
             }
 
-            if (_fiveStarStartedAt == 0) _fiveStarStartedAt = Game.GameTime;
+            if (_fiveStarStartedAt == 0)
+            {
+                _fiveStarStartedAt = Game.GameTime;
+                _fiveStarHeatEvents = 0;
+                _sixthAuthorized = false;
+            }
             if (player != null && player.Exists() && SafeBool(Hash.IS_PED_SHOOTING, player.Handle) && Game.GameTime - _lastFiveStarHeatAt >= cfg.FiveStarShootingHeatIntervalMs)
             {
                 _lastFiveStarHeatAt = Game.GameTime;
+                _fiveStarHeatEvents++;
                 if (memory != null) memory.HeatPoints++;
             }
 
             bool time = Game.GameTime - _fiveStarStartedAt >= Math.Max(10, cfg.SixStarAfterFiveStarSeconds) * 1000;
-            bool heat = memory != null && memory.HeatPoints >= Math.Max(1, cfg.SixStarHeatThreshold);
-            if (cfg.EnableSixthStar && (time || heat))
+            bool heat = _fiveStarHeatEvents >= Math.Max(1, cfg.SixStarHeatThreshold);
+            if (cfg.EnableSixthStar && !_sixthAuthorized && time && heat)
             {
+                _sixthAuthorized = true;
                 if (memory != null && memory.ThreatLevel < 6)
                 {
                     memory.ThreatLevel = 6;
@@ -51,9 +61,8 @@ namespace VOX.PoliceOverhaulVI
                     memory.Touch(cfg);
                     if (log != null) log("Sixth-star emergency response authorized.");
                 }
-                return 6;
             }
-            return 5;
+            return _sixthAuthorized ? 6 : 5;
         }
 
         public void UpdateResponse(Ped player, int level, Config cfg, Action<string> log)
@@ -133,6 +142,8 @@ namespace VOX.PoliceOverhaulVI
             _units.Clear();
             _fiveStarStartedAt = 0;
             _lastFiveStarHeatAt = 0;
+            _fiveStarHeatEvents = 0;
+            _sixthAuthorized = false;
             _lastLevel = 0;
             PoliceWantedHudState.Clear();
         }

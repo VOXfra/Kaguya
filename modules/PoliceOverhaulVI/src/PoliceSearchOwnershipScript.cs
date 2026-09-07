@@ -377,18 +377,17 @@ namespace VOX.PoliceOverhaulVI
         {
             try { if (Function.Call<bool>(Hash.IS_CUTSCENE_ACTIVE)) return true; } catch { }
             try { if (Function.Call<bool>(Hash.IS_PLAYER_SWITCH_IN_PROGRESS)) return true; } catch { }
-
-            bool mission = false, controlOn = true;
+            bool mission = false, controlOn = true, faded = false;
             try { mission = Function.Call<bool>(Hash.GET_MISSION_FLAG); } catch { }
             try { controlOn = Function.Call<bool>(Hash.IS_PLAYER_CONTROL_ON, Game.Player.Handle); } catch { }
-            if (!mission) { _lastMissionFlagAt = 0; return false; }
-            if (!controlOn) return true;
-
-            // Free-roam scripts can flick this flag during wanted activity. Never
-            // hand search ownership back for that alone while a pursuit/search exists.
-            if (wanted > 0 || PoliceSearchRuntimeState.SearchActive) return false;
-            if (_lastMissionFlagAt == 0) _lastMissionFlagAt = Game.GameTime;
-            return Game.GameTime - _lastMissionFlagAt >= Math.Max(1500, _cfg.MissionFlagConfirmMs);
+            try { faded = Function.Call<bool>(Hash.IS_SCREEN_FADED_OUT) || Function.Call<bool>(Hash.IS_SCREEN_FADING_OUT) || Function.Call<bool>(Hash.IS_SCREEN_FADING_IN); } catch { }
+            if (mission)
+            {
+                if (_lastMissionFlagAt == 0) _lastMissionFlagAt = Game.GameTime;
+                return true;
+            }
+            _lastMissionFlagAt = 0;
+            return !controlOn || faded;
         }
 
         private void ApplyPoliceIgnore()
