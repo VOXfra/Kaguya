@@ -22,7 +22,7 @@ jobs:
       - name: Package manifest
         run: |
           printf "Build: AC1-to-ACE v0.1.5 donor safety upgrade\nCommit: %s\n" "$GITHUB_SHA" > .chatgpt-ac1toace-v015/BUILD.txt
-          sha256sum .chatgpt-ac1toace-v015/* > .chatgpt-ac1toace-v015/SHA256SUMS.txt
+          find .chatgpt-ac1toace-v015 -maxdepth 1 -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > .chatgpt-ac1toace-v015/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
           name: AC1-to-ACE-Converter-v0.1.5-UPGRADE
