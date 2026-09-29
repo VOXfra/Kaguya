@@ -1,0 +1,31 @@
+name: ChatGPT AC1toACE v0.1.5 build
+on:
+  push:
+    branches: [chatgpt-ac1toace-v015-build]
+    paths:
+      - '.chatgpt-ac1toace-v015/**'
+      - '.github/workflows/chatgpt-ac1toace-v015.yml'
+  workflow_dispatch:
+
+jobs:
+  test-and-package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile
+        run: python -m py_compile .chatgpt-ac1toace-v015/AC1-to-ACE-v0.1.5.py .chatgpt-ac1toace-v015/upgrade_v015.py
+      - name: Donor selector self-test
+        run: python .chatgpt-ac1toace-v015/AC1-to-ACE-v0.1.5.py --selftest
+      - name: Package manifest
+        run: |
+          printf "Build: AC1-to-ACE v0.1.5 donor safety upgrade\nCommit: %s\n" "$GITHUB_SHA" > .chatgpt-ac1toace-v015/BUILD.txt
+          sha256sum .chatgpt-ac1toace-v015/* > .chatgpt-ac1toace-v015/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AC1-to-ACE-Converter-v0.1.5-UPGRADE
+          path: .chatgpt-ac1toace-v015/*
+          if-no-files-found: error
+          retention-days: 7
