@@ -1,0 +1,31 @@
+{
+  "purpose": "small decrypted PS5 system-application proof target before attempting larger menu components",
+  "accepted_title_pattern": "NPXS#####",
+  "public_path_references": [
+    {
+      "title_id": "NPXS40106",
+      "path": "/system_ex/app/NPXS40106/eboot.bin",
+      "source_project": "ps5-payload-dev/websrv",
+      "role": "example system application path only"
+    },
+    {
+      "title_id": "NPXS40112",
+      "path": "/system/vsh/app/NPXS40112/eboot.bin",
+      "source_project": "ps5-payload-dev/websrv",
+      "role": "example system application path only"
+    }
+  ],
+  "required_for_gate": [
+    "already-decrypted eboot.bin",
+    "clean ELF64 little-endian executable",
+    "at least one executable PT_LOAD segment"
+  ],
+  "optional": [
+    "sce_module/*.prx",
+    "sce_modules/*.prx",
+    "prx/*.prx",
+    "sce_sys/param.json",
+    "sce_sys/param.sfo"
+  ],
+  "non_goal": "This does not acquire, decrypt, or redistribute Sony system binaries and does not claim to reproduce the PS5 menu."
+}
