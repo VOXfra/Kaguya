@@ -23,3 +23,6 @@ jobs:
       - name: Test generic post-decryption intake
         shell: pwsh
         run: python tools/ps5-1400-lab/postdecrypt_selftest.py
+      - name: Test decrypted NPXS system-app intake
+        shell: pwsh
+        run: python tools/ps5-1400-lab/system_app_selftest.py
