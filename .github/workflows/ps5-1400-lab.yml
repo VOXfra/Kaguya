@@ -17,6 +17,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Run PS5 14.00 lab self-test
+      - name: Test firmware offset mapper
         shell: pwsh
         run: python tools/ps5-1400-lab/selftest.py
+      - name: Test generic post-decryption intake
+        shell: pwsh
+        run: python tools/ps5-1400-lab/postdecrypt_selftest.py
