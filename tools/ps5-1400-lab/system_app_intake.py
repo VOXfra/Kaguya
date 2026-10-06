@@ -21,6 +21,7 @@ from postdecrypt_intake import (
 )
 
 TITLE_RE = re.compile(r"^(NPXS\d{5})(?:-app0)?$", re.IGNORECASE)
+EM_X86_64 = 62
 
 
 def title_id_from_path(path: Path):
@@ -89,7 +90,7 @@ def stage_anyps5_system_app(eboot: Path, modules, stage: Path):
             metadata.append(dst.relative_to(stage).as_posix())
 
     (stage / "ANYPS5-WINDOWS-COMMAND.txt").write_text(
-        "relinker --windows --to-intel --windows-diagnostics app0\\eboot.bin system-app.exe\n",
+        "relinker --windows --to-intel --windows-diagnostics app0/eboot.bin system-app.exe\n",
         encoding="utf-8",
     )
 
@@ -122,15 +123,33 @@ def candidate_report(path: Path):
     }
 
 
+def is_native_relink_candidate(row: dict) -> bool:
+    return (
+        row["clean_elf64_le"]
+        and row["machine"] == EM_X86_64
+        and row["exec_load_segments"] > 0
+    )
+
+
 def status_for(row: dict) -> str:
-    if not row["clean_elf64_le"] or row["exec_load_segments"] < 1:
+    if not row["clean_elf64_le"]:
         return "SYSTEM_APP_EBOOT_NOT_CLEAN_EXECUTABLE_ELF"
+    if row["machine"] != EM_X86_64:
+        return "SYSTEM_APP_EBOOT_WRONG_MACHINE"
+    if row["exec_load_segments"] < 1:
+        return "SYSTEM_APP_EBOOT_NO_EXECUTABLE_LOAD_SEGMENT"
 
     modules = row["modules"]
     if not modules:
         return "SYSTEM_APP_EBOOT_READY_NO_BUNDLED_MODULES_FOUND"
 
-    clean = sum(1 for m in modules if m["clean_elf64_le"] and m["exec_load_segments"] > 0)
+    clean = sum(
+        1
+        for m in modules
+        if m["clean_elf64_le"]
+        and m["machine"] == EM_X86_64
+        and m["exec_load_segments"] > 0
+    )
     if clean == len(modules):
         return "SYSTEM_APP_READY_FOR_NATIVE_RELINK"
     return "SYSTEM_APP_EBOOT_READY_MODULES_MIXED"
@@ -148,30 +167,28 @@ def main():
         raise SystemExit(f"not a directory: {root}")
 
     candidates = discover(root)
+    rows = [candidate_report(p) for p in candidates]
     report = {
         "root": str(root),
         "status": "SYSTEM_APP_EBOOT_NOT_FOUND",
         "selected_title_id": None,
         "selected_eboot": None,
         "source_class": None,
-        "candidates": [],
+        "candidates": rows,
         "anyps5_stage": None,
         "notes": [
             "This gate proves clean executable input only; it does not prove that the PS5 menu, ShellUI, or SceShellCore can run on Windows."
         ],
     }
 
-    for p in candidates:
-        report["candidates"].append(candidate_report(p))
-
-    if candidates:
-        selected = report["candidates"][0]
+    if rows:
+        selected = next((row for row in rows if is_native_relink_candidate(row)), rows[0])
         report["selected_title_id"] = selected["title_id"]
         report["selected_eboot"] = selected["path"]
         report["source_class"] = selected["source_class"]
         report["status"] = status_for(selected)
 
-        if args.stage and selected["clean_elf64_le"] and selected["exec_load_segments"] > 0:
+        if args.stage and is_native_relink_candidate(selected):
             eboot = Path(selected["path"])
             modules = module_files_near(eboot)
             stage = Path(args.stage).resolve()
