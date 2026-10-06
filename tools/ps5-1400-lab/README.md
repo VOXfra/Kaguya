@@ -14,7 +14,8 @@ This branch does **not** try to break retail encryption and does not contain an 
 - estimate source->target offset deltas;
 - translate known 13.60 offsets into ranked 14.00 candidates;
 - produce a compact Markdown report;
-- prepare the minimal Dakar dump target set (eboot + bundled PRX) for use once payload execution is available.
+- prepare the minimal Dakar dump target set (eboot + bundled PRX) for use once payload execution is available;
+- validate a small already-decrypted NPXS system application as a lower-complexity native-relink proof target.
 
 ## Windows-only quick start
 
@@ -69,3 +70,38 @@ app0/sce_sys/param.sfo
 ```
 
 There is no reason to copy the entire ~41 GiB title just to start native relinking.
+
+## Small system-app proof target
+
+Before attempting ShellUI/SceShellCore or a full menu stack, the lab can now validate a smaller **already-decrypted NPXS application**.
+
+Place it under `input/system-app`, for example:
+
+```text
+input/system-app/
+  system_ex/
+    app/
+      NPXS40106/
+        eboot.bin
+        sce_module/
+        sce_sys/
+```
+
+Then run:
+
+```powershell
+.\prepare-system-app.ps1
+```
+
+The tool:
+
+- requires an `NPXS#####` application path;
+- validates that `eboot.bin` is a clean ELF64 little-endian executable;
+- requires at least one executable `PT_LOAD`;
+- inventories and hashes bundled PRX files;
+- rejects still-protected/opaque input;
+- stages `app0/eboot.bin`, bundled modules and metadata for an AnyPS5 Windows relink attempt;
+- writes `output/system-app-report.json`.
+
+A PASS here proves only that the system app has reached the **native-relink input gate**. It does not prove the PS5 menu, ShellUI, SceShellCore, IPC stack, compositor, or secure services are portable yet.
+
