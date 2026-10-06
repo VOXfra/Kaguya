@@ -1,0 +1,22 @@
+name: PS5 14.00 lab selftest
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - ps5-1400-lab
+    paths:
+      - "tools/ps5-1400-lab/**"
+      - ".github/workflows/ps5-1400-lab.yml"
+
+jobs:
+  selftest:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run PS5 14.00 lab self-test
+        shell: pwsh
+        run: python tools/ps5-1400-lab/selftest.py
