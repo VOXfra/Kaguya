@@ -1,0 +1,21 @@
+{
+  "project": "Dakar PS5 -> PC",
+  "title_id": "PPSA04477",
+  "purpose": "minimal post-decryption intake for native relinking",
+  "include": [
+    "app0/eboot.bin",
+    "app0/sce_module/*.prx",
+    "app0/sce_modules/*.prx",
+    "app0/prx/*.prx",
+    "app0/sce_sys/param.json",
+    "app0/sce_sys/param.sfo"
+  ],
+  "exclude_by_default": [
+    "large asset archives",
+    "textures",
+    "audio banks",
+    "video",
+    "playgo payload data not required for initial executable validation"
+  ],
+  "first_gate": "eboot.bin parses as a clean executable/ELF and bundled modules are readable"
+}
