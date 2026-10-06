@@ -39,7 +39,8 @@ Without inventing a new exploit, host-side work can be completed in advance:
 5. inventory and hash bundled PRX modules;
 6. stage exactly the directory structure expected by a native relinker;
 7. keep title assets separate from executable validation;
-8. retain the 13.60 -> 14.00 firmware-diff lab for the day verified 14.00 firmware modules become available.
+8. retain the 13.60 -> 14.00 firmware-diff lab for the day verified 14.00 firmware modules become available;
+9. use a small decrypted NPXS system application as a lower-complexity proof target before attempting the full PS5 menu stack.
 
 ## What remains console-dependent
 
@@ -68,3 +69,31 @@ For Dakar, that means its real `eboot.bin` validates as a clean executable ELF a
 ## Generic-title test
 
 The intake tool intentionally contains no Dakar-specific assumptions beyond optional reporting. A Minecraft, Astro Bot, Dakar, or other legitimately dumped title follows the same executable validation path.
+
+## System-app proof gate
+
+The menu question is separated from the title question.
+
+A copied PS5 menu tree is not expected to run on Windows as a single executable because it depends on multiple system processes, Sony PRX libraries, IPC/services, graphics/compositor behavior, databases and secure services. Instead, `system_app_intake.py` provides a smaller falsifiable gate:
+
+```text
+already-decrypted NPXS app
+        |
+        v
+clean eboot ELF + readable bundled PRX
+        |
+        v
+AnyPS5-compatible app0 staging
+        |
+        v
+native relink attempt
+```
+
+The success marker is:
+
+```text
+SYSTEM_APP_READY_FOR_NATIVE_RELINK
+```
+
+This does not move the Dakar roadmap above 86.0%. It is an architectural proof only; Dakar still requires its own real decrypted executable/module input before the project can advance.
+
